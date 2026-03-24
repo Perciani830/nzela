@@ -1,0 +1,30 @@
+# Dépendances
+node_modules/
+*/node_modules/
+
+# Base de données locale (Railway en crée une nouvelle)
+backend/data/
+*.db
+*.db-shm
+*.db-wal
+
+# Variables d'environnement sensibles
+.env
+.env.local
+.env.production
+
+# Build frontend
+frontend/dist/
+frontend/.vite/
+
+# Logs
+*.log
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
