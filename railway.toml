@@ -1,8 +1,2 @@
 [build]
-builder = "nixpacks"
-buildCommand = "cd backend && npm install"
-
-[deploy]
-startCommand = "cd backend && node server.js"
-restartPolicyType = "on_failure"
-NIXPACKS_NODE_VERSION = 22
+builder = "dockerfile"
