@@ -24,7 +24,7 @@ app.use(cors({
     const ok = ALLOWED_ORIGINS.some(o =>
       typeof o === 'string' ? o === origin : o.test(origin)
     );
-    callback(null, ok ? true : new Error('CORS bloqué'));
+    callback(ok ? null : new Error('CORS bloqué'), ok);
   },
   credentials: true,
 }));

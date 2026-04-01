@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import BackupTab from './BackupTab';
 
 const API = '/api';
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
@@ -554,7 +555,7 @@ export default function AdminDashboard() {
                                 { label:'Réservations confirmées', value:ag.confirmed,                     color:'var(--text)',    unit:'' },
                                 { label:'Revenus bruts',           value:Number(ag.revenue_brut).toLocaleString('fr-FR'), color:'var(--gold)',    unit:' FC' },
                                 { label:`Commission Nzela (${ag.commission_rate}%)`, value:Number(ag.commission).toLocaleString('fr-FR'), color:'var(--green-l)', unit:' FC' },
-                                { label:'À reverser à l'agence',  value:Number(ag.a_reverser).toLocaleString('fr-FR'),   color:'#7EC8E3',        unit:' FC' },
+                                { label:" À reverser à l'agence",  value:Number(ag.a_reverser).toLocaleString('fr-FR'),   color:'#7EC8E3',        unit:' FC' },
                               ].map((item, j) => (
                                 <div key={j} style={{ background:'var(--card)', borderRadius:8, padding:'10px 12px', border:'1px solid var(--border)' }}>
                                   <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>{item.label}</div>
