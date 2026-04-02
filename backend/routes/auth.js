@@ -27,14 +27,19 @@ router.post('/login', (req, res) => {
   res.status(401).json({ error: 'Identifiants incorrects' });
 });
 
-router.get('/fix-admin', (req, res) => {
+router.get('/debug-admin', (req, res) => {
   const bcrypt = require('bcryptjs');
-  const { v4: uuidv4 } = require('uuid');
   const db = getDb();
-  db.prepare('DELETE FROM admins WHERE username=?').run('superadmin');
-  db.prepare('INSERT INTO admins (id,username,password) VALUES (?,?,?)')
-    .run(uuidv4(), 'superadmin', bcrypt.hashSync('Admin@2024!', 10));
-  res.json({ ok: true, message: 'Superadmin réinitialisé' });
+  const admin = db.prepare('SELECT id, username, password FROM admins WHERE username=?').get('superadmin');
+  if (!admin) return res.json({ found: false });
+  const testHash = bcrypt.hashSync('Admin@2024!', 10);
+  const compareOk = bcrypt.compareSync('Admin@2024!', admin.password);
+  res.json({
+    found: true,
+    username: admin.username,
+    hash_stored: admin.password,
+    compare_result: compareOk
+  });
 });
 
 module.exports = router;
