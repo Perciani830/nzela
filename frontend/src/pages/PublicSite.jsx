@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
-const API = '/api';
+const API = 'https://nzela-production.up.railway.app/api';
 const CITIES = ['Kinshasa', 'Boma', 'Matadi', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga'];
 
 const SLIDES = [
