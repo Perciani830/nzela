@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
-const API = '/api';
+const API = (import.meta.env.VITE_API_URL || '') + '/api';
 const CITIES = ['Kinshasa','Boma','Matadi','Lubumbashi','Mbuji-Mayi','Kananga'];
 
 function getAuth() {

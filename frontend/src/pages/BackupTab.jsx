@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import axios from 'axios';
 
-const API = '/api';
+const API = (import.meta.env.VITE_API_URL || '') + '/api';
 const MOIS = ['Janvier','Février','Mars','Avril','Mai','Juin','Juillet','Août','Septembre','Octobre','Novembre','Décembre'];
 
 export default function BackupTab({ onMsg }) {

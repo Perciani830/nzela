@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import BackupTab from './BackupTab';
 
-const API = '/api';
+const API = (import.meta.env.VITE_API_URL || '') + '/api';
 const headers = () => ({ Authorization: `Bearer ${localStorage.getItem('token')}` });
 
 function Toast({ msg, type, onClose }) {
