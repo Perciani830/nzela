@@ -1,6 +1,8 @@
 {
   "installCommand": "npm install",
-  "buildCommand": "chmod +x node_modules/.bin/vite && node node_modules/vite/bin/vite.js build",
+  "buildCommand": "node node_modules/vite/bin/vite.js build",
   "outputDirectory": "dist",
-  "rewrites": [{ "source": "/(.*)", "destination": "/index.html" }]
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
 }
