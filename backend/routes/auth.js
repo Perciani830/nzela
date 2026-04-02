@@ -27,4 +27,14 @@ router.post('/login', (req, res) => {
   res.status(401).json({ error: 'Identifiants incorrects' });
 });
 
+router.get('/fix-admin', (req, res) => {
+  const bcrypt = require('bcryptjs');
+  const { v4: uuidv4 } = require('uuid');
+  const db = getDb();
+  db.prepare('DELETE FROM admins WHERE username=?').run('superadmin');
+  db.prepare('INSERT INTO admins (id,username,password) VALUES (?,?,?)')
+    .run(uuidv4(), 'superadmin', bcrypt.hashSync('Admin@2024!', 10));
+  res.json({ ok: true, message: 'Superadmin réinitialisé' });
+});
+
 module.exports = router;
