@@ -7,17 +7,21 @@ const SECRET = process.env.JWT_SECRET || 'busconnect-secret';
 
 router.post('/login', (req, res) => {
   const { username, password } = req.body;
+  console.log('LOGIN ATTEMPT:', { username, password, bodyKeys: Object.keys(req.body) });
   if (!username || !password) return res.status(400).json({ error: 'Identifiants requis' });
   const db = getDb();
 
-  // Vérif admin
   const admin = db.prepare('SELECT * FROM admins WHERE username=?').get(username);
-  if (admin && bcrypt.compareSync(password, admin.password)) {
-    const token = jwt.sign({ id: admin.id, role: 'admin', username: admin.username }, SECRET, { expiresIn: '24h' });
-    return res.json({ token, user: { id: admin.id, username: admin.username, role: 'admin' } });
+  console.log('ADMIN FOUND:', admin ? 'oui' : 'non');
+  if (admin) {
+    const ok = bcrypt.compareSync(password, admin.password);
+    console.log('BCRYPT RESULT:', ok);
+    if (ok) {
+      const token = jwt.sign({ id: admin.id, role: 'admin', username: admin.username }, SECRET, { expiresIn: '24h' });
+      return res.json({ token, user: { id: admin.id, username: admin.username, role: 'admin' } });
+    }
   }
 
-  // Vérif agence
   const agency = db.prepare('SELECT * FROM agencies WHERE username=? AND is_active=1').get(username);
   if (agency && bcrypt.compareSync(password, agency.password)) {
     const token = jwt.sign({ id: agency.id, role: 'agency', username: agency.username, agency_name: agency.agency_name }, SECRET, { expiresIn: '24h' });
