@@ -1,6 +1,6 @@
 FROM node:22-alpine
 
-# rebuild 2026-04-02
+# cache-bust: 2026-04-02-v2
 WORKDIR /app/backend
 
 COPY backend/package*.json ./
