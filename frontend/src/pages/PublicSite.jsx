@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'https://nzela-production.up.railway.app/api';
-const CITIES = ['Kinshasa', 'Boma', 'Matadi', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga'];
+const CITIES = ['Kinshasa', 'Boma', 'Matadi'];
 
 const SLIDES = [
   { img: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=1200&q=80', title: 'Kinshasa → Boma', sub: 'Le fleuve Congo à ta gauche, la route à tes pieds.', tag: '🛣️ 05h00' },
