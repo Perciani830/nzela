@@ -1,14 +1,15 @@
 FROM node:22-alpine
 
-WORKDIR /app
+# rebuild 2026-04-02
+WORKDIR /app/backend
 
-COPY backend/package*.json ./backend/
-RUN cd backend && npm install --production
+COPY backend/package*.json ./
+RUN npm install --production
 
-COPY backend/ ./backend/
+COPY backend/ ./
 
 RUN mkdir -p /app/backend/data
 
 EXPOSE 5000
 
-CMD ["node", "backend/server.js"]
+CMD ["node", "server.js"]
