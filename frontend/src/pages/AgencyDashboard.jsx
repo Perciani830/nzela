@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
@@ -28,13 +28,12 @@ function StatusBadge({ status }) {
   return <span className={`badge ${c}`}>{l}</span>;
 }
 
-// ── LOGO AGENCE — avec fallback initiale ──────────────────────
 function AgencyAvatar({ name, logoUrl, size=32, radius=8 }) {
   const initials = name ? name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
   if (logoUrl) {
     return (
       <img src={logoUrl} alt={name} style={{ width:size, height:size, borderRadius:radius, objectFit:'cover', border:'1px solid rgba(61,170,106,0.2)' }}
-        onError={e => { e.target.style.display='none'; e.target.nextSibling && (e.target.nextSibling.style.display='flex'); }} />
+        onError={e => { e.target.style.display='none'; }} />
     );
   }
   return (
@@ -86,17 +85,98 @@ function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder'
   );
 }
 
+// ── LOGO UPLOAD — convertit en base64 ─────────────────────────
+function LogoUploader({ currentLogo, agencyName, onChange }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    // Vérifie que c'est bien une image
+    if (!file.type.startsWith('image/')) {
+      alert('Sélectionnez une image (JPG, PNG, WebP…)');
+      return;
+    }
+    // Limite à 500 Ko pour ne pas saturer SQLite
+    if (file.size > 500 * 1024) {
+      alert('Image trop lourde — maximum 500 Ko. Compressez-la avant upload.');
+      return;
+    }
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      onChange(ev.target.result); // base64 data URL
+      setUploading(false);
+    };
+    reader.onerror = () => { alert('Erreur de lecture du fichier'); setUploading(false); };
+    reader.readAsDataURL(file);
+  };
+
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
+      {/* Aperçu */}
+      <div style={{ position:'relative', flexShrink:0 }}>
+        <AgencyAvatar name={agencyName} logoUrl={currentLogo} size={80} radius={16} />
+        <button
+          onClick={() => fileRef.current?.click()}
+          style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}
+          title="Changer le logo"
+        >📷</button>
+      </div>
+
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
+        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>
+          {currentLogo ? '✓ Logo personnalisé configuré' : 'Aucun logo — initiales affichées par défaut'}
+        </div>
+
+        {/* Bouton upload */}
+        <input
+          ref={fileRef}
+          type="file"
+          accept="image/*"
+          style={{ display:'none' }}
+          onChange={handleFile}
+        />
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button
+            className="btn btn-ghost"
+            style={{ fontSize:12, padding:'6px 12px' }}
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+          >
+            {uploading ? '⏳ Chargement…' : '📁 Choisir un fichier'}
+          </button>
+          {currentLogo && (
+            <button
+              className="btn btn-danger"
+              style={{ fontSize:12, padding:'6px 10px' }}
+              onClick={() => onChange('')}
+            >
+              🗑️ Supprimer
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
+          JPG, PNG, WebP · Max 500 Ko
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function AgencyDashboard() {
   const navigate = useNavigate();
   const { user, headers } = getAuth();
   const [tab, setTab] = useState('overview');
-  const [stats, setStats]     = useState({});
-  const [trips, setTrips]     = useState([]);
+  const [stats, setStats]       = useState({});
+  const [trips, setTrips]       = useState([]);
   const [bookings, setBookings] = useState([]);
-  const [buses, setBuses]     = useState([]);
+  const [buses, setBuses]       = useState([]);
   const [settings, setSettings] = useState({ cancel_rate:20, phone:'', email:'', address:'', logo_url:'' });
-  const [loading, setLoading] = useState(true);
-  const [toast, setToast]     = useState(null);
+  const [loading, setLoading]   = useState(true);
+  const [toast, setToast]       = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
   const [busModal, setBusModal]   = useState(false);
   const [tripModal, setTripModal] = useState(false);
@@ -119,7 +199,11 @@ export default function AgencyDashboard() {
         axios.get(`${API}/agency/buses`,    { headers }),
         axios.get(`${API}/agency/settings`, { headers }),
       ]);
-      setStats(s.data); setTrips(t.data); setBookings(b.data); setBuses(bs.data); setSettings(se.data);
+      setStats(s.data);
+      setTrips(Array.isArray(t.data) ? t.data : []);
+      setBookings(Array.isArray(b.data) ? b.data : []);
+      setBuses(Array.isArray(bs.data) ? bs.data : []);
+      setSettings(se.data);
     } catch(e) {
       if (e.response?.status===401) { localStorage.clear(); navigate('/login'); }
       else err('Erreur de chargement');
@@ -374,26 +458,15 @@ export default function AgencyDashboard() {
 
           {/* SETTINGS */}
           {tab==='settings' && <div style={{ maxWidth:540 }}>
-            {/* Logo actuel */}
+
+            {/* ✅ LOGO UPLOAD LOCAL */}
             <div className="glass p-16 fade-in" style={{ marginBottom:12 }}>
               <div className="section-title">🖼️ Logo de l'agence</div>
-              <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
-                <AgencyAvatar name={agencyName} logoUrl={settings.logo_url} size={72} radius={16} />
-                <div style={{ flex:1 }}>
-                  <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
-                  <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5 }}>
-                    {settings.logo_url ? '✓ Logo personnalisé configuré' : 'Aucun logo — initiales affichées par défaut'}
-                  </div>
-                </div>
-              </div>
-              <Inp label="URL du logo (lien direct vers une image)">
-                <input className="input-field" placeholder="https://monsite.cd/logo.png" value={settings.logo_url||''} onChange={e => setSettings({...settings, logo_url:e.target.value})} />
-              </Inp>
-              {settings.logo_url && (
-                <div style={{ marginTop:8, fontSize:11, color:'var(--muted)' }}>
-                  Aperçu → <img src={settings.logo_url} alt="" style={{ height:32, verticalAlign:'middle', borderRadius:6, marginLeft:4 }} onError={e => e.target.style.display='none'} />
-                </div>
-              )}
+              <LogoUploader
+                currentLogo={settings.logo_url}
+                agencyName={agencyName}
+                onChange={val => setSettings({...settings, logo_url: val})}
+              />
             </div>
 
             <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
@@ -427,12 +500,18 @@ export default function AgencyDashboard() {
             </div>
 
             <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13 }} disabled={savingSettings}
-              onClick={async () => { setSavingSettings(true); try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés ✓'); } catch(e) { err(e.response?.data?.error||'Erreur'); } finally { setSavingSettings(false); } }}>
+              onClick={async () => {
+                setSavingSettings(true);
+                try {
+                  await axios.patch(`${API}/agency/settings`, settings, { headers });
+                  ok('Paramètres sauvegardés ✓');
+                } catch(e) { err(e.response?.data?.error||'Erreur'); }
+                finally { setSavingSettings(false); }
+              }}>
               {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : '💾 Sauvegarder'}
             </button>
           </div>}
-          </>
-        }
+        </>}
       </main>
 
       {/* ── MODALS ── */}

@@ -11,14 +11,15 @@ function genRef() {
 router.get('/trips', (req, res) => {
   const { from, to, date } = req.query;
   const db = getDb();
-  let q = `SELECT t.*, a.agency_name, a.logo_url agency_logo, a.phone agency_phone
+  let q = `SELECT t.*, a.agency_name, a.logo_url agency_logo, a.phone agency_phone, a.premium, a.premium_order
            FROM trips t JOIN agencies a ON t.agency_id = a.id
            WHERE t.available_seats > 0 AND t.is_active = 1 AND a.is_active = 1`;
   const p = [];
   if (from) { q += ' AND LOWER(t.departure_city) LIKE ?'; p.push('%' + from.toLowerCase() + '%'); }
   if (to)   { q += ' AND LOWER(t.arrival_city) LIKE ?';   p.push('%' + to.toLowerCase() + '%'); }
   if (date) { q += ' AND t.departure_date = ?';            p.push(date); }
-  q += ' ORDER BY t.price ASC, t.departure_time ASC';
+  // ✅ Classement : premium d'abord (par ordre admin), puis prix croissant
+  q += ' ORDER BY a.premium DESC, a.premium_order ASC, t.price ASC, t.departure_time ASC';
   try { res.json(db.prepare(q).all(...p)); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -60,7 +61,6 @@ router.post('/pay', async (req, res) => {
   if (!booking) return res.status(404).json({ error: 'Réservation introuvable' });
   if (booking.payment_status === 'completed') return res.status(400).json({ error: 'Déjà payée' });
 
-  // ── Calcul de la commission ──────────────────────────────────
   const rate = booking.commission_rate || 10;
   const commission_amount = Math.round(booking.total_price * rate / 100);
   const net_agency = booking.total_price - commission_amount;
@@ -68,10 +68,8 @@ router.post('/pay', async (req, res) => {
   let txId = null;
 
   if (payment_method === 'cash') {
-    // Espèces : confirmé immédiatement, commission enregistrée
     txId = 'CASH-' + Date.now();
   } else {
-    // Mobile Money → appel MaishaPay
     if (!operator || !phone_number) return res.status(400).json({ error: 'Opérateur et numéro requis' });
     const isLive = process.env.MAISHAPAY_MODE === 'live';
     const payload = {
@@ -105,7 +103,6 @@ router.post('/pay', async (req, res) => {
     }
   }
 
-  // ── Enregistrement avec commission ───────────────────────────
   try {
     runTransaction(db, () => {
       db.prepare(`UPDATE bookings SET
