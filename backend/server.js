@@ -19,15 +19,13 @@ const ALLOWED_ORIGINS = [
 ];
 
 app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin) return callback(null, true); // Postman / mobile
-    const ok = ALLOWED_ORIGINS.some(o =>
-      typeof o === 'string' ? o === origin : o.test(origin)
-    );
-    callback(ok ? null : new Error('CORS bloqué'), ok);
-  },
-  credentials: true,
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization'],
+  credentials: false
 }));
+
+app.options('*', cors());
 
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
