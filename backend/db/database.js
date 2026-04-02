@@ -52,12 +52,6 @@ function importDatabase(data) {
   });
 }
 
-function addMinutes(time, mins) {
-  const [h, m] = time.split(':').map(Number);
-  const total = h * 60 + m + mins;
-  return `${String(Math.floor(total/60)%24).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
-}
-
 function initDatabase() {
   const db = getDb();
 
@@ -71,10 +65,9 @@ function initDatabase() {
       password TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, logo_url TEXT,
       commission_rate REAL DEFAULT 10, cancel_rate REAL DEFAULT 20,
       is_active INTEGER DEFAULT 1,
-      premium INTEGER DEFAULT 0,
-      premium_order INTEGER DEFAULT 999,
-      premium_photo_url TEXT,
-      premium_caption TEXT,
+      premium INTEGER DEFAULT 0, premium_order INTEGER DEFAULT 999,
+      premium_photo_url TEXT, premium_caption TEXT,
+      note INTEGER DEFAULT 3,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
     CREATE TABLE IF NOT EXISTS buses (
@@ -115,7 +108,6 @@ function initDatabase() {
     );
   `);
 
-  // Migrations silencieuses
   [
     "ALTER TABLE bookings ADD COLUMN commission_rate REAL DEFAULT 10",
     "ALTER TABLE bookings ADD COLUMN commission_amount REAL DEFAULT 0",
@@ -125,9 +117,9 @@ function initDatabase() {
     "ALTER TABLE agencies ADD COLUMN premium_order INTEGER DEFAULT 999",
     "ALTER TABLE agencies ADD COLUMN premium_photo_url TEXT",
     "ALTER TABLE agencies ADD COLUMN premium_caption TEXT",
+    "ALTER TABLE agencies ADD COLUMN note INTEGER DEFAULT 3",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
-  // ── SUPER ADMIN UNIQUEMENT ── zéro donnée de démo
   if (!db.prepare('SELECT id FROM admins WHERE username=?').get('superadmin')) {
     db.prepare('INSERT INTO admins (id,username,password) VALUES (?,?,?)')
       .run(uuidv4(), 'superadmin', bcrypt.hashSync('Admin@2024!', 10));
@@ -137,7 +129,7 @@ function initDatabase() {
   if (!db.prepare("SELECT key FROM settings WHERE key='commission_rate'").get())
     db.prepare("INSERT INTO settings (key,value) VALUES ('commission_rate','10')").run();
 
-  console.log('✅ Base de données Nzela prête — application vierge');
+  console.log('✅ Base de données Nzela prête');
 }
 
-module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase, addMinutes };
+module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase };

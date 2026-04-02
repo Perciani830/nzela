@@ -19,11 +19,11 @@ function Toast({ msg, type, onClose }) {
 function Logo() {
   return (
     <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-      <div style={{ width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#F5A623,#E8860A)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', boxShadow:'0 3px 8px rgba(245,166,35,0.35)' }}>
+      <div style={{ width:30, height:30, borderRadius:8, background:'linear-gradient(135deg,#F5A623,#E8860A)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
         <img src="/logo.png" alt="" style={{ width:21, objectFit:'contain' }} />
       </div>
       <div>
-        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, background:'linear-gradient(90deg,#fff,#F5A623)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', letterSpacing:'-0.02em' }}>nzela</div>
+        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, background:'linear-gradient(90deg,#fff,#F5A623)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent' }}>nzela</div>
         <div style={{ fontSize:10, color:'var(--muted)' }}>Super Admin</div>
       </div>
     </div>
@@ -44,10 +44,7 @@ function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder'
     <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
       <div className="modal-box" style={{ maxWidth }}>
         <div className="modal-header">
-          <div>
-            <h2>{title}</h2>
-            {subtitle && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{subtitle}</div>}
-          </div>
+          <div><h2>{title}</h2>{subtitle && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{subtitle}</div>}</div>
           <button className="modal-close" onClick={onClose}>×</button>
         </div>
         <div className="modal-body">{children}</div>
@@ -60,28 +57,42 @@ function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder'
   );
 }
 
-// ── CAROUSEL PARTENAIRES ───────────────────────────────────────
+// ── SÉLECTEUR NOTE 1-5 ────────────────────────────────────────
+function NoteSelector({ value, onChange }) {
+  return (
+    <div>
+      <label className="input-label" style={{ display:'block', marginBottom:6 }}>Note agence (influence l'ordre d'apparition)</label>
+      <div style={{ display:'flex', gap:6 }}>
+        {[1,2,3,4,5].map(n => (
+          <button key={n} onClick={() => onChange(n)}
+            style={{ width:38, height:38, borderRadius:8, border:`2px solid ${value===n?'var(--gold)':'var(--border)'}`, background:value===n?'rgba(245,166,35,0.12)':'var(--card)', cursor:'pointer', fontFamily:'var(--font)', fontWeight:700, fontSize:14, color:value===n?'var(--gold)':'var(--muted)', transition:'var(--ease)' }}>
+            {n}
+          </button>
+        ))}
+      </div>
+      <div style={{ fontSize:11, color:'var(--muted)', marginTop:5 }}>
+        {value===5?'⭐⭐⭐⭐⭐ Priorité maximale':value===4?'⭐⭐⭐⭐ Haute priorité':value===3?'⭐⭐⭐ Priorité standard':value===2?'⭐⭐ Basse priorité':'⭐ Priorité minimale'}
+      </div>
+    </div>
+  );
+}
+
+// ── CAROUSEL PARTENAIRES ──────────────────────────────────────
 function PartnersCarousel({ agencies }) {
   const [cur, setCur] = useState(0);
   const timer = useRef(null);
   const n = agencies.length;
   const next = useCallback(() => setCur(c => (c+1) % n), [n]);
   const prev = useCallback(() => setCur(c => (c-1+n) % n), [n]);
-
   useEffect(() => {
     if (n <= 1) return;
     timer.current = setInterval(next, 4500);
     return () => clearInterval(timer.current);
   }, [next, n]);
-
   if (!n) return (
-    <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>
-      🏢 Aucune agence enregistrée
-    </div>
+    <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'24px', textAlign:'center', color:'var(--muted)', fontSize:13 }}>🏢 Aucune agence enregistrée</div>
   );
-
   const go = i => { clearInterval(timer.current); setCur(i); timer.current = setInterval(next, 4500); };
-
   return (
     <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:'var(--r-lg)', padding:'18px 20px' }}>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:14 }}>
@@ -89,12 +100,11 @@ function PartnersCarousel({ agencies }) {
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span className="badge b-o" style={{ fontSize:11 }}>{n} partenaire{n>1?'s':''}</span>
           {n > 1 && <>
-            <button onClick={prev} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, width:26, height:26, cursor:'pointer', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>‹</button>
-            <button onClick={next} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, width:26, height:26, cursor:'pointer', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center' }}>›</button>
+            <button onClick={prev} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, width:26, height:26, cursor:'pointer', color:'var(--muted)', fontSize:13 }}>‹</button>
+            <button onClick={next} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, width:26, height:26, cursor:'pointer', color:'var(--muted)', fontSize:13 }}>›</button>
           </>}
         </div>
       </div>
-
       <div style={{ overflow:'hidden' }}>
         <div style={{ display:'flex', transition:'transform 0.55s cubic-bezier(0.77,0,0.175,1)', transform:`translateX(-${cur*100}%)` }}>
           {agencies.map(ag => (
@@ -103,26 +113,22 @@ function PartnersCarousel({ agencies }) {
                 <div style={{ width:50, height:50, borderRadius:12, background:'rgba(245,166,35,0.1)', border:'1px solid rgba(245,166,35,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:24, flexShrink:0 }}>🏢</div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:16, marginBottom:3 }}>{ag.agency_name}</div>
-                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>@{ag.username} · Commission {ag.commission_rate||10}% · Annulation {ag.cancel_rate||20}%</div>
+                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:4 }}>@{ag.username} · Commission {ag.commission_rate||10}% · Note {'★'.repeat(ag.note||3)}</div>
                   <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                    <span className="badge b-g" style={{ fontSize:11 }}>✓ {ag.confirmed||0} confirmées</span>
-                    {(ag.pending||0) > 0 && <span className="badge b-o" style={{ fontSize:11 }}>⏳ {ag.pending} en attente</span>}
-                    {(ag.cancelled||0) > 0 && <span className="badge b-r" style={{ fontSize:11 }}>✕ {ag.cancelled} annulées</span>}
-                    <span className="badge b-b" style={{ fontSize:11 }}>🚌 {ag.buses||0} bus</span>
+                    <span className="badge b-g" style={{ fontSize:11 }}>✓ {ag.confirmed||0}</span>
+                    {(ag.pending||0) > 0 && <span className="badge b-o" style={{ fontSize:11 }}>⏳ {ag.pending}</span>}
+                    <span className="badge b-b" style={{ fontSize:11 }}>🚌 {ag.buses||0}</span>
                   </div>
                 </div>
                 <div style={{ textAlign:'right', flexShrink:0 }}>
-                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:3 }}>Revenus bruts</div>
-                  <div style={{ fontFamily:'var(--font)', fontSize:17, fontWeight:800, color:'var(--gold)' }}>{Number(ag.revenue||0).toLocaleString('fr-FR')} <span style={{ fontSize:10 }}>FC</span></div>
-                  <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>Commission Nzela</div>
-                  <div style={{ fontFamily:'var(--font)', fontSize:14, fontWeight:700, color:'var(--ok)' }}>+{Number(ag.commission||0).toLocaleString('fr-FR')} FC</div>
+                  <div style={{ fontFamily:'var(--font)', fontSize:17, fontWeight:800, color:'var(--gold)' }}>{Number(ag.revenue||0).toLocaleString('fr-FR')} FC</div>
+                  <div style={{ fontSize:11, color:'var(--ok)' }}>+{Number(ag.commission||0).toLocaleString('fr-FR')} FC</div>
                 </div>
               </div>
             </div>
           ))}
         </div>
       </div>
-
       {n > 1 && (
         <div style={{ display:'flex', gap:5, justifyContent:'center', marginTop:12 }}>
           {agencies.map((_,i) => (
@@ -134,62 +140,79 @@ function PartnersCarousel({ agencies }) {
   );
 }
 
-// ── GALERIE ────────────────────────────────────────────────────
+// ── GALERIE — upload fichier local ────────────────────────────
 function GalleryTab({ toast }) {
   const h = headers();
   const [items, setItems] = useState([]);
   const [showAdd, setShowAdd] = useState(false);
   const [editItem, setEditItem] = useState(null);
   const [form, setForm] = useState({ title:'', description:'', image_url:'', category:'general', sort_order:0 });
+  const [uploading, setUploading] = useState(false);
+  const fileRef = useRef(null);
+  const editFileRef = useRef(null);
   const CATS = ['general','bus','terminal','route','interieur'];
 
-  // ✅ FIX — useEffect propre, sans références hors scope
   const load = async () => {
     try {
       const r = await axios.get(`${API}/admin/gallery`, { headers: h });
       setItems(Array.isArray(r.data) ? r.data : []);
-    } catch {
-      toast('Erreur chargement galerie', 'error');
-    }
+    } catch { toast('Erreur chargement galerie', 'error'); }
   };
-
   useEffect(() => { load(); }, []);
 
+  // Convertit fichier → base64
+  const fileToBase64 = (file) => new Promise((resolve, reject) => {
+    if (!file.type.startsWith('image/')) { reject(new Error('Fichier non image')); return; }
+    if (file.size > 1.5 * 1024 * 1024) { reject(new Error('Image trop lourde (max 1.5 Mo)')); return; }
+    const r = new FileReader();
+    r.onload = ev => resolve(ev.target.result);
+    r.onerror = () => reject(new Error('Erreur lecture'));
+    r.readAsDataURL(file);
+  });
+
+  const handleFileNew = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setUploading(true);
+    try {
+      const b64 = await fileToBase64(file);
+      setForm(f => ({...f, image_url: b64}));
+    } catch(err) { toast(err.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
+  const handleFileEdit = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    setUploading(true);
+    try {
+      const b64 = await fileToBase64(file);
+      setEditItem(ei => ({...ei, image_url: b64}));
+    } catch(err) { toast(err.message, 'error'); }
+    finally { setUploading(false); }
+  };
+
   const doAdd = async () => {
-    if (!form.image_url) return toast("URL de l'image requise", 'error');
-    try {
-      await axios.post(`${API}/admin/gallery`, form, { headers: h });
-      toast('Photo ajoutée ✓', 'success');
-      setShowAdd(false);
-      setForm({ title:'', description:'', image_url:'', category:'general', sort_order:0 });
-      load();
-    } catch(e) { toast(e.response?.data?.error||'Erreur', 'error'); }
+    if (!form.image_url) return toast("Sélectionnez une image", 'error');
+    try { await axios.post(`${API}/admin/gallery`, form, { headers: h }); toast('Photo ajoutée ✓','success'); setShowAdd(false); setForm({ title:'', description:'', image_url:'', category:'general', sort_order:0 }); load(); }
+    catch(e) { toast(e.response?.data?.error||'Erreur','error'); }
   };
-
   const doEdit = async () => {
-    try {
-      await axios.patch(`${API}/admin/gallery/${editItem.id}`, editItem, { headers: h });
-      toast('Modifié ✓', 'success');
-      setEditItem(null);
-      load();
-    } catch(e) { toast(e.response?.data?.error||'Erreur', 'error'); }
+    try { await axios.patch(`${API}/admin/gallery/${editItem.id}`, editItem, { headers: h }); toast('Modifié ✓','success'); setEditItem(null); load(); }
+    catch(e) { toast(e.response?.data?.error||'Erreur','error'); }
   };
-
   const doDelete = async id => {
     if (!confirm('Supprimer cette photo ?')) return;
-    try { await axios.delete(`${API}/admin/gallery/${id}`, { headers: h }); toast('Supprimée', 'info'); load(); }
-    catch { toast('Erreur', 'error'); }
+    try { await axios.delete(`${API}/admin/gallery/${id}`, { headers: h }); toast('Supprimée','info'); load(); }
+    catch { toast('Erreur','error'); }
   };
-
   const toggle = async item => {
     try { await axios.patch(`${API}/admin/gallery/${item.id}`, { is_active: item.is_active?0:1 }, { headers: h }); load(); }
-    catch { toast('Erreur', 'error'); }
+    catch { toast('Erreur','error'); }
   };
 
   return (
     <div>
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:16 }}>
-        <div className="section-title" style={{ margin:0 }}>📸 Photos visibles sur le site public</div>
+        <div className="section-title" style={{ margin:0 }}>📸 Photos du carousel (page d'accueil)</div>
         <button className="btn btn-gold" style={{ fontSize:12, padding:'7px 14px' }} onClick={() => setShowAdd(true)}>+ Ajouter une photo</button>
       </div>
 
@@ -217,17 +240,39 @@ function GalleryTab({ toast }) {
         ))}
         {items.length === 0 && (
           <div style={{ gridColumn:'1/-1', textAlign:'center', padding:'40px', color:'var(--muted)', fontSize:13 }}>
-            📸 Aucune photo. Ajoutez des images pour la galerie du site public.
+            📸 Aucune photo. Ajoutez des images — elles s'afficheront dans le carousel de la page d'accueil.
           </div>
         )}
       </div>
 
+      {/* MODAL AJOUT */}
       {showAdd && (
         <Modal title="📸 Ajouter une photo" onClose={() => setShowAdd(false)} onConfirm={doAdd} confirmLabel="Ajouter →" goldBtn>
-          <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-            <Inp label="URL de l'image *"><input className="input-field" placeholder="https://images.unsplash.com/..." value={form.image_url} onChange={e=>setForm({...form,image_url:e.target.value})} /></Inp>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6 }}>Lien direct vers une image (Unsplash, Imgur, votre hébergeur…)</div>
-            {form.image_url && <div style={{ borderRadius:8, overflow:'hidden', border:'1px solid var(--border)' }}><img src={form.image_url} alt="" style={{ width:'100%', maxHeight:130, objectFit:'cover', display:'block' }} onError={e=>e.target.style.display='none'} /><div style={{ padding:'5px 10px', fontSize:11, color:'var(--muted)', background:'var(--deep)' }}>Aperçu</div></div>}
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+
+            {/* ✅ Upload fichier local */}
+            <div>
+              <label className="input-label" style={{ display:'block', marginBottom:6 }}>Image *</label>
+              <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFileNew} />
+
+              {form.image_url ? (
+                <div style={{ position:'relative', borderRadius:10, overflow:'hidden', border:'1px solid var(--border)', marginBottom:8 }}>
+                  <img src={form.image_url} alt="" style={{ width:'100%', maxHeight:160, objectFit:'cover', display:'block' }} />
+                  <button onClick={() => setForm(f=>({...f,image_url:''}))}
+                    style={{ position:'absolute', top:6, right:6, background:'rgba(240,80,80,0.8)', border:'none', borderRadius:6, padding:'3px 8px', color:'#fff', cursor:'pointer', fontSize:11 }}>
+                    Changer
+                  </button>
+                </div>
+              ) : (
+                <button onClick={() => fileRef.current?.click()} disabled={uploading}
+                  style={{ width:'100%', padding:'20px', border:'2px dashed var(--border)', borderRadius:10, background:'var(--card)', cursor:'pointer', color:'var(--muted)', fontSize:13, display:'flex', flexDirection:'column', alignItems:'center', gap:6 }}>
+                  <span style={{ fontSize:28 }}>📁</span>
+                  <span>{uploading ? '⏳ Chargement…' : 'Cliquez pour choisir une image'}</span>
+                  <span style={{ fontSize:11 }}>JPG, PNG, WebP · Max 1.5 Mo</span>
+                </button>
+              )}
+            </div>
+
             <Inp label="Titre"><input className="input-field" placeholder="Bus Trans David" value={form.title} onChange={e=>setForm({...form,title:e.target.value})} /></Inp>
             <Inp label="Description"><input className="input-field" placeholder="Notre flotte moderne" value={form.description} onChange={e=>setForm({...form,description:e.target.value})} /></Inp>
             <div className="grid-2">
@@ -238,15 +283,27 @@ function GalleryTab({ toast }) {
         </Modal>
       )}
 
+      {/* MODAL ÉDITION */}
       {editItem && (
         <Modal title="✏️ Modifier la photo" onClose={() => setEditItem(null)} onConfirm={doEdit} confirmLabel="💾 Sauvegarder" goldBtn>
-          <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-            <Inp label="URL"><input className="input-field" value={editItem.image_url||''} onChange={e=>setEditItem({...editItem,image_url:e.target.value})} /></Inp>
-            {editItem.image_url && <div style={{ borderRadius:8, overflow:'hidden', border:'1px solid var(--border)' }}><img src={editItem.image_url} alt="" style={{ width:'100%', maxHeight:120, objectFit:'cover', display:'block' }} onError={e=>e.target.style.display='none'} /></div>}
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div>
+              <label className="input-label" style={{ display:'block', marginBottom:6 }}>Image</label>
+              <input ref={editFileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFileEdit} />
+              {editItem.image_url && (
+                <div style={{ position:'relative', borderRadius:10, overflow:'hidden', border:'1px solid var(--border)', marginBottom:8 }}>
+                  <img src={editItem.image_url} alt="" style={{ width:'100%', maxHeight:140, objectFit:'cover', display:'block' }} />
+                  <button onClick={() => editFileRef.current?.click()}
+                    style={{ position:'absolute', top:6, right:6, background:'rgba(6,15,26,0.8)', border:'1px solid var(--border)', borderRadius:6, padding:'3px 8px', color:'#fff', cursor:'pointer', fontSize:11 }}>
+                    📁 Changer
+                  </button>
+                </div>
+              )}
+            </div>
             <Inp label="Titre"><input className="input-field" value={editItem.title||''} onChange={e=>setEditItem({...editItem,title:e.target.value})} /></Inp>
             <Inp label="Description"><input className="input-field" value={editItem.description||''} onChange={e=>setEditItem({...editItem,description:e.target.value})} /></Inp>
             <div className="grid-2">
-              <Inp label="Catégorie"><select className="input-field" value={editItem.category||'general'} onChange={e=>setEditItem({...editItem,category:e.target.value})}>{['general','bus','terminal','route','interieur'].map(c=><option key={c}>{c}</option>)}</select></Inp>
+              <Inp label="Catégorie"><select className="input-field" value={editItem.category||'general'} onChange={e=>setEditItem({...editItem,category:e.target.value})}>{CATS.map(c=><option key={c}>{c}</option>)}</select></Inp>
               <Inp label="Ordre"><input className="input-field" type="number" min="0" value={editItem.sort_order||0} onChange={e=>setEditItem({...editItem,sort_order:parseInt(e.target.value)||0})} /></Inp>
             </div>
           </div>
@@ -256,7 +313,7 @@ function GalleryTab({ toast }) {
   );
 }
 
-// ── MAIN ───────────────────────────────────────────────────────
+// ── MAIN ──────────────────────────────────────────────────────
 export default function AdminDashboard() {
   const navigate = useNavigate();
   const h = headers();
@@ -268,7 +325,9 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [toast, setToast] = useState(null);
   const [showNewAg, setShowNewAg] = useState(false);
-  const [agForm, setAgForm] = useState({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10, cancel_rate:20 });
+  const [editAgency, setEditAgency] = useState(null);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [agForm, setAgForm] = useState({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10, cancel_rate:20, note:3 });
 
   const msg = (text, type='info') => setToast({ msg:text, type });
 
@@ -287,24 +346,37 @@ export default function AdminDashboard() {
       setAgencies(Array.isArray(ag.data) ? ag.data : []);
     } catch(e) {
       if (e.response?.status === 401) { localStorage.clear(); navigate('/login'); }
-      else msg('Erreur de chargement — vérifiez que le backend tourne', 'error');
+      else msg('Erreur de chargement', 'error');
     } finally { setLoading(false); }
   };
   useEffect(() => { load(); }, []);
 
+  const [rev, setRev] = useState(null);
+  const [revLoading, setRevLoading] = useState(false);
+  const [revPeriod, setRevPeriod] = useState(() => {
+    const now = new Date(); const day = now.getDay();
+    const diffLun = day===0?-6:1-day;
+    const lundi = new Date(now); lundi.setDate(now.getDate()+diffLun);
+    const dimanche = new Date(lundi); dimanche.setDate(lundi.getDate()+6);
+    return { from: lundi.toISOString().split('T')[0], to: dimanche.toISOString().split('T')[0] };
+  });
+
   const loadReversements = async (period) => {
     const p = period || revPeriod;
     setRevLoading(true);
-    try {
-      const r = await axios.get(`${API}/admin/reversements?from=${p.from}&to=${p.to}`, { headers:h });
-      setRev(r.data);
-    } catch(e) { msg('Erreur chargement reversements', 'error'); }
+    try { const r = await axios.get(`${API}/admin/reversements?from=${p.from}&to=${p.to}`, { headers:h }); setRev(r.data); }
+    catch { msg('Erreur chargement reversements', 'error'); }
     finally { setRevLoading(false); }
   };
 
   const doCreateAg = async () => {
     if (!agForm.agency_name || !agForm.username || !agForm.password) return msg('Nom, identifiant et mot de passe requis', 'error');
-    try { await axios.post(`${API}/admin/agencies`, agForm, { headers:h }); msg('Agence créée 🎉','success'); setShowNewAg(false); setAgForm({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10, cancel_rate:20 }); load(); }
+    try { await axios.post(`${API}/admin/agencies`, agForm, { headers:h }); msg('Agence créée 🎉','success'); setShowNewAg(false); setAgForm({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10, cancel_rate:20, note:3 }); load(); }
+    catch(e) { msg(e.response?.data?.error||'Erreur','error'); }
+  };
+
+  const doSaveAgency = async () => {
+    try { await axios.patch(`${API}/admin/agencies/${editAgency.id}`, editAgency, { headers:h }); msg('Agence mise à jour ✓','success'); setEditAgency(null); load(); }
     catch(e) { msg(e.response?.data?.error||'Erreur','error'); }
   };
 
@@ -322,50 +394,48 @@ export default function AdminDashboard() {
     { id:'backup',       icon:'💾', label:'Sauvegarde' },
   ];
 
-  // ── REVERSEMENTS ──
-  const [rev, setRev] = useState(null);
-  const [revLoading, setRevLoading] = useState(false);
-  const [revPeriod, setRevPeriod] = useState(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const diffLun = day === 0 ? -6 : 1 - day;
-    const lundi = new Date(now); lundi.setDate(now.getDate() + diffLun);
-    const dimanche = new Date(lundi); dimanche.setDate(lundi.getDate() + 6);
-    return { from: lundi.toISOString().split('T')[0], to: dimanche.toISOString().split('T')[0] };
-  });
+  const NavContent = () => (
+    <>
+      <div className="sidebar-logo"><Logo /></div>
+      <div style={{ padding:'10px', borderBottom:'1px solid var(--border)' }}>
+        <div style={{ background:'rgba(245,166,35,0.08)', border:'1px solid rgba(245,166,35,0.15)', borderRadius:10, padding:'10px 12px' }}>
+          <div style={{ fontSize:17, marginBottom:4 }}>👑</div>
+          <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13, color:'var(--gold)' }}>Super Admin</div>
+          <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Accès complet · Nzela RDC</div>
+        </div>
+      </div>
+      <nav className="sidebar-nav">
+        {TABS.map(t => (
+          <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => { setTab(t.id); setSidebarOpen(false); }}>
+            <span className="nav-icon">{t.icon}</span>
+            <span>{t.label}</span>
+          </div>
+        ))}
+      </nav>
+      <div className="sidebar-footer">
+        <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px' }}
+          onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪 Déconnexion</button>
+        <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', marginTop:8 }}>© 2026 Nzela RDC</div>
+      </div>
+    </>
+  );
 
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'var(--night)' }}>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
 
+      {/* Hamburger mobile */}
+      <button className="hamburger" onClick={() => setSidebarOpen(o => !o)}>☰</button>
+
+      {/* Overlay mobile */}
+      <div className={`sidebar-overlay ${sidebarOpen?'open':''}`} onClick={() => setSidebarOpen(false)} />
+
       {/* SIDEBAR */}
-      <aside className="sidebar">
-        <div className="sidebar-logo"><Logo /></div>
-        <div style={{ padding:'10px', borderBottom:'1px solid var(--border)' }}>
-          <div style={{ background:'rgba(245,166,35,0.08)', border:'1px solid rgba(245,166,35,0.15)', borderRadius:10, padding:'10px 12px' }}>
-            <div style={{ fontSize:17, marginBottom:4 }}>👑</div>
-            <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13, color:'var(--gold)' }}>Super Admin</div>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Accès complet · Nzela RDC</div>
-          </div>
-        </div>
-        <nav className="sidebar-nav">
-          {TABS.map(t => (
-            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => setTab(t.id)}>
-              <span className="nav-icon">{t.icon}</span>
-              <span>{t.label}</span>
-            </div>
-          ))}
-        </nav>
-        <div className="sidebar-footer">
-          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px' }}
-            onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪 Déconnexion</button>
-          <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', marginTop:8 }}>© 2026 Nzela RDC</div>
-        </div>
-      </aside>
+      <aside className={`sidebar ${sidebarOpen?'open':''}`}><NavContent /></aside>
 
       {/* MAIN */}
       <main style={{ flex:1, padding:'24px 28px', overflowY:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
           <div>
             <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
               {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
@@ -397,18 +467,16 @@ export default function AdminDashboard() {
                 </div>
               ))}
             </div>
-
             <div className="grid-2" style={{ marginBottom:16 }}>
               <div className="glass p-16" style={{ display:'flex', gap:13, alignItems:'center' }}>
                 <div style={{ width:38, height:38, borderRadius:9, background:'rgba(245,166,35,0.1)', border:'1px solid rgba(245,166,35,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>⏳</div>
-                <div><div style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{stats.pending||0}</div><div style={{ fontSize:11, color:'var(--muted)' }}>En attente de confirmation</div></div>
+                <div><div style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{stats.pending||0}</div><div style={{ fontSize:11, color:'var(--muted)' }}>En attente</div></div>
               </div>
               <div className="glass p-16" style={{ display:'flex', gap:13, alignItems:'center' }}>
                 <div style={{ width:38, height:38, borderRadius:9, background:'rgba(240,80,80,0.1)', border:'1px solid rgba(240,80,80,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:18 }}>✕</div>
                 <div><div style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{stats.cancelled||0}</div><div style={{ fontSize:11, color:'var(--muted)' }}>Annulées</div></div>
               </div>
             </div>
-
             <PartnersCarousel agencies={agStats} />
           </>}
 
@@ -416,23 +484,20 @@ export default function AdminDashboard() {
           {tab==='agencies' && <div style={{ display:'grid', gap:10 }}>
             {agencies.map((ag,i) => (
               <div key={ag.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'13px 18px' }}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
                   <div style={{ display:'flex', alignItems:'center', gap:12 }}>
                     <div style={{ width:40, height:40, borderRadius:10, background:'rgba(245,166,35,0.08)', border:'1px solid rgba(245,166,35,0.15)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', flexShrink:0 }}>
-                      {ag.logo_url
-                        ? <img src={ag.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
-                        : <span style={{ fontSize:19 }}>🏢</span>
-                      }
+                      {ag.logo_url ? <img src={ag.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} /> : <span style={{ fontSize:19 }}>🏢</span>}
                     </div>
                     <div>
                       <div style={{ fontFamily:'var(--font)', fontSize:14, fontWeight:700 }}>{ag.agency_name}</div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>@{ag.username}{ag.email&&` · ${ag.email}`}{ag.phone&&` · ${ag.phone}`}</div>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>Commission {ag.commission_rate||10}% · Annulation {ag.cancel_rate||20}%</div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>@{ag.username} · Commission {ag.commission_rate||10}%</div>
+                      <div style={{ fontSize:11, color:'var(--gold)', marginTop:1 }}>{'★'.repeat(ag.note||3)}{'☆'.repeat(5-(ag.note||3))} Note {ag.note||3}/5</div>
                     </div>
                   </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    {ag.premium===1 && <span className="badge b-o" style={{ fontSize:11 }}>⭐ Premium #{ag.premium_order}</span>}
+                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                     <span className={`badge ${ag.is_active?'b-g':'b-r'}`}>{ag.is_active?'✓ Active':'⛔ Inactive'}</span>
+                    <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 11px' }} onClick={() => setEditAgency({...ag, note: ag.note||3})}>✏️ Modifier</button>
                     <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 11px' }} onClick={() => toggleAg(ag.id, ag.is_active)}>{ag.is_active?'Désactiver':'Activer'}</button>
                   </div>
                 </div>
@@ -452,7 +517,7 @@ export default function AdminDashboard() {
                         <td><code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
                         <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
                         <td style={{ fontWeight:600, fontSize:13 }}>{b.agency_name}</td>
-                        <td><div style={{ fontSize:13 }}>{b.departure_city} → {b.arrival_city}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')}</div></td>
+                        <td><div>{b.departure_city} → {b.arrival_city}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')}</div></td>
                         <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
                         <td style={{ color:'var(--ok)', fontWeight:700 }}>+{Number(b.commission_amount||0).toLocaleString('fr-FR')} FC</td>
                         <td><span className={`badge ${b.status==='confirmed'?'b-g':b.status==='cancelled'?'b-r':'b-o'}`}>{b.status==='confirmed'?'Confirmé':b.status==='cancelled'?'Annulé':'En attente'}</span></td>
@@ -468,152 +533,79 @@ export default function AdminDashboard() {
             <div>
               <div className="glass p-16 fade-in" style={{ marginBottom:16, display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                 <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>📅 Période</div>
-                <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                  <input className="input-field" type="date" value={revPeriod.from}
-                    onChange={e => setRevPeriod(p => ({...p, from:e.target.value}))}
-                    style={{ width:150, padding:'7px 10px', fontSize:13 }} />
-                  <span style={{ color:'var(--muted)', fontSize:13 }}>→</span>
-                  <input className="input-field" type="date" value={revPeriod.to}
-                    onChange={e => setRevPeriod(p => ({...p, to:e.target.value}))}
-                    style={{ width:150, padding:'7px 10px', fontSize:13 }} />
+                <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                  <input className="input-field" type="date" value={revPeriod.from} onChange={e => setRevPeriod(p => ({...p, from:e.target.value}))} style={{ width:150, padding:'7px 10px', fontSize:13 }} />
+                  <span style={{ color:'var(--muted)' }}>→</span>
+                  <input className="input-field" type="date" value={revPeriod.to} onChange={e => setRevPeriod(p => ({...p, to:e.target.value}))} style={{ width:150, padding:'7px 10px', fontSize:13 }} />
                 </div>
-                <button className="btn btn-gold" style={{ fontSize:12, padding:'7px 16px' }}
-                  onClick={() => loadReversements(revPeriod)}>
-                  🔍 Calculer
-                </button>
-                <div style={{ display:'flex', gap:6, marginLeft:'auto' }}>
+                <button className="btn btn-gold" style={{ fontSize:12, padding:'7px 16px' }} onClick={() => loadReversements(revPeriod)}>🔍 Calculer</button>
+                <div style={{ display:'flex', gap:6, marginLeft:'auto', flexWrap:'wrap' }}>
                   {[
-                    { label:'Cette semaine', fn: () => {
-                      const now = new Date();
-                      const diff = now.getDay()===0?-6:1-now.getDay();
-                      const lun = new Date(now); lun.setDate(now.getDate()+diff);
-                      const dim = new Date(lun); dim.setDate(lun.getDate()+6);
-                      return { from:lun.toISOString().split('T')[0], to:dim.toISOString().split('T')[0] };
-                    }},
-                    { label:'Semaine passée', fn: () => {
-                      const now = new Date();
-                      const diff = now.getDay()===0?-6:1-now.getDay();
-                      const lun = new Date(now); lun.setDate(now.getDate()+diff-7);
-                      const dim = new Date(lun); dim.setDate(lun.getDate()+6);
-                      return { from:lun.toISOString().split('T')[0], to:dim.toISOString().split('T')[0] };
-                    }},
-                    { label:'Ce mois', fn: () => {
-                      const now = new Date();
-                      const from = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                      const to   = new Date(now.getFullYear(), now.getMonth()+1, 0).toISOString().split('T')[0];
-                      return { from, to };
-                    }},
+                    { label:'Cette semaine', fn: () => { const now=new Date(),diff=now.getDay()===0?-6:1-now.getDay(),lun=new Date(now),dim=new Date(lun); lun.setDate(now.getDate()+diff); dim.setDate(lun.getDate()+6); return {from:lun.toISOString().split('T')[0],to:dim.toISOString().split('T')[0]}; }},
+                    { label:'Semaine passée', fn: () => { const now=new Date(),diff=now.getDay()===0?-6:1-now.getDay(),lun=new Date(now),dim=new Date(lun); lun.setDate(now.getDate()+diff-7); dim.setDate(lun.getDate()+6); return {from:lun.toISOString().split('T')[0],to:dim.toISOString().split('T')[0]}; }},
+                    { label:'Ce mois', fn: () => { const now=new Date(); return {from:new Date(now.getFullYear(),now.getMonth(),1).toISOString().split('T')[0],to:new Date(now.getFullYear(),now.getMonth()+1,0).toISOString().split('T')[0]}; }},
                   ].map(btn => (
                     <button key={btn.label} className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }}
-                      onClick={() => { const p = btn.fn(); setRevPeriod(p); loadReversements(p); }}>
-                      {btn.label}
-                    </button>
+                      onClick={() => { const p=btn.fn(); setRevPeriod(p); loadReversements(p); }}>{btn.label}</button>
                   ))}
                 </div>
               </div>
-
-              {revLoading && <div style={{ textAlign:'center', padding:'40px' }}><div className="spinner" style={{ width:32,height:32,margin:'0 auto',borderWidth:2.5 }}/></div>}
-
+              {revLoading && <div style={{ textAlign:'center', padding:'40px' }}><div className="spinner" style={{ width:32,height:32,margin:'0 auto' }}/></div>}
               {rev && !revLoading && (
                 <>
                   <div className="grid-3" style={{ marginBottom:16 }}>
                     {[
-                      { label:'Revenus bruts totaux',    value:rev.totaux.total_brut,       color:'#F5A623' },
-                      { label:'Commissions Nzela',        value:rev.totaux.total_commission,  color:'var(--green-l)' },
-                      { label:'Total à reverser',         value:rev.totaux.total_a_reverser,  color:'#7EC8E3' },
+                      { label:'Revenus bruts', value:rev.totaux.total_brut, color:'#F5A623' },
+                      { label:'Commissions Nzela', value:rev.totaux.total_commission, color:'var(--green-l)' },
+                      { label:'Total à reverser', value:rev.totaux.total_a_reverser, color:'#7EC8E3' },
                     ].map((s,i) => (
-                      <div key={i} className="glass fade-in" style={{ padding:'16px 18px', animationDelay:`${i*0.06}s` }}>
+                      <div key={i} className="glass fade-in p-16">
                         <div style={{ fontSize:11, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', fontWeight:700, marginBottom:6 }}>{s.label}</div>
-                        <div style={{ fontFamily:'var(--font)', fontSize:22, fontWeight:800, color:s.color }}>
-                          {Number(s.value).toLocaleString('fr-FR')} <span style={{ fontSize:12, fontWeight:500 }}>FC</span>
-                        </div>
+                        <div style={{ fontFamily:'var(--font)', fontSize:22, fontWeight:800, color:s.color }}>{Number(s.value).toLocaleString('fr-FR')} <span style={{ fontSize:12 }}>FC</span></div>
                       </div>
                     ))}
                   </div>
-
-                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
-                    📅 Période : <strong style={{ color:'var(--text)' }}>
-                      {new Date(rev.period.from).toLocaleDateString('fr-FR',{day:'numeric',month:'long'})}
-                      {' → '}
-                      {new Date(rev.period.to).toLocaleDateString('fr-FR',{day:'numeric',month:'long',year:'numeric'})}
-                    </strong>
-                  </div>
-
                   <div style={{ display:'grid', gap:12 }}>
-                    {rev.agencies.map((ag, i) => (
-                      <div key={ag.id} className="glass fade-in" style={{ animationDelay:`${i*0.07}s`, overflow:'hidden' }}>
-                        <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom: ag.confirmed>0 ? '1px solid var(--border)' : 'none' }}>
+                    {rev.agencies.map((ag,i) => (
+                      <div key={ag.id} className="glass fade-in" style={{ overflow:'hidden' }}>
+                        <div style={{ padding:'14px 18px', display:'flex', alignItems:'center', justifyContent:'space-between', borderBottom:ag.confirmed>0?'1px solid var(--border)':'none', flexWrap:'wrap', gap:8 }}>
                           <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                            <div style={{ width:38, height:38, borderRadius:10, background:'rgba(245,166,35,0.1)', border:'1px solid rgba(245,166,35,0.18)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden', flexShrink:0 }}>
-                              {ag.logo_url
-                                ? <img src={ag.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>e.target.style.display='none'} />
-                                : <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, color:'var(--gold)' }}>{ag.agency_name[0]}</span>
-                              }
+                            <div style={{ width:38, height:38, borderRadius:10, background:'rgba(245,166,35,0.1)', display:'flex', alignItems:'center', justifyContent:'center', overflow:'hidden' }}>
+                              {ag.logo_url ? <img src={ag.logo_url} alt="" style={{ width:'100%', height:'100%', objectFit:'cover' }} /> : <span style={{ fontWeight:800, color:'var(--gold)' }}>{ag.agency_name[0]}</span>}
                             </div>
                             <div>
                               <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>{ag.agency_name}</div>
-                              <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>{ag.phone || ag.username}</div>
+                              <div style={{ fontSize:11, color:'var(--muted)' }}>{ag.phone||ag.username}</div>
                             </div>
                           </div>
-                          {ag.confirmed === 0
-                            ? <span className="badge b-r" style={{ fontSize:11 }}>Aucune réservation</span>
+                          {ag.confirmed===0
+                            ? <span className="badge b-r">Aucune réservation</span>
                             : <div style={{ textAlign:'right' }}>
-                                <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em' }}>À reverser</div>
+                                <div style={{ fontSize:10, color:'var(--muted)' }}>À reverser</div>
                                 <div style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800, color:'#7EC8E3' }}>{Number(ag.a_reverser).toLocaleString('fr-FR')} FC</div>
                               </div>
                           }
                         </div>
                         {ag.confirmed > 0 && (
-                          <div style={{ padding:'12px 18px', background:'rgba(255,255,255,0.015)' }}>
-                            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr 1fr', gap:12, marginBottom:12 }}>
+                          <div style={{ padding:'12px 18px' }}>
+                            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(120px,1fr))', gap:10, marginBottom:12 }}>
                               {[
-                                { label:'Réservations confirmées', value:ag.confirmed, color:'var(--text)', unit:'' },
+                                { label:'Confirmées', value:ag.confirmed, color:'var(--text)', unit:'' },
                                 { label:'Revenus bruts', value:Number(ag.revenue_brut).toLocaleString('fr-FR'), color:'var(--gold)', unit:' FC' },
-                                { label:`Commission Nzela (${ag.commission_rate}%)`, value:Number(ag.commission).toLocaleString('fr-FR'), color:'var(--green-l)', unit:' FC' },
-                                { label:"À reverser à l'agence", value:Number(ag.a_reverser).toLocaleString('fr-FR'), color:'#7EC8E3', unit:' FC' },
-                              ].map((item, j) => (
+                                { label:`Commission (${ag.commission_rate}%)`, value:Number(ag.commission).toLocaleString('fr-FR'), color:'var(--green-l)', unit:' FC' },
+                                { label:'À reverser', value:Number(ag.a_reverser).toLocaleString('fr-FR'), color:'#7EC8E3', unit:' FC' },
+                              ].map((item,j) => (
                                 <div key={j} style={{ background:'var(--card)', borderRadius:8, padding:'10px 12px', border:'1px solid var(--border)' }}>
-                                  <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4, fontWeight:600, textTransform:'uppercase', letterSpacing:'0.06em' }}>{item.label}</div>
-                                  <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:item.color }}>{item.value}{item.unit}</div>
+                                  <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4, fontWeight:600, textTransform:'uppercase' }}>{item.label}</div>
+                                  <div style={{ fontFamily:'var(--font)', fontSize:15, fontWeight:800, color:item.color }}>{item.value}{item.unit}</div>
                                 </div>
                               ))}
                             </div>
-                            {ag.bookings.length > 0 && (
-                              <details style={{ marginTop:4 }}>
-                                <summary style={{ fontSize:12, color:'var(--muted)', cursor:'pointer', userSelect:'none', padding:'4px 0' }}>
-                                  📋 Voir les {ag.bookings.length} réservation{ag.bookings.length>1?'s':''} de la période
-                                </summary>
-                                <div style={{ marginTop:10, overflowX:'auto' }}>
-                                  <table className="data-table" style={{ fontSize:12 }}>
-                                    <thead><tr><th>Référence</th><th>Passager</th><th>Trajet</th><th>Date</th><th>Montant</th><th>Commission</th></tr></thead>
-                                    <tbody>{ag.bookings.map(b => (
-                                      <tr key={b.id}>
-                                        <td><code style={{ background:'var(--green-bg)', padding:'1px 6px', borderRadius:4, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
-                                        <td>{b.passenger_name}</td>
-                                        <td>{b.departure_city} → {b.arrival_city}</td>
-                                        <td style={{ color:'var(--muted)' }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')}</td>
-                                        <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
-                                        <td style={{ color:'var(--green-l)' }}>-{Number(b.commission_amount||0).toLocaleString('fr-FR')} FC</td>
-                                      </tr>
-                                    ))}</tbody>
-                                  </table>
-                                </div>
-                              </details>
-                            )}
-                            <div style={{ marginTop:12, display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'rgba(126,200,227,0.06)', border:'1px solid rgba(126,200,227,0.15)', borderRadius:9 }}>
-                              <span style={{ fontSize:16 }}>💳</span>
-                              <div style={{ flex:1, fontSize:12, color:'var(--muted)' }}>
-                                Reverser <strong style={{ color:'#7EC8E3' }}>{Number(ag.a_reverser).toLocaleString('fr-FR')} FC</strong> à <strong style={{ color:'var(--text)' }}>{ag.agency_name}</strong>
-                                {ag.phone && <span> ({ag.phone})</span>}
-                              </div>
+                            <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 12px', background:'rgba(126,200,227,0.06)', border:'1px solid rgba(126,200,227,0.15)', borderRadius:9, flexWrap:'wrap' }}>
+                              <span>💳</span>
+                              <div style={{ flex:1, fontSize:12, color:'var(--muted)' }}>Reverser <strong style={{ color:'#7EC8E3' }}>{Number(ag.a_reverser).toLocaleString('fr-FR')} FC</strong> à <strong style={{ color:'var(--text)' }}>{ag.agency_name}</strong>{ag.phone&&` (${ag.phone})`}</div>
                               <button className="btn" style={{ background:'rgba(126,200,227,0.15)', border:'1px solid rgba(126,200,227,0.3)', color:'#7EC8E3', fontSize:11, padding:'6px 12px', borderRadius:7 }}
-                                onClick={() => {
-                                  const txt = `Nzela — Reversement ${rev.period.from} au ${rev.period.to}\n${ag.agency_name} : ${Number(ag.a_reverser).toLocaleString('fr-FR')} FC\n(${ag.confirmed} réservations · Commission ${ag.commission_rate}% déduite)`;
-                                  navigator.clipboard.writeText(txt);
-                                  msg('Détails copiés ✓', 'success');
-                                }}>
-                                📋 Copier détails
-                              </button>
+                                onClick={() => { navigator.clipboard.writeText(`Nzela — Reversement ${rev.period.from} au ${rev.period.to}\n${ag.agency_name} : ${Number(ag.a_reverser).toLocaleString('fr-FR')} FC\n(${ag.confirmed} réservations · Commission ${ag.commission_rate}%)`); msg('Copié ✓','success'); }}>📋 Copier</button>
                             </div>
                           </div>
                         )}
@@ -622,7 +614,6 @@ export default function AdminDashboard() {
                   </div>
                 </>
               )}
-
               {!rev && !revLoading && (
                 <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
                   <div style={{ fontSize:44, marginBottom:12 }}>💸</div>
@@ -633,10 +624,7 @@ export default function AdminDashboard() {
             </div>
           )}
 
-          {/* GALERIE */}
           {tab==='gallery' && <GalleryTab toast={(text,type) => setToast({msg:text,type})} />}
-
-          {/* SAUVEGARDE */}
           {tab==='backup' && <BackupTab toast={(text,type) => setToast({msg:text,type})} />}
         </>}
       </main>
@@ -655,9 +643,28 @@ export default function AdminDashboard() {
               <Inp label="Téléphone"><input className="input-field" placeholder="+243 81 234 5678" value={agForm.phone} onChange={e=>setAgForm({...agForm,phone:e.target.value})} /></Inp>
             </div>
             <div className="grid-2">
-              <Inp label="Commission plateforme (%)"><input className="input-field" type="number" min="0" max="50" value={agForm.commission_rate} onChange={e=>setAgForm({...agForm,commission_rate:Number(e.target.value)})} /></Inp>
+              <Inp label="Commission (%)"><input className="input-field" type="number" min="0" max="50" value={agForm.commission_rate} onChange={e=>setAgForm({...agForm,commission_rate:Number(e.target.value)})} /></Inp>
               <Inp label="Taux annulation (%)"><input className="input-field" type="number" min="0" max="100" value={agForm.cancel_rate} onChange={e=>setAgForm({...agForm,cancel_rate:Number(e.target.value)})} /></Inp>
             </div>
+            <NoteSelector value={agForm.note} onChange={v => setAgForm({...agForm, note:v})} />
+          </div>
+        </Modal>
+      )}
+
+      {/* Modal édition agence */}
+      {editAgency && (
+        <Modal title={`✏️ Modifier — ${editAgency.agency_name}`} onClose={() => setEditAgency(null)} onConfirm={doSaveAgency} confirmLabel="💾 Sauvegarder" goldBtn maxWidth={500}>
+          <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+            <Inp label="Nom de l'agence"><input className="input-field" value={editAgency.agency_name||''} onChange={e=>setEditAgency({...editAgency,agency_name:e.target.value})} /></Inp>
+            <div className="grid-2">
+              <Inp label="Email"><input className="input-field" value={editAgency.email||''} onChange={e=>setEditAgency({...editAgency,email:e.target.value})} /></Inp>
+              <Inp label="Téléphone"><input className="input-field" value={editAgency.phone||''} onChange={e=>setEditAgency({...editAgency,phone:e.target.value})} /></Inp>
+            </div>
+            <div className="grid-2">
+              <Inp label="Commission (%)"><input className="input-field" type="number" min="0" max="50" value={editAgency.commission_rate||10} onChange={e=>setEditAgency({...editAgency,commission_rate:Number(e.target.value)})} /></Inp>
+              <Inp label="Taux annulation (%)"><input className="input-field" type="number" min="0" max="100" value={editAgency.cancel_rate||20} onChange={e=>setEditAgency({...editAgency,cancel_rate:Number(e.target.value)})} /></Inp>
+            </div>
+            <NoteSelector value={editAgency.note||3} onChange={v => setEditAgency({...editAgency, note:v})} />
           </div>
         </Modal>
       )}

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'https://nzela-production.up.railway.app/api';
-const CITIES = ['Kinshasa', 'Boma', 'Matadi'];
+const CITIES = ['Kinshasa', 'Boma', 'Matadi', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga'];
 
 const SLIDES = [
   { img: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=1200&q=80', title: 'Kinshasa → Boma', sub: 'Le fleuve Congo à ta gauche, la route à tes pieds.', tag: '🛣️ 05h00' },
@@ -69,41 +69,65 @@ function Carousel({ slides }) {
   );
 }
 
+// ── MODAL RÉSERVATION — 4 étapes avec avertissement annulation ──
 function BookingModal({ trip, onClose, showToast, onSuccess }) {
+  // step: 0=Passager, 1=⚠️Avertissement, 2=Paiement, 3=Confirmé
   const [step, setStep] = useState(0);
   const [form, setForm] = useState({ name:'', phone:'', email:'', passengers:1 });
   const [pay, setPay] = useState({ method:'', operator:'', wallet:'' });
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(null);
+  const [warnChecked, setWarnChecked] = useState(false);
   const OPS = [{id:'MPESA',l:'M-Pesa',e:'🔴'},{id:'ORANGE',l:'Orange Money',e:'🟠'},{id:'AIRTEL',l:'Airtel',e:'📶'},{id:'AFRICEL',l:'Africell',e:'🟣'}];
+
+  const cancelRate = trip.agency_cancel_rate || 20;
+  const totalPrice = (trip.price * form.passengers).toLocaleString('fr-FR');
 
   const book = async () => {
     if (!form.name||!form.phone) return showToast('Nom et téléphone requis','error');
     setLoading(true);
-    try { const r = await axios.post(`${API}/public/book`,{trip_id:trip.id,...form}); setBooking(r.data); setStep(1); }
+    try {
+      const r = await axios.post(`${API}/public/book`,{trip_id:trip.id,...form});
+      setBooking(r.data);
+      setStep(1); // → avertissement
+    }
     catch(e) { showToast(e.response?.data?.error||'Erreur','error'); }
     finally { setLoading(false); }
   };
+
   const doPay = async () => {
     if (!pay.method) return showToast('Choisissez un mode','error');
     if (pay.method==='mobilemoney'&&(!pay.operator||!pay.wallet)) return showToast('Opérateur et numéro requis','error');
     setLoading(true);
-    try { await axios.post(`${API}/public/pay`,{booking_id:booking.booking_id,payment_method:pay.method,operator:pay.operator,phone_number:pay.wallet}); setStep(2); onSuccess(); }
+    try {
+      await axios.post(`${API}/public/pay`,{booking_id:booking.booking_id,payment_method:pay.method,operator:pay.operator,phone_number:pay.wallet});
+      setStep(3);
+      onSuccess();
+    }
     catch(e) { showToast(e.response?.data?.error||'Erreur — essayez espèces','error'); }
     finally { setLoading(false); }
   };
+
+  const STEP_LABELS = ['Passager','Conditions','Paiement','Confirmé'];
 
   return (
     <div className="overlay" onClick={e=>e.target===e.currentTarget&&onClose()}>
       <div className="mbox">
         <div className="mhead">
-          <h3>{step===0?'👤 Vos informations':step===1?'💳 Paiement':'✅ Confirmé !'}</h3>
+          <h3>
+            {step===0?'👤 Vos informations'
+            :step===1?'⚠️ Conditions d\'annulation'
+            :step===2?'💳 Paiement'
+            :'✅ Confirmé !'}
+          </h3>
           <button className="mclose" onClick={onClose}>×</button>
         </div>
         <div className="mbody">
-          {step<2 && (
+
+          {/* Steps indicator */}
+          {step < 3 && (
             <div className="steps">
-              {['Passager','Paiement','Confirmé'].map((s,i) => (
+              {STEP_LABELS.slice(0,3).map((s,i) => (
                 <div className="step-item" key={i}>
                   <div className={`sdot ${i<step?'done':i===step?'act':'off'}`}>{i<step?'✓':i+1}</div>
                   {i<2&&<div className={`sline${i<step?' done':''}`}/>}
@@ -111,15 +135,33 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
               ))}
             </div>
           )}
-          {step<2&&(
-            <div style={{background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.15)',borderRadius:10,padding:'9px 12px',marginBottom:12,display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-              <span style={{fontFamily:'var(--font)',fontWeight:700,fontSize:14}}>{trip.departure_city} → {trip.arrival_city}</span>
-              <div style={{textAlign:'right'}}>
-                <div style={{fontFamily:'var(--font)',fontWeight:800,color:'var(--gold)',fontSize:15}}>{(trip.price*form.passengers).toLocaleString('fr-FR')} FC</div>
-                <div style={{fontSize:11,color:'var(--muted)'}}>{trip.agency_name}{trip.bus_name?` · ${trip.bus_name}`:''}</div>
+
+          {/* Résumé trajet */}
+          {step < 3 && (
+            <div style={{background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.15)',borderRadius:10,padding:'10px 14px',marginBottom:14}}>
+              <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:4}}>
+                {/* ✅ Nom agence bien visible */}
+                <div style={{display:'flex',alignItems:'center',gap:8}}>
+                  <div style={{width:32,height:32,borderRadius:8,overflow:'hidden',background:'var(--surface)',border:'1px solid rgba(61,170,106,.2)',display:'flex',alignItems:'center',justifyContent:'center',flexShrink:0}}>
+                    {trip.agency_logo
+                      ? <img src={trip.agency_logo} alt={trip.agency_name} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none';}}/>
+                      : <span style={{fontWeight:800,fontSize:13,color:'var(--green-l)'}}>{trip.agency_name?.[0]?.toUpperCase()}</span>
+                    }
+                  </div>
+                  <div>
+                    <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:15,color:'var(--text)'}}>{trip.agency_name}</div>
+                    <div style={{fontSize:11,color:'var(--muted)'}}>{trip.bus_name ? `🚌 ${trip.bus_name}` : 'Agence partenaire Nzela'}</div>
+                  </div>
+                </div>
+                <div style={{textAlign:'right'}}>
+                  <div style={{fontFamily:'var(--font)',fontWeight:800,color:'var(--gold)',fontSize:16}}>{totalPrice} FC</div>
+                  <div style={{fontSize:11,color:'var(--muted)'}}>{trip.departure_city} → {trip.arrival_city}</div>
+                </div>
               </div>
             </div>
           )}
+
+          {/* ÉTAPE 0 — Informations passager */}
           {step===0&&(
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <div className="input-group"><label className="lbl">Nom complet *</label><input className="field" placeholder="Jean-Baptiste Mukendi" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/></div>
@@ -134,7 +176,64 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
               <div className="input-group"><label className="lbl">Email (optionnel)</label><input className="field" placeholder="jean@exemple.cd" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/></div>
             </div>
           )}
+
+          {/* ✅ ÉTAPE 1 — Avertissement annulation */}
           {step===1&&(
+            <div style={{display:'flex',flexDirection:'column',gap:12}}>
+              <div style={{fontSize:12,color:'var(--muted)',marginBottom:4}}>
+                Réf : <strong style={{color:'var(--green-l)'}}>{booking?.reference}</strong>
+              </div>
+
+              <div style={{background:'rgba(245,166,35,0.06)',border:'1px solid rgba(245,166,35,0.2)',borderRadius:12,padding:14}}>
+                <div style={{fontFamily:'var(--font)',fontWeight:700,fontSize:13,marginBottom:10,color:'var(--gold)'}}>
+                  ⚠️ Politique d'annulation — {trip.agency_name}
+                </div>
+
+                <div style={{display:'flex',flexDirection:'column',gap:8}}>
+                  <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 12px',background:'rgba(240,80,80,0.08)',borderRadius:9,border:'1px solid rgba(240,80,80,0.18)'}}>
+                    <span style={{fontSize:18,flexShrink:0}}>🔴</span>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:'var(--err)',marginBottom:2}}>Annulation le jour du départ</div>
+                      <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>
+                        Vous perdez <strong style={{color:'var(--err)'}}>50%</strong> du montant payé.
+                        <br/>Soit <strong style={{color:'var(--err)'}}>{Math.round(trip.price*form.passengers*0.5).toLocaleString('fr-FR')} FC</strong> non remboursés.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 12px',background:'rgba(245,166,35,0.06)',borderRadius:9,border:'1px solid rgba(245,166,35,0.18)'}}>
+                    <span style={{fontSize:18,flexShrink:0}}>🟡</span>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:'var(--gold)',marginBottom:2}}>Annulation avant le jour du départ</div>
+                      <div style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>
+                        Frais d'annulation de <strong style={{color:'var(--gold)'}}>{cancelRate}%</strong> retenus.
+                        <br/>Soit <strong style={{color:'var(--gold)'}}>{Math.round(trip.price*form.passengers*cancelRate/100).toLocaleString('fr-FR')} FC</strong> non remboursés.
+                      </div>
+                    </div>
+                  </div>
+
+                  <div style={{display:'flex',alignItems:'flex-start',gap:10,padding:'10px 12px',background:'rgba(61,170,106,0.06)',borderRadius:9,border:'1px solid rgba(61,170,106,0.15)'}}>
+                    <span style={{fontSize:18,flexShrink:0}}>🟢</span>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:13,color:'var(--green-l)',marginBottom:2}}>Pas d'annulation</div>
+                      <div style={{fontSize:12,color:'var(--muted)'}}>Vous voyagez et récupérez 100% de la valeur de votre billet.</div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Checkbox confirmation */}
+              <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'10px 12px',background:'var(--card)',border:`1px solid ${warnChecked?'rgba(61,170,106,.3)':'var(--border)'}`,borderRadius:9,transition:'var(--ease)'}}>
+                <input type="checkbox" checked={warnChecked} onChange={e=>setWarnChecked(e.target.checked)} style={{marginTop:2,accentColor:'var(--green)',width:16,height:16,flexShrink:0}}/>
+                <span style={{fontSize:12,color:'var(--muted)',lineHeight:1.5}}>
+                  J'ai lu et j'accepte la politique d'annulation de <strong style={{color:'var(--text)'}}>{trip.agency_name}</strong>. Je comprends les frais applicables en cas d'annulation.
+                </span>
+              </label>
+            </div>
+          )}
+
+          {/* ÉTAPE 2 — Paiement */}
+          {step===2&&(
             <div>
               <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Réf : <strong style={{color:'var(--green-l)'}}>{booking?.reference}</strong></div>
               {[{m:'mobilemoney',i:'📱',t:'Mobile Money',s:'M-Pesa, Orange, Airtel, Africell'},{m:'cash',i:'💵',t:'Espèces au guichet',s:"Payez à l'agence avant le départ"}].map(o=>(
@@ -154,11 +253,14 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
               )}
             </div>
           )}
-          {step===2&&(
+
+          {/* ÉTAPE 3 — Confirmé */}
+          {step===3&&(
             <div style={{textAlign:'center',padding:'16px 0'}}>
               <div style={{fontSize:52,marginBottom:12}}>🎊</div>
               <h3 style={{fontFamily:'var(--font)',fontSize:18,marginBottom:6}}>Réservation confirmée !</h3>
-              <p style={{color:'var(--muted)',fontSize:13,marginBottom:18}}>{trip.departure_city} → {trip.arrival_city} · {trip.agency_name}</p>
+              <p style={{color:'var(--muted)',fontSize:13,marginBottom:6}}>{trip.departure_city} → {trip.arrival_city}</p>
+              <p style={{color:'var(--text)',fontSize:13,fontWeight:700,marginBottom:18}}>{trip.agency_name}</p>
               <div style={{background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.2)',borderRadius:12,padding:14,display:'inline-block',minWidth:200}}>
                 <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>Référence</div>
                 <div style={{fontFamily:'var(--font)',fontSize:20,fontWeight:800,color:'var(--green-l)',letterSpacing:'.05em'}}>{booking?.reference}</div>
@@ -167,73 +269,97 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
             </div>
           )}
         </div>
+
         <div className="mfoot">
-          {step===0&&<><button className="btn btn-ghost" onClick={onClose}>Annuler</button><button className="btn btn-primary" onClick={book} disabled={loading}>{loading?<><div className="spin"/>Traitement…</>:'Continuer →'}</button></>}
-          {step===1&&<><button className="btn btn-ghost" onClick={()=>setStep(0)}>← Retour</button><button className="btn btn-gold" onClick={doPay} disabled={loading}>{loading?<><div className="spin"/>…</>:'Confirmer le paiement'}</button></>}
-          {step===2&&<button className="btn btn-primary w100" style={{justifyContent:'center'}} onClick={onClose}>Fermer</button>}
+          {step===0&&<>
+            <button className="btn btn-ghost" onClick={onClose}>Annuler</button>
+            <button className="btn btn-primary" onClick={book} disabled={loading}>{loading?<><div className="spin"/>Traitement…</>:'Continuer →'}</button>
+          </>}
+          {step===1&&<>
+            <button className="btn btn-ghost" onClick={()=>setStep(0)}>← Retour</button>
+            <button className="btn btn-primary" onClick={()=>setStep(2)} disabled={!warnChecked} style={{opacity:warnChecked?1:0.5}}>J'accepte →</button>
+          </>}
+          {step===2&&<>
+            <button className="btn btn-ghost" onClick={()=>setStep(1)}>← Retour</button>
+            <button className="btn btn-gold" onClick={doPay} disabled={loading}>{loading?<><div className="spin"/>…</>:'Confirmer le paiement'}</button>
+          </>}
+          {step===3&&<button className="btn btn-primary w100" style={{justifyContent:'center'}} onClick={onClose}>Fermer</button>}
         </div>
       </div>
     </div>
   );
 }
 
+// ── TRIP CARD — agence bien visible ──────────────────────────
 function TripCard({ trip, onBook, delay=0 }) {
   const pct = Math.round((trip.available_seats/trip.total_seats)*100);
+  const note = trip.agency_note || 3;
   return (
     <div className="fi" style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-lg)',overflow:'hidden',transition:'var(--ease)',animationDelay:`${delay}s`}}
       onMouseEnter={e=>{e.currentTarget.style.borderColor='rgba(61,170,106,.25)';e.currentTarget.style.transform='translateY(-2px)';}}
       onMouseLeave={e=>{e.currentTarget.style.borderColor='var(--border)';e.currentTarget.style.transform='none';}}>
       <div style={{height:2,background:'linear-gradient(90deg,var(--green-d),var(--green-l))'}}/>
-      <div style={{padding:'13px 15px'}}>
-        <div className="flex ac jb mb8">
-          <div className="flex ac g8">
-            <div style={{width:28,height:28,borderRadius:8,background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.16)',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
+      <div style={{padding:'14px 16px'}}>
+
+        {/* ✅ En-tête agence — nom très visible */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12,paddingBottom:10,borderBottom:'1px solid var(--border)'}}>
+          <div style={{display:'flex',alignItems:'center',gap:10}}>
+            <div style={{width:38,height:38,borderRadius:10,background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.2)',display:'flex',alignItems:'center',justifyContent:'center',overflow:'hidden',flexShrink:0}}>
               {trip.agency_logo
-                ? <img src={trip.agency_logo} alt={trip.agency_name} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none';e.target.parentNode.innerHTML=`<span style="font-size:13px;font-weight:800;color:var(--green-l)">${trip.agency_name[0]}</span>`;}}/>
-                : <span style={{fontSize:12,fontWeight:800,color:'var(--green-l)'}}>{trip.agency_name ? trip.agency_name[0].toUpperCase() : '?'}</span>
+                ? <img src={trip.agency_logo} alt={trip.agency_name} style={{width:'100%',height:'100%',objectFit:'cover'}} onError={e=>{e.target.style.display='none';e.target.parentNode.innerHTML=`<span style="font-size:15px;font-weight:800;color:var(--green-l)">${trip.agency_name?.[0]||'?'}</span>`;}}/>
+                : <span style={{fontSize:15,fontWeight:800,color:'var(--green-l)'}}>{trip.agency_name?.[0]?.toUpperCase()||'?'}</span>
               }
             </div>
             <div>
-              <div style={{fontFamily:'var(--font)',fontWeight:700,fontSize:13}}>{trip.agency_name}</div>
-              {trip.bus_name&&<div style={{fontSize:11,color:'var(--muted)'}}>🚌 {trip.bus_name}</div>}
+              {/* ✅ Nom agence en gros et bien visible */}
+              <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:15,color:'var(--text)',lineHeight:1.1}}>{trip.agency_name}</div>
+              <div style={{display:'flex',alignItems:'center',gap:6,marginTop:2}}>
+                {trip.bus_name&&<span style={{fontSize:11,color:'var(--muted)'}}>🚌 {trip.bus_name}</span>}
+                {/* Étoiles note */}
+                <span style={{fontSize:10,color:'var(--gold)',letterSpacing:1}}>{'★'.repeat(note)}{'☆'.repeat(5-note)}</span>
+              </div>
             </div>
           </div>
           {trip.available_seats<=5
             ?<span className="badge b-r">⚡ {trip.available_seats} restants</span>
             :<span className="badge b-g">{trip.available_seats} places</span>}
         </div>
-        <div className="flex ac g12 mb10" style={{background:'rgba(255,255,255,.025)',borderRadius:9,padding:'9px 11px'}}>
+
+        {/* Trajet */}
+        <div style={{display:'flex',alignItems:'center',gap:12,marginBottom:12,background:'rgba(255,255,255,.025)',borderRadius:9,padding:'10px 12px'}}>
           <div style={{flex:1}}>
-            <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:17}}>{trip.departure_city}</div>
-            <div style={{fontWeight:700,fontSize:19,color:'var(--green-l)'}}>{trip.departure_time}</div>
+            <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:18}}>{trip.departure_city}</div>
+            <div style={{fontWeight:700,fontSize:20,color:'var(--green-l)'}}>{trip.departure_time}</div>
           </div>
-          <div style={{flex:1,display:'flex',flexDirection:'column',alignItems:'center'}}>
+          <div style={{display:'flex',flexDirection:'column',alignItems:'center',flex:1}}>
             <div style={{display:'flex',alignItems:'center',width:'100%',gap:3}}>
               <div style={{flex:1,height:1,background:'linear-gradient(90deg,transparent,var(--green-d))'}}/>
               <span style={{fontSize:13}}>📍</span>
               <div style={{flex:1,height:1,background:'linear-gradient(90deg,var(--green-d),transparent)'}}/>
             </div>
+            <div style={{fontSize:10,color:'var(--muted)',marginTop:3}}>{new Date(trip.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div>
           </div>
           <div style={{flex:1,textAlign:'right'}}>
-            <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:17}}>{trip.arrival_city}</div>
-            <div style={{fontSize:11,color:'var(--muted)',marginTop:2}}>{new Date(trip.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short'})}</div>
+            <div style={{fontFamily:'var(--font)',fontWeight:800,fontSize:18}}>{trip.arrival_city}</div>
           </div>
         </div>
-        <div className="flex ac jb">
+
+        {/* Prix + action */}
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between'}}>
           <div>
             <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.06em',fontWeight:600}}>Prix / siège</div>
-            <div style={{fontFamily:'var(--font)',fontSize:20,fontWeight:800,color:'var(--gold)',lineHeight:1.1}}>
-              {Number(trip.price).toLocaleString('fr-FR')} <span style={{fontSize:11,fontWeight:500}}>FC</span>
+            <div style={{fontFamily:'var(--font)',fontSize:22,fontWeight:800,color:'var(--gold)',lineHeight:1.1}}>
+              {Number(trip.price).toLocaleString('fr-FR')} <span style={{fontSize:12,fontWeight:500}}>FC</span>
             </div>
           </div>
-          <div className="flex ac g8">
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
             <div style={{display:'flex',alignItems:'center',gap:4}}>
               <div style={{width:44,height:3,background:'rgba(255,255,255,.08)',borderRadius:99,overflow:'hidden'}}>
                 <div style={{width:`${pct}%`,height:'100%',background:pct<25?'var(--err)':'var(--green)',borderRadius:99}}/>
               </div>
               <span style={{fontSize:10,color:'var(--muted)'}}>{pct}%</span>
             </div>
-            <button className="btn btn-primary" onClick={()=>onBook(trip)} style={{borderRadius:8,padding:'7px 14px',fontSize:12}}>Réserver</button>
+            <button className="btn btn-primary" onClick={()=>onBook(trip)} style={{borderRadius:8,padding:'8px 16px',fontSize:13}}>Réserver</button>
           </div>
         </div>
       </div>
@@ -252,7 +378,6 @@ export default function PublicSite() {
   const resultsRef = useRef(null);
   const showToast = (msg, type='info') => setToast({msg,type});
 
-  // ✅ FIX — guard Array avant setGallery
   useEffect(() => {
     axios.get(`${API}/public/gallery`)
       .then(r => setGallery(Array.isArray(r.data) ? r.data : []))
@@ -266,18 +391,16 @@ export default function PublicSite() {
       const p = new URLSearchParams({from:search.from,to:search.to});
       if (search.date) p.append('date',search.date);
       const res = await axios.get(`${API}/public/trips?${p}`);
-      // ✅ FIX — guard Array avant setTrips
       setTrips(Array.isArray(res.data) ? res.data : []);
       setSearched(true);
       setTimeout(()=>resultsRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),100);
     } catch { showToast('Erreur de recherche','error'); }
     finally { setLoading(false); }
   };
-
   const swap = () => setSearch(s=>({...s,from:s.to,to:s.from}));
 
   const slides = gallery.length>0
-    ? gallery.slice(0,6).map(g=>({img:g.image_url,title:g.title||'',sub:g.description||'',tag:g.category}))
+    ? gallery.slice(0,6).map(g=>({img:g.image_url,title:g.title||'',sub:g.description||'',tag:g.category||'📸'}))
     : SLIDES;
 
   return (
@@ -293,11 +416,11 @@ export default function PublicSite() {
         </div>
       </nav>
 
-      {/* HERO 2 COLONNES */}
+      {/* HERO */}
       <section style={{maxWidth:1060,margin:'0 auto',padding:'20px 18px 0'}}>
-        <div style={{display:'grid',gridTemplateColumns:'380px 1fr',gap:18,alignItems:'start'}}>
+        <div className="hero-grid" style={{display:'grid',gridTemplateColumns:'380px 1fr',gap:18,alignItems:'start'}}>
 
-          {/* COLONNE GAUCHE — Search */}
+          {/* SEARCH */}
           <div className="fi">
             <div style={{marginBottom:14}}>
               <div style={{fontFamily:'var(--font)',fontSize:24,fontWeight:800,lineHeight:1.2,marginBottom:5}}>
@@ -306,7 +429,6 @@ export default function PublicSite() {
               </div>
               <p style={{color:'var(--muted)',fontSize:12,lineHeight:1.65}}>Kinshasa – Boma – Matadi · 2 min pour réserver, Mobile Money accepté.</p>
             </div>
-
             <div style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-xl)',padding:'16px 16px 12px',boxShadow:'0 16px 36px rgba(0,0,0,.32)'}}>
               <div style={{display:'flex',flexDirection:'column',gap:9}}>
                 <div className="input-group"><label className="lbl">📍 Départ</label>
@@ -334,7 +456,6 @@ export default function PublicSite() {
                 </button>
               </div>
             </div>
-
             <div style={{marginTop:10,display:'flex',gap:5,flexWrap:'wrap'}}>
               {[['Kinshasa','Boma'],['Kinshasa','Matadi'],['Boma','Kinshasa']].map(([f,t])=>(
                 <button key={`${f}-${t}`} onClick={()=>setSearch(s=>({...s,from:f,to:t}))}
@@ -347,8 +468,8 @@ export default function PublicSite() {
             </div>
           </div>
 
-          {/* COLONNE DROITE — Carousel */}
-          <div className="fi fi-2">
+          {/* CAROUSEL */}
+          <div className="fi fi-2 hero-carousel">
             <Carousel slides={slides}/>
             <div className="quote-band mt12">
               <p style={{fontFamily:'var(--font)',fontSize:13,fontWeight:600,position:'relative',zIndex:1,lineHeight:1.55}}>
@@ -362,9 +483,9 @@ export default function PublicSite() {
 
       {/* FEATURE STRIP */}
       <section style={{maxWidth:1060,margin:'16px auto 0',padding:'0 18px'}}>
-        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:1,background:'var(--border)',borderRadius:'var(--r-lg)',overflow:'hidden'}}>
+        <div className="feat-strip" style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:1,background:'var(--border)',borderRadius:'var(--r-lg)',overflow:'hidden'}}>
           {FEATURES.map((f,i)=>(
-            <div key={i} style={{background:'var(--surface)',padding:'13px 15px',display:'flex',alignItems:'center',gap:9}}>
+            <div key={i} className="feat-item" style={{background:'var(--surface)',padding:'13px 15px',display:'flex',alignItems:'center',gap:9}}>
               <span style={{fontSize:18,flexShrink:0}}>{f.icon}</span>
               <div>
                 <div style={{fontFamily:'var(--font)',fontWeight:600,fontSize:12}}>{f.t}</div>
@@ -379,10 +500,10 @@ export default function PublicSite() {
       <section ref={resultsRef} style={{maxWidth:1060,margin:'0 auto',padding:'18px 18px 40px'}}>
         {searched&&(
           <>
-            <div className="flex ac jb mb12">
+            <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:12}}>
               <div>
                 <div style={{fontFamily:'var(--font)',fontSize:15,fontWeight:700}}>{search.from} → {search.to}</div>
-                <div style={{fontSize:12,color:'var(--muted)'}}>{trips.length} trajet{trips.length!==1?'s':''}</div>
+                <div style={{fontSize:12,color:'var(--muted)'}}>{trips.length} trajet{trips.length!==1?'s':''} — classés par note agence</div>
               </div>
               <button className="btn btn-ghost" onClick={()=>setSearched(false)} style={{fontSize:12}}>Réinitialiser</button>
             </div>
@@ -394,13 +515,12 @@ export default function PublicSite() {
                 <div style={{color:'var(--muted)',fontSize:12}}>Nos agences opèrent tous les jours — essayez une autre date.</div>
               </div>
             )}
-            <div style={{display:'grid',gap:9}}>
+            <div style={{display:'grid',gap:10}}>
               {trips.map((t,i)=><TripCard key={t.id} trip={t} onBook={setSelected} delay={i*.05}/>)}
             </div>
           </>
         )}
 
-        {/* SECTION ACCUEIL */}
         {!searched&&(
           <div style={{marginTop:18}}>
             <div style={{textAlign:'center',padding:'28px 20px',maxWidth:560,margin:'0 auto'}}>
@@ -410,10 +530,8 @@ export default function PublicSite() {
               </h2>
               <p style={{color:'var(--muted)',fontSize:13,lineHeight:1.7}}>Fini les files d'attente et les billets perdus.<br/>Avec Nzela — tu choisis, tu paies, tu montes.</p>
             </div>
-
-            {/* 3 étapes */}
             <div style={{display:'grid',gridTemplateColumns:'repeat(3,1fr)',gap:10,maxWidth:780,margin:'0 auto 20px'}}>
-              {[{n:'01',i:'🔍',t:'Cherche ton trajet',d:"Départ, arrivée et date."},{n:'02',i:'💳',t:'Paye en Mobile Money',d:'M-Pesa, Orange ou espèces.'},{n:'03',i:'🚌',t:'Monte dans le bus',d:'Présente ta référence. C\'est tout.'}].map(s=>(
+              {[{n:'01',i:'🔍',t:'Cherche ton trajet',d:'Départ, arrivée et date.'},{n:'02',i:'💳',t:'Paye en Mobile Money',d:'M-Pesa, Orange ou espèces.'},{n:'03',i:'🚌',t:'Monte dans le bus',d:"Présente ta référence. C'est tout."}].map(s=>(
                 <div key={s.n} style={{background:'var(--surface)',border:'1px solid var(--border)',borderRadius:'var(--r-lg)',padding:'15px',position:'relative',overflow:'hidden'}}>
                   <div style={{position:'absolute',top:-10,right:10,fontFamily:'var(--font)',fontSize:44,fontWeight:800,color:'rgba(61,170,106,.06)',lineHeight:1}}>{s.n}</div>
                   <div style={{fontSize:22,marginBottom:7}}>{s.i}</div>
@@ -422,8 +540,6 @@ export default function PublicSite() {
                 </div>
               ))}
             </div>
-
-            {/* Stats */}
             <div style={{display:'flex',gap:1,background:'var(--border)',borderRadius:'var(--r-lg)',overflow:'hidden',maxWidth:780,margin:'0 auto'}}>
               {[['10 000+','Voyageurs/mois'],['3','Agences'],['2','Trajets phares'],['100%','Mobile Money']].map(([v,l])=>(
                 <div key={l} style={{flex:1,background:'var(--surface)',padding:'13px 10px',textAlign:'center'}}>
@@ -436,7 +552,6 @@ export default function PublicSite() {
         )}
       </section>
 
-      {/* FOOTER */}
       <footer style={{borderTop:'1px solid var(--border)',padding:'14px 22px',display:'flex',alignItems:'center',justifyContent:'space-between',flexWrap:'wrap',gap:8}}>
         <Logo size={22} tagline/>
         <div style={{fontSize:11,color:'var(--muted)'}}>© 2026 Nzela · Kinshasa, RDC</div>
