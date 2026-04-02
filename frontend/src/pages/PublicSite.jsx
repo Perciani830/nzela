@@ -252,7 +252,12 @@ export default function PublicSite() {
   const resultsRef = useRef(null);
   const showToast = (msg, type='info') => setToast({msg,type});
 
-  useEffect(() => { axios.get(`${API}/public/gallery`).then(r=>setGallery(r.data)).catch(()=>{}); }, []);
+  // ✅ FIX — guard Array avant setGallery
+  useEffect(() => {
+    axios.get(`${API}/public/gallery`)
+      .then(r => setGallery(Array.isArray(r.data) ? r.data : []))
+      .catch(() => {});
+  }, []);
 
   const handleSearch = async () => {
     if (!search.from||!search.to) return showToast('Sélectionnez départ et arrivée','error');
@@ -261,11 +266,14 @@ export default function PublicSite() {
       const p = new URLSearchParams({from:search.from,to:search.to});
       if (search.date) p.append('date',search.date);
       const res = await axios.get(`${API}/public/trips?${p}`);
-      setTrips(res.data); setSearched(true);
+      // ✅ FIX — guard Array avant setTrips
+      setTrips(Array.isArray(res.data) ? res.data : []);
+      setSearched(true);
       setTimeout(()=>resultsRef.current?.scrollIntoView({behavior:'smooth',block:'start'}),100);
     } catch { showToast('Erreur de recherche','error'); }
     finally { setLoading(false); }
   };
+
   const swap = () => setSearch(s=>({...s,from:s.to,to:s.from}));
 
   const slides = gallery.length>0
