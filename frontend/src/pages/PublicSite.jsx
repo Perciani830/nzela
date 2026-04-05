@@ -6,7 +6,7 @@ const CITIES = ['Kinshasa', 'Matadi', 'Boma', 'Moanda'];
 
 const SLIDES = [
   { img: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=1200&q=80', title: 'Kinshasa → Boma', sub: 'Le fleuve Congo à ta gauche, la route à tes pieds.', tag: '🛣️ 05h00' },
-  { img: 'https://images.unsplash.com/photo-1570125909232-eb263c188f7e?w=1200&q=80', title: 'Flotte moderne', sub: 'Des bus climatisés, entretenus chaque semaine.', tag: '❄️ Climatisé' },
+  { img: 'https://images.unsplash.com/photo-1557223562-6c77ef16210f?q=80&w=870&auto=format&fit=crop&ixlib=rb-4.1.0&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D', title: 'Flotte moderne', sub: 'Des bus climatisés, entretenus chaque semaine.', tag: '❄️ Climatisé' },
   { img: 'https://images.unsplash.com/photo-1601598851547-4302969d0614?w=1200&q=80', title: 'Kinshasa → Matadi', sub: 'La ville portuaire, à 5h de route.', tag: '⚓ Matadi' },
   { img: 'https://images.unsplash.com/photo-1609220136736-443140cffec6?w=1200&q=80', title: 'Voyagez en famille', sub: 'Des tarifs pour tous, du confort pour chacun.', tag: '👨‍👩‍👧 Famille' },
 ];
