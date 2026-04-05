@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 
 const API = 'https://nzela-production.up.railway.app/api';
-const CITIES = ['Kinshasa','Boma','Matadi','Lubumbashi','Mbuji-Mayi','Kananga'];
+const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
 
 function getAuth() {
   return {

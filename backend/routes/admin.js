@@ -123,15 +123,13 @@ router.post('/reset-stats', auth, (req, res) => {
     const dateTo   = new Date(y, m, 0).toISOString().split('T')[0];
     const countBefore = db.prepare(`SELECT COUNT(*) c FROM bookings WHERE DATE(created_at) >= ? AND DATE(created_at) <= ? AND status IN ('confirmed','cancelled')`).get(dateFrom, dateTo).c;
     db.exec('BEGIN');
-    try {
-      db.prepare(`DELETE FROM bookings WHERE DATE(created_at) >= ? AND DATE(created_at) <= ? AND status IN ('confirmed','cancelled','refunded')`).run(dateFrom, dateTo);
-      db.exec('COMMIT');
-    } catch(e) { db.exec('ROLLBACK'); throw e; }
-    res.json({ ok: true, deleted: countBefore, period: `${y}-${String(m).padStart(2,'0')}`, message: `${countBefore} réservations archivées.` });
+    try { db.prepare(`DELETE FROM bookings WHERE DATE(created_at) >= ? AND DATE(created_at) <= ? AND status IN ('confirmed','cancelled','refunded')`).run(dateFrom, dateTo); db.exec('COMMIT'); }
+    catch(e) { db.exec('ROLLBACK'); throw e; }
+    res.json({ ok: true, deleted: countBefore, message: `${countBefore} réservations archivées.` });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── AGENCES — supporte le champ note (1-5) ────────────────────
+// ── AGENCES ───────────────────────────────────────────────────
 router.get('/agencies', auth, (req, res) => {
   try { res.json(getDb().prepare('SELECT id,agency_name,username,email,phone,logo_url,commission_rate,cancel_rate,is_active,premium,premium_order,premium_photo_url,premium_caption,note,created_at FROM agencies ORDER BY created_at DESC').all()); }
   catch(e) { res.status(500).json({ error: e.message }); }
@@ -154,19 +152,12 @@ router.patch('/agencies/:id', auth, (req, res) => {
   try {
     const { is_active, commission_rate, cancel_rate, logo_url, agency_name, email, phone, premium, premium_order, premium_photo_url, premium_caption, note } = req.body;
     getDb().prepare(`UPDATE agencies SET
-      is_active=COALESCE(?,is_active),
-      commission_rate=COALESCE(?,commission_rate),
-      cancel_rate=COALESCE(?,cancel_rate),
-      logo_url=COALESCE(?,logo_url),
-      agency_name=COALESCE(?,agency_name),
-      email=COALESCE(?,email),
-      phone=COALESCE(?,phone),
-      premium=COALESCE(?,premium),
-      premium_order=COALESCE(?,premium_order),
-      premium_photo_url=COALESCE(?,premium_photo_url),
-      premium_caption=COALESCE(?,premium_caption),
-      note=COALESCE(?,note)
-      WHERE id=?`)
+      is_active=COALESCE(?,is_active), commission_rate=COALESCE(?,commission_rate),
+      cancel_rate=COALESCE(?,cancel_rate), logo_url=COALESCE(?,logo_url),
+      agency_name=COALESCE(?,agency_name), email=COALESCE(?,email), phone=COALESCE(?,phone),
+      premium=COALESCE(?,premium), premium_order=COALESCE(?,premium_order),
+      premium_photo_url=COALESCE(?,premium_photo_url), premium_caption=COALESCE(?,premium_caption),
+      note=COALESCE(?,note) WHERE id=?`)
     .run(
       is_active!==undefined?(is_active?1:0):null,
       commission_rate||null, cancel_rate||null, logo_url||null,
@@ -181,12 +172,48 @@ router.patch('/agencies/:id', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── GALERIE — accepte base64 ou URL ──────────────────────────
-router.get('/gallery', auth, (req, res) => {
-  try { res.json(getDb().prepare('SELECT id,title,description,category,sort_order,is_active,created_at,CASE WHEN LENGTH(image_url)>200 THEN substr(image_url,1,100)||\'...[base64]\' ELSE image_url END as image_preview, image_url FROM gallery ORDER BY sort_order ASC').all()); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+// ── SUPPRIMER UNE AGENCE ──────────────────────────────────────
+router.delete('/agencies/:id', auth, (req, res) => {
+  try {
+    const db = getDb();
+    const active = db.prepare("SELECT COUNT(*) c FROM bookings WHERE agency_id=? AND status NOT IN ('cancelled')").get(req.params.id).c;
+    if (active > 0) return res.status(400).json({ error: `Impossible : ${active} réservation(s) active(s) liée(s) à cette agence. Annulez-les d'abord.` });
+    db.prepare('DELETE FROM trips WHERE agency_id=?').run(req.params.id);
+    db.prepare('DELETE FROM buses WHERE agency_id=?').run(req.params.id);
+    db.prepare('DELETE FROM agencies WHERE id=?').run(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── CHANGER MOT DE PASSE AGENCE ───────────────────────────────
+router.patch('/agencies/:id/password', auth, (req, res) => {
+  try {
+    const { new_password } = req.body;
+    if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Mot de passe trop court (min 6 caractères)' });
+    getDb().prepare('UPDATE agencies SET password=? WHERE id=?').run(bcrypt.hashSync(new_password, 10), req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── CHANGER MOT DE PASSE ADMIN ────────────────────────────────
+router.patch('/password', auth, (req, res) => {
+  try {
+    const { current_password, new_password } = req.body;
+    if (!new_password || new_password.length < 6) return res.status(400).json({ error: 'Nouveau mot de passe trop court (min 6 caractères)' });
+    const db = getDb();
+    const admin = db.prepare('SELECT * FROM admins WHERE id=?').get(req.user.id);
+    if (!admin) return res.status(404).json({ error: 'Admin introuvable' });
+    if (!bcrypt.compareSync(current_password, admin.password)) return res.status(401).json({ error: 'Mot de passe actuel incorrect' });
+    db.prepare('UPDATE admins SET password=? WHERE id=?').run(bcrypt.hashSync(new_password, 10), req.user.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── GALERIE ───────────────────────────────────────────────────
+router.get('/gallery', auth, (req, res) => {
+  try { res.json(getDb().prepare('SELECT * FROM gallery ORDER BY sort_order ASC').all()); }
+  catch(e) { res.status(500).json({ error: e.message }); }
+});
 router.post('/gallery', auth, (req, res) => {
   try {
     const { title, description, image_url, category, sort_order } = req.body;
@@ -197,7 +224,6 @@ router.post('/gallery', auth, (req, res) => {
     res.status(201).json({ id });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-
 router.patch('/gallery/:id', auth, (req, res) => {
   try {
     const { title, description, image_url, category, sort_order, is_active } = req.body;
@@ -206,7 +232,6 @@ router.patch('/gallery/:id', auth, (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-
 router.delete('/gallery/:id', auth, (req, res) => {
   try { getDb().prepare('DELETE FROM gallery WHERE id=?').run(req.params.id); res.json({ ok: true }); }
   catch(e) { res.status(500).json({ error: e.message }); }
@@ -220,7 +245,6 @@ router.get('/backup', auth, (req, res) => {
     res.json(data);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
-
 router.post('/restore', auth, (req, res) => {
   try {
     const data = req.body;
@@ -231,9 +255,8 @@ router.post('/restore', auth, (req, res) => {
 });
 
 router.get('/premium-agencies', (req, res) => {
-  try {
-    res.json(getDb().prepare('SELECT id,agency_name,logo_url,premium_photo_url,premium_caption,premium_order,phone FROM agencies WHERE is_active=1 AND premium=1 ORDER BY premium_order ASC').all());
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  try { res.json(getDb().prepare('SELECT id,agency_name,logo_url,premium_photo_url,premium_caption,premium_order,phone FROM agencies WHERE is_active=1 AND premium=1 ORDER BY premium_order ASC').all()); }
+  catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 module.exports = router;

@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 
 const API = 'https://nzela-production.up.railway.app/api';
-const CITIES = ['Kinshasa', 'Boma', 'Matadi', 'Lubumbashi', 'Mbuji-Mayi', 'Kananga'];
+const CITIES = ['Kinshasa', 'Matadi', 'Boma', 'Moanda'];
 
 const SLIDES = [
   { img: 'https://images.unsplash.com/photo-1544620347-c4fd4a3d5957?w=1200&q=80', title: 'Kinshasa → Boma', sub: 'Le fleuve Congo à ta gauche, la route à tes pieds.', tag: '🛣️ 05h00' },
@@ -78,7 +78,12 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
   const [loading, setLoading] = useState(false);
   const [booking, setBooking] = useState(null);
   const [warnChecked, setWarnChecked] = useState(false);
-  const OPS = [{id:'MPESA',l:'M-Pesa',e:'🔴'},{id:'ORANGE',l:'Orange Money',e:'🟠'},{id:'AIRTEL',l:'Airtel',e:'📶'},{id:'AFRICEL',l:'Africell',e:'🟣'}];
+const OPS = [
+  { id:'MPESA',   l:'M-Pesa',       logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/M-PESA_LOGO-01.svg/200px-M-PESA_LOGO-01.svg.png' },
+  { id:'ORANGE',  l:'Orange Money', logo:'https://www.orange.cd/particuliers/resources/img/Sms%20interface_180x180.png' },
+  { id:'AIRTEL',  l:'Airtel',       logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Airtel_logo.svg/200px-Airtel_logo.svg.png' },
+  { id:'AFRICEL', l:'Africell',     logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Africell_Logo.png/200px-Africell_Logo.png' },
+];
 
   const cancelRate = trip.agency_cancel_rate || 20;
   const totalPrice = (trip.price * form.passengers).toLocaleString('fr-FR');
