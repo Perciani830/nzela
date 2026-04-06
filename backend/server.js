@@ -63,15 +63,30 @@ function desactiverVoyagesPassés() {
     const db = getDb();
     const today = new Date().toISOString().split('T')[0];
     const time  = new Date().toTimeString().slice(0, 5);
-    const r = db.prepare(`
-      UPDATE trips SET is_active = 0
+
+    // 1. Trouve les voyages expirés encore actifs
+    const expirés = db.prepare(`
+      SELECT id FROM trips
       WHERE is_active = 1 AND (
         departure_date < ? OR
         (departure_date = ? AND departure_time <= ?)
       )
-    `).run(today, today, time);
-    if (r.changes > 0)
-      console.log(`🕐 ${r.changes} voyage(s) désactivé(s) automatiquement`);
+    `).all(today, today, time);
+
+    if (expirés.length === 0) return;
+
+    for (const trip of expirés) {
+      // 2. Auto-annule les réservations pending sur ces voyages
+      db.prepare(`
+        UPDATE bookings SET status='cancelled', payment_status='refunded', commission_amount=0
+        WHERE trip_id=? AND status='pending'
+      `).run(trip.id);
+
+      // 3. Désactive le voyage
+      db.prepare(`UPDATE trips SET is_active=0 WHERE id=?`).run(trip.id);
+    }
+
+    console.log(`🕐 ${expirés.length} voyage(s) désactivé(s) — réservations pending annulées`);
   } catch(e) { console.error('Auto-désactivation:', e.message); }
 }
 

@@ -79,10 +79,10 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
   const [booking, setBooking] = useState(null);
   const [warnChecked, setWarnChecked] = useState(false);
 const OPS = [
-  { id:'MPESA',   l:'M-Pesa',       logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/M-PESA_LOGO-01.svg/200px-M-PESA_LOGO-01.svg.png' },
-  { id:'ORANGE',  l:'Orange Money', logo:'https://www.orange.cd/particuliers/resources/img/Sms%20interface_180x180.png' },
-  { id:'AIRTEL',  l:'Airtel',       logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/9/9e/Airtel_logo.svg/200px-Airtel_logo.svg.png' },
-  { id:'AFRICEL', l:'Africell',     logo:'https://upload.wikimedia.org/wikipedia/commons/thumb/0/0e/Africell_Logo.png/200px-Africell_Logo.png' },
+  { id:'MPESA',   l:'M-Pesa',       logo:'/mpesa.png' },
+  { id:'ORANGE',  l:'Orange Money', logo:'/orange.png' },
+  { id:'AIRTEL',  l:'Airtel',       logo:'/airtel.png' },
+  { id:'AFRICEL', l:'Africell',     logo:'/africell.png' },
 ];
 
   const cancelRate = trip.agency_cancel_rate || 20;
@@ -242,16 +242,22 @@ const OPS = [
             <div>
               <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Réf : <strong style={{color:'var(--green-l)'}}>{booking?.reference}</strong></div>
               {[{m:'mobilemoney',i:'📱',t:'Mobile Money',s:'M-Pesa, Orange, Airtel, Africell'},{m:'cash',i:'💵',t:'Espèces au guichet',s:"Payez à l'agence avant le départ"}].map(o=>(
-                <div key={o.m} className={`pay-opt${pay.method===o.m?' sel':''}`} onClick={()=>setPay({...pay,method:o.m})}>
-                  <span className="pi">{o.i}</span>
-                  <div className="pinfo"><strong>{o.t}</strong><span>{o.s}</span></div>
-                  <div className="prado">{pay.method===o.m&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--green-l)'}}/>}</div>
+                <div className={`pay-opt${pay.method==='mobilemoney'?' sel':''}`} onClick={()=>setPay({...pay,method:'mobilemoney'})}>
+                  <span className="pi">📱</span>
+                  <div className="pinfo"><strong>Mobile Money</strong><span>M-Pesa, Orange, Airtel, Africell</span></div>
+                  <div className="prado">{pay.method==='mobilemoney'&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--green-l)'}}/>}</div>
                 </div>
               ))}
               {pay.method==='mobilemoney'&&(
                 <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:10}}>
                   <div><div className="lbl" style={{marginBottom:6}}>Opérateur</div>
-                    <div className="op-grid">{OPS.map(o=><button key={o.id} className={`op-btn${pay.operator===o.id?' act':''}`} onClick={()=>setPay({...pay,operator:o.id})}>{o.e} {o.l}</button>)}</div>
+                    <div className="op-grid">{OPS.map(o=>(
+                 <button key={o.id} className={`op-btn${pay.operator===o.id?' act':''}`} onClick={()=>setPay({...pay,operator:o.id})}
+                     style={{display:'flex',alignItems:'center',justifyContent:'center',gap:6}}>
+                       <img src={o.logo} alt={o.l} style={{height:22,objectFit:'contain'}} onError={e=>e.target.style.display='none'} />
+                       <span>{o.l}</span>
+                 </button>
+                ))}</div>
                   </div>
                   <div className="input-group"><label className="lbl">Numéro Mobile Money</label><input className="field" placeholder="+243 81 234 5678" value={pay.wallet} onChange={e=>setPay({...pay,wallet:e.target.value})}/></div>
                 </div>
@@ -561,7 +567,7 @@ export default function PublicSite() {
         <Logo size={22} tagline/>
         <div style={{fontSize:11,color:'var(--muted)'}}>© 2026 Nzela · Kinshasa, RDC</div>
         <div style={{fontSize:11,color:'var(--muted)',display:'flex',gap:10}}>
-          <span>📞 +243 81 900 0000</span><span>·</span><span>✉️ support@nzela.cd</span>
+          <span>📞 +243 85 91 53 213</span><span>·</span><span>✉️ support@nzela.cd</span>
         </div>
       </footer>
 

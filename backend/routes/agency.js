@@ -85,9 +85,22 @@ router.delete('/buses/:id', auth, (req, res) => {
 });
 
 // ── TRIPS ──────────────────────────────────────────────────────
-router.get('/trips', auth, (req, res) => {
+router.delete('/trips/:id', auth, (req, res) => {
   try {
-    res.json(getDb().prepare('SELECT t.*, b.bus_name b_name FROM trips t LEFT JOIN buses b ON t.bus_id=b.id WHERE t.agency_id=? ORDER BY t.departure_date ASC, t.departure_time ASC').all(req.user.id));
+    const db = getDb();
+    const trip = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(req.params.id, req.user.id);
+    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+    // Bloque uniquement si voyage actif avec réservations confirmées
+    if (trip.is_active) {
+      const booked = db.prepare("SELECT COUNT(*) c FROM bookings WHERE trip_id=? AND status='confirmed'").get(req.params.id).c;
+      if (booked > 0) return res.status(400).json({ error: `Impossible : ${booked} réservation(s) confirmée(s) sur ce voyage` });
+    }
+
+    // Annule les pending restants avant suppression
+    db.prepare("UPDATE bookings SET status='cancelled', payment_status='refunded', commission_amount=0 WHERE trip_id=? AND status='pending'").run(req.params.id);
+    db.prepare('DELETE FROM trips WHERE id=? AND agency_id=?').run(req.params.id, req.user.id);
+    res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 router.post('/trips', auth, (req, res) => {
