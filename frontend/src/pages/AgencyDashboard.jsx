@@ -85,7 +85,6 @@ function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder'
   );
 }
 
-// ── LOGO UPLOAD — convertit en base64 ─────────────────────────
 function LogoUploader({ currentLogo, agencyName, onChange }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
@@ -93,74 +92,38 @@ function LogoUploader({ currentLogo, agencyName, onChange }) {
   const handleFile = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    // Vérifie que c'est bien une image
-    if (!file.type.startsWith('image/')) {
-      alert('Sélectionnez une image (JPG, PNG, WebP…)');
-      return;
-    }
-    // Limite à 500 Ko pour ne pas saturer SQLite
-    if (file.size > 500 * 1024) {
-      alert('Image trop lourde — maximum 500 Ko. Compressez-la avant upload.');
-      return;
-    }
+    if (!file.type.startsWith('image/')) { alert('Sélectionnez une image (JPG, PNG, WebP…)'); return; }
+    if (file.size > 500 * 1024) { alert('Image trop lourde — maximum 500 Ko.'); return; }
     setUploading(true);
     const reader = new FileReader();
-    reader.onload = (ev) => {
-      onChange(ev.target.result); // base64 data URL
-      setUploading(false);
-    };
+    reader.onload = (ev) => { onChange(ev.target.result); setUploading(false); };
     reader.onerror = () => { alert('Erreur de lecture du fichier'); setUploading(false); };
     reader.readAsDataURL(file);
   };
 
   return (
     <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
-      {/* Aperçu */}
       <div style={{ position:'relative', flexShrink:0 }}>
         <AgencyAvatar name={agencyName} logoUrl={currentLogo} size={80} radius={16} />
-        <button
-          onClick={() => fileRef.current?.click()}
+        <button onClick={() => fileRef.current?.click()}
           style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }}
-          title="Changer le logo"
-        >📷</button>
+          title="Changer le logo">📷</button>
       </div>
-
       <div style={{ flex:1 }}>
         <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
         <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>
           {currentLogo ? '✓ Logo personnalisé configuré' : 'Aucun logo — initiales affichées par défaut'}
         </div>
-
-        {/* Bouton upload */}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/*"
-          style={{ display:'none' }}
-          onChange={handleFile}
-        />
+        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button
-            className="btn btn-ghost"
-            style={{ fontSize:12, padding:'6px 12px' }}
-            onClick={() => fileRef.current?.click()}
-            disabled={uploading}
-          >
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 12px' }} onClick={() => fileRef.current?.click()} disabled={uploading}>
             {uploading ? '⏳ Chargement…' : '📁 Choisir un fichier'}
           </button>
           {currentLogo && (
-            <button
-              className="btn btn-danger"
-              style={{ fontSize:12, padding:'6px 10px' }}
-              onClick={() => onChange('')}
-            >
-              🗑️ Supprimer
-            </button>
+            <button className="btn btn-danger" style={{ fontSize:12, padding:'6px 10px' }} onClick={() => onChange('')}>🗑️ Supprimer</button>
           )}
         </div>
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>
-          JPG, PNG, WebP · Max 500 Ko
-        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>JPG, PNG, WebP · Max 500 Ko</div>
       </div>
     </div>
   );
@@ -169,7 +132,8 @@ function LogoUploader({ currentLogo, agencyName, onChange }) {
 export default function AgencyDashboard() {
   const navigate = useNavigate();
   const { user, headers } = getAuth();
-  const [tab, setTab] = useState('overview');
+  const [tab, setTab]           = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);   // ← NOUVEAU
   const [stats, setStats]       = useState({});
   const [trips, setTrips]       = useState([]);
   const [bookings, setBookings] = useState([]);
@@ -188,6 +152,9 @@ export default function AgencyDashboard() {
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
+
+  // Ferme la sidebar et change d'onglet
+  const goTab = (id) => { setTab(id); setSidebarOpen(false); };
 
   const load = async () => {
     setLoading(true);
@@ -269,8 +236,19 @@ export default function AgencyDashboard() {
     <div style={{ display:'flex', minHeight:'100vh', background:'var(--night)' }}>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
 
+      {/* ── HAMBURGER BUTTON (mobile) ── */}
+      <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir le menu">
+        ☰
+      </button>
+
+      {/* ── OVERLAY (ferme la sidebar au clic dehors) ── */}
+      <div
+        className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`}
+        onClick={() => setSidebarOpen(false)}
+      />
+
       {/* SIDEBAR */}
-      <aside className="sidebar">
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-logo">
           <SidebarLogo agencyName={agencyName} logoUrl={settings.logo_url} />
         </div>
@@ -285,7 +263,7 @@ export default function AgencyDashboard() {
         </div>
         <nav className="sidebar-nav">
           {TABS.map(t => (
-            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => setTab(t.id)}>
+            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
               <span className="nav-icon">{t.icon}</span>
               <span>{t.label}</span>
               {t.id==='bookings' && pending>0 && (
@@ -302,9 +280,10 @@ export default function AgencyDashboard() {
       </aside>
 
       {/* MAIN */}
-      <main style={{ flex:1, padding:'24px 28px', overflowY:'auto' }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
-          <div>
+      <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
+        {/* Header */}
+        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+          <div style={{ paddingLeft: 0 }}>
             <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
               {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
             </h1>
@@ -312,8 +291,10 @@ export default function AgencyDashboard() {
               {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
             </div>
           </div>
-          {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Ajouter un bus</button>}
-          {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Nouveau voyage</button>}
+          <div style={{ display:'flex', gap:8 }}>
+            {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
+            {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>}
+          </div>
         </div>
 
         {loading
@@ -343,19 +324,19 @@ export default function AgencyDashboard() {
               </div>
               {bookings.length===0
                 ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>📭 Aucune réservation</div>
-                : <table className="data-table">
-                    <thead><tr><th>Passager</th><th>Trajet</th><th>Bus</th><th>Montant</th><th>Commission</th><th>Statut</th></tr></thead>
-                    <tbody>{bookings.slice(0,5).map(b => (
-                      <tr key={b.id}>
-                        <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
-                        <td>{b.departure_city} → {b.arrival_city}</td>
-                        <td>{b.bus_name?<span className="badge b-b" style={{ fontSize:11 }}>{b.bus_name}</span>:<span style={{ color:'var(--muted)' }}>—</span>}</td>
-                        <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
-                        <td style={{ color:'var(--err)', fontSize:12 }}>-{Number(b.commission_amount||0).toLocaleString('fr-FR')} FC</td>
-                        <td><StatusBadge status={b.status}/></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
+                : <div style={{ overflowX:'auto' }}>
+                    <table className="data-table">
+                      <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
+                      <tbody>{bookings.slice(0,5).map(b => (
+                        <tr key={b.id}>
+                          <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
+                          <td>{b.departure_city} → {b.arrival_city}</td>
+                          <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
+                          <td><StatusBadge status={b.status}/></td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
               }
             </div>
           </>}
@@ -370,15 +351,15 @@ export default function AgencyDashboard() {
                 </div>
               : buses.map((bus,i) => (
                 <div key={bus.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'13px 18px' }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                  <div className="bus-card-row">
                     <div style={{ display:'flex', alignItems:'center', gap:13 }}>
-                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20 }}>🚌</div>
+                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>🚌</div>
                       <div>
                         <div style={{ fontFamily:'var(--font)', fontSize:15, fontWeight:700 }}>{bus.bus_name}</div>
                         <div style={{ fontSize:12, color:'var(--muted)', marginTop:1 }}>{bus.total_seats} sièges{bus.description&&` · ${bus.description}`}</div>
                       </div>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                       <span className={`badge ${bus.is_active?'b-g':'b-r'}`}>{bus.is_active?'✓ Actif':'⛔ Inactif'}</span>
                       <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditBus({...bus})}>✏️ Modifier</button>
                       <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteBus(bus.id)}>🗑️</button>
@@ -398,22 +379,22 @@ export default function AgencyDashboard() {
                 </div>
               : trips.map((t,i) => (
                 <div key={t.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'12px 18px' }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                  {/* Ligne principale */}
+                  <div className="trip-card-row">
+                    <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
                       <div style={{ textAlign:'center', minWidth:58 }}>
                         <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15 }}>{t.departure_city}</div>
                         <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)' }}>{t.departure_time}</div>
                       </div>
-                      <div style={{ color:'var(--muted)' }}>→</div>
+                      <div style={{ color:'var(--muted)', fontSize:18 }}>→</div>
                       <div style={{ textAlign:'center', minWidth:58 }}>
                         <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15 }}>{t.arrival_city}</div>
                         <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
                       </div>
-                      <div style={{ width:1, height:26, background:'var(--border)', margin:'0 2px' }}/>
                       {t.bus_name && <span className="badge b-b" style={{ fontSize:11 }}>🚌 {t.bus_name}</span>}
                       <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:'var(--gold)' }}>{Number(t.price).toLocaleString('fr-FR')} <span style={{ fontSize:11, fontWeight:500 }}>FC</span></div>
                     </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                       <div style={{ textAlign:'right' }}>
                         <div style={{ fontWeight:700, fontSize:12 }}>{t.available_seats}/{t.total_seats}</div>
                         <div style={{ fontSize:11, color:'var(--muted)' }}>places</div>
@@ -458,17 +439,10 @@ export default function AgencyDashboard() {
 
           {/* SETTINGS */}
           {tab==='settings' && <div style={{ maxWidth:540 }}>
-
-            {/* ✅ LOGO UPLOAD LOCAL */}
             <div className="glass p-16 fade-in" style={{ marginBottom:12 }}>
               <div className="section-title">🖼️ Logo de l'agence</div>
-              <LogoUploader
-                currentLogo={settings.logo_url}
-                agencyName={agencyName}
-                onChange={val => setSettings({...settings, logo_url: val})}
-              />
+              <LogoUploader currentLogo={settings.logo_url} agencyName={agencyName} onChange={val => setSettings({...settings, logo_url: val})} />
             </div>
-
             <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
               <div className="section-title">🏢 Informations</div>
               <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
@@ -477,7 +451,6 @@ export default function AgencyDashboard() {
                 <Inp label="Adresse"><input className="input-field" placeholder="Avenue du Commerce, Kinshasa" value={settings.address||''} onChange={e=>setSettings({...settings,address:e.target.value})} /></Inp>
               </div>
             </div>
-
             <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:12 }}>
               <div className="section-title">💸 Politique d'annulation</div>
               <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>Pourcentage retenu quand un client annule.</p>
@@ -498,14 +471,11 @@ export default function AgencyDashboard() {
                 ))}
               </div>
             </div>
-
             <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13 }} disabled={savingSettings}
               onClick={async () => {
                 setSavingSettings(true);
-                try {
-                  await axios.patch(`${API}/agency/settings`, settings, { headers });
-                  ok('Paramètres sauvegardés ✓');
-                } catch(e) { err(e.response?.data?.error||'Erreur'); }
+                try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés ✓'); }
+                catch(e) { err(e.response?.data?.error||'Erreur'); }
                 finally { setSavingSettings(false); }
               }}>
               {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : '💾 Sauvegarder'}
@@ -513,6 +483,19 @@ export default function AgencyDashboard() {
           </div>}
         </>}
       </main>
+
+      {/* ── BARRE DE NAVIGATION BAS (mobile uniquement) ── */}
+      <nav className="mobile-bottom-nav">
+        {TABS.map(t => (
+          <button key={t.id} className={`mobile-tab-btn ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
+            <span className="mobile-tab-icon">{t.icon}</span>
+            <span className="mobile-tab-label">{t.label}</span>
+            {t.id==='bookings' && pending>0 && (
+              <span className="mobile-tab-badge">{pending}</span>
+            )}
+          </button>
+        ))}
+      </nav>
 
       {/* ── MODALS ── */}
       {busModal && (
