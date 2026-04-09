@@ -281,21 +281,27 @@ export default function AgencyDashboard() {
 
       {/* MAIN */}
       <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
-        {/* Header */}
-        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+       {/* Header */}
+          <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
           <div style={{ paddingLeft: 0 }}>
-            <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
-              {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
-            </h1>
-            <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>
-              {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
-            </div>
-          </div>
-          <div style={{ display:'flex', gap:8 }}>
-            {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
-            {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>}
-          </div>
-        </div>
+         <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
+          {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
+        </h1>
+          <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>
+      {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+         </div>
+         </div>
+  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+    {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
+    {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>}
+    {/* Bouton déconnexion mobile uniquement */}
+    <button
+      className="btn btn-ghost mobile-logout"
+      style={{ fontSize:12, padding:'7px 11px' }}
+      onClick={() => { localStorage.clear(); navigate('/login'); }}
+    >🚪</button>
+  </div>
+</div>
 
         {loading
           ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>

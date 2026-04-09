@@ -322,3 +322,10 @@ body { font-family: var(--body); background: var(--night); color: var(--text); o
   /* Stat cards 2 colonnes sur petit écran */
   .grid-4.stats-grid,.g4c.stats-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* Déconnexion mobile — caché sur desktop, visible sur mobile */
+.mobile-logout { display: none; }
+
+@media(max-width:768px) {
+  .mobile-logout { display: inline-flex; }
+}
