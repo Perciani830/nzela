@@ -27,10 +27,12 @@ const RESPONSIVE_CSS = `
   .stats-row         { display: flex; gap: 1px; }
   .trip-card-actions { display: flex; align-items: center; justify-content: space-between; }
 
-  @media (max-width: 768px) {
-    /* Hero : search plein écran, carousel caché */
-    .hero-grid { grid-template-columns: 1fr !important; }
-    .hero-carousel { display: none !important; }
+@media (max-width: 768px) {
+  /* ... tes règles existantes ... */
+  .hero-carousel { display: block !important; margin-top: 16px; }
+  /* Réduis la hauteur de l'image carousel sur mobile */
+  .c-slide img { height: 200px !important; object-fit: cover; }
+}
 
     /* Features : 2 colonnes */
     .feat-strip { grid-template-columns: 1fr 1fr !important; }
