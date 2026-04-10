@@ -156,8 +156,11 @@ export default function AgencyDashboard() {
   // Ferme la sidebar et change d'onglet
   const goTab = (id) => { setTab(id); setSidebarOpen(false); };
 
-  const load = async () => {
-    setLoading(true);
+  // Ref pour comparer le nombre de pending entre deux polls
+  const prevPendingRef = useRef(null);
+
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [s,t,b,bs,se] = await Promise.all([
         axios.get(`${API}/agency/stats`,    { headers }),
@@ -168,15 +171,34 @@ export default function AgencyDashboard() {
       ]);
       setStats(s.data);
       setTrips(Array.isArray(t.data) ? t.data : []);
-      setBookings(Array.isArray(b.data) ? b.data : []);
+
+      const newBookings = Array.isArray(b.data) ? b.data : [];
+      setBookings(newBookings);
       setBuses(Array.isArray(bs.data) ? bs.data : []);
       setSettings(se.data);
+
+      // ── Détection nouvelles réservations pending ─────────────
+      const newPending = newBookings.filter(b => b.status === 'pending').length;
+      if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
+        const diff = newPending - prevPendingRef.current;
+        inf(`🎟️ ${diff} nouvelle${diff > 1 ? 's' : ''} réservation${diff > 1 ? 's' : ''} en attente !`);
+      }
+      prevPendingRef.current = newPending;
+
     } catch(e) {
       if (e.response?.status===401) { localStorage.clear(); navigate('/login'); }
-      else err('Erreur de chargement');
-    } finally { setLoading(false); }
+      else if (!silent) err('Erreur de chargement');
+    } finally {
+      if (!silent) setLoading(false);
+    }
   };
-  useEffect(() => { load(); }, []);
+
+  // Chargement initial + polling silencieux toutes les 30s
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => load(true), 30000);
+    return () => clearInterval(interval);
+  }, []);
 
   // BUS
   const doCreateBus = async () => {
@@ -281,27 +303,21 @@ export default function AgencyDashboard() {
 
       {/* MAIN */}
       <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
-       {/* Header */}
-          <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        {/* Header */}
+        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
           <div style={{ paddingLeft: 0 }}>
-         <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
-          {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
-        </h1>
-          <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>
-      {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
-         </div>
-         </div>
-  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
-    {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
-    {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>}
-    {/* Bouton déconnexion mobile uniquement */}
-    <button
-      className="btn btn-ghost mobile-logout"
-      style={{ fontSize:12, padding:'7px 11px' }}
-      onClick={() => { localStorage.clear(); navigate('/login'); }}
-    >🚪</button>
-  </div>
-</div>
+            <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>
+              {TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}
+            </h1>
+            <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>
+              {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+            </div>
+          </div>
+          <div style={{ display:'flex', gap:8 }}>
+            {tab==='buses'  && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
+            {tab==='trips'  && <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>}
+          </div>
+        </div>
 
         {loading
           ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>

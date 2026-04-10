@@ -1,6 +1,7 @@
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
 const { getDb, runTransaction } = require('../db/database');
+const { notifyNewBooking, notifyPaymentConfirmed } = require('../mailer');
 
 function genRef() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -36,17 +37,35 @@ router.post('/book', (req, res) => {
   if (!trip_id || !name || !phone) return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
   const seats = Math.max(1, Math.min(10, parseInt(passengers)||1));
   const db = getDb();
-  const trip = db.prepare('SELECT t.*, a.agency_name, a.commission_rate, a.cancel_rate FROM trips t JOIN agencies a ON t.agency_id=a.id WHERE t.id=? AND t.available_seats>=? AND a.is_active=1').get(trip_id, seats);
+  const trip = db.prepare(`
+    SELECT t.*, a.agency_name, a.email agency_email, a.commission_rate, a.cancel_rate
+    FROM trips t JOIN agencies a ON t.agency_id=a.id
+    WHERE t.id=? AND t.available_seats>=? AND a.is_active=1
+  `).get(trip_id, seats);
   if (!trip) return res.status(404).json({ error: 'Trajet indisponible ou places insuffisantes' });
+
   const total = trip.price * seats;
-  const ref = genRef();
-  const id = uuidv4();
+  const ref   = genRef();
+  const id    = uuidv4();
+
   try {
     runTransaction(db, () => {
-      db.prepare('INSERT INTO bookings (id,reference,trip_id,agency_id,passenger_name,passenger_phone,passenger_email,passengers,total_price,commission_rate,status,payment_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-        .run(id, ref, trip_id, trip.agency_id, name, phone, email||null, seats, total, trip.commission_rate||10, 'pending', 'pending');
+      db.prepare(`
+        INSERT INTO bookings
+          (id,reference,trip_id,agency_id,passenger_name,passenger_phone,passenger_email,passengers,total_price,commission_rate,status,payment_status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+      `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null, seats, total, trip.commission_rate||10, 'pending', 'pending');
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
+
+    // ── Notification email agence (non-bloquant) ───────────────
+    notifyNewBooking({
+      agencyEmail: trip.agency_email,
+      agencyName:  trip.agency_name,
+      booking: { reference:ref, passenger_name:name, passenger_phone:phone, passengers:seats, total_price:total },
+      trip,
+    }).catch(() => {}); // silencieux si pas de config email
+
     res.status(201).json({ booking_id: id, reference: ref, total_price: total });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -59,9 +78,9 @@ router.post('/pay', async (req, res) => {
   if (!booking) return res.status(404).json({ error: 'Réservation introuvable' });
   if (booking.payment_status === 'completed') return res.status(400).json({ error: 'Déjà payée' });
 
-  const rate = booking.commission_rate || 10;
+  const rate              = booking.commission_rate || 10;
   const commission_amount = Math.round(booking.total_price * rate / 100);
-  const net_agency = booking.total_price - commission_amount;
+  const net_agency        = booking.total_price - commission_amount;
   let txId = null;
 
   if (payment_method === 'cash') {
@@ -70,22 +89,22 @@ router.post('/pay', async (req, res) => {
     if (!operator || !phone_number) return res.status(400).json({ error: 'Opérateur et numéro requis' });
     const isLive = process.env.MAISHAPAY_MODE === 'live';
     const payload = {
-      gatewayMode: isLive ? 1 : 0,
-      publicApiKey:  isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY  : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY,
-      secretApiKey:  isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY  : process.env.MAISHAPAY_SANDBOX_SECRET_KEY,
+      gatewayMode:          isLive ? 1 : 0,
+      publicApiKey:         isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY   : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY,
+      secretApiKey:         isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY   : process.env.MAISHAPAY_SANDBOX_SECRET_KEY,
       transactionReference: booking.reference,
-      amount: booking.total_price,
-      currency: 'CDF',
-      chanel: 'MOBILEMONEY',
-      provider: operator.toUpperCase(),
-      walletID: phone_number,
+      amount:               booking.total_price,
+      currency:             'CDF',
+      chanel:               'MOBILEMONEY',
+      provider:             operator.toUpperCase(),
+      walletID:             phone_number,
     };
     try {
       const fetch = (...a) => import('node-fetch').then(({default:f}) => f(...a));
       const r = await fetch('https://marchand.maishapay.online/api/payment/rest/vers1.0/merchant', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      const d = await r.json();
+      const d    = await r.json();
       const orig = (d && d.original) ? d.original : d;
       if (orig && orig.data && ['202','200'].includes(String(orig.data.statusCode))) {
         txId = orig.data.transactionId || booking.reference;
@@ -99,9 +118,34 @@ router.post('/pay', async (req, res) => {
 
   try {
     runTransaction(db, () => {
-      db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed', payment_method=?, transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?`)
-        .run(payment_method, txId, rate, commission_amount, booking_id);
+      db.prepare(`
+        UPDATE bookings
+        SET status='confirmed', payment_status='completed',
+            payment_method=?, transaction_id=?, commission_rate=?, commission_amount=?
+        WHERE id=?
+      `).run(payment_method, txId, rate, commission_amount, booking_id);
     });
+
+    // ── Notification email paiement confirmé (non-bloquant) ───
+    const trip = db.prepare(`
+      SELECT t.departure_city, t.arrival_city, t.departure_date, t.departure_time,
+             a.email agency_email, a.agency_name
+      FROM bookings b
+      JOIN trips t    ON b.trip_id    = t.id
+      JOIN agencies a ON b.agency_id  = a.id
+      WHERE b.id = ?
+    `).get(booking_id);
+
+    if (trip) {
+      notifyPaymentConfirmed({
+        agencyEmail: trip.agency_email,
+        agencyName:  trip.agency_name,
+        booking,
+        trip,
+        commission:  commission_amount,
+      }).catch(() => {});
+    }
+
     res.json({ success: true, transaction_id: txId, reference: booking.reference, commission: commission_amount, net_agency });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
