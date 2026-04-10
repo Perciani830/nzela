@@ -33,7 +33,7 @@ router.get('/gallery', (req, res) => {
 });
 
 router.post('/book', (req, res) => {
-  console.log('📥 /book appelé — trip_id:', req.body.trip_id); // ← ajoute cette ligne
+  console.log('📥 /book appelé — trip_id:', req.body.trip_id);
   const { trip_id, name, phone, email, passengers } = req.body;
   if (!trip_id || !name || !phone) return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
   const seats = Math.max(1, Math.min(10, parseInt(passengers)||1));
@@ -58,15 +58,14 @@ router.post('/book', (req, res) => {
       `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null, seats, total, trip.commission_rate||10, 'pending', 'pending');
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
-console.log('📤 Appel notifyNewBooking pour', trip.agency_email);
-notifyNewBooking({...}).catch(() => {});
-    // ── Notification email agence (non-bloquant) ───────────────
+
+    console.log('📤 Envoi email à:', trip.agency_email, '— agence:', trip.agency_name);
     notifyNewBooking({
       agencyEmail: trip.agency_email,
       agencyName:  trip.agency_name,
       booking: { reference:ref, passenger_name:name, passenger_phone:phone, passengers:seats, total_price:total },
       trip,
-    }).catch(() => {}); // silencieux si pas de config email
+    }).catch(e => console.error('❌ notifyNewBooking error:', e.message));
 
     res.status(201).json({ booking_id: id, reference: ref, total_price: total });
   } catch(e) { res.status(500).json({ error: e.message }); }
@@ -128,7 +127,6 @@ router.post('/pay', async (req, res) => {
       `).run(payment_method, txId, rate, commission_amount, booking_id);
     });
 
-    // ── Notification email paiement confirmé (non-bloquant) ───
     const trip = db.prepare(`
       SELECT t.departure_city, t.arrival_city, t.departure_date, t.departure_time,
              a.email agency_email, a.agency_name
@@ -139,13 +137,14 @@ router.post('/pay', async (req, res) => {
     `).get(booking_id);
 
     if (trip) {
+      console.log('📤 Envoi email paiement à:', trip.agency_email);
       notifyPaymentConfirmed({
         agencyEmail: trip.agency_email,
         agencyName:  trip.agency_name,
         booking,
         trip,
         commission:  commission_amount,
-      }).catch(() => {});
+      }).catch(e => console.error('❌ notifyPaymentConfirmed error:', e.message));
     }
 
     res.json({ success: true, transaction_id: txId, reference: booking.reference, commission: commission_amount, net_agency });
