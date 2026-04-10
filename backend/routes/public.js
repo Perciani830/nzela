@@ -33,6 +33,7 @@ router.get('/gallery', (req, res) => {
 });
 
 router.post('/book', (req, res) => {
+  console.log('📥 /book appelé — trip_id:', req.body.trip_id); // ← ajoute cette ligne
   const { trip_id, name, phone, email, passengers } = req.body;
   if (!trip_id || !name || !phone) return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
   const seats = Math.max(1, Math.min(10, parseInt(passengers)||1));
@@ -57,7 +58,8 @@ router.post('/book', (req, res) => {
       `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null, seats, total, trip.commission_rate||10, 'pending', 'pending');
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
-
+console.log('📤 Appel notifyNewBooking pour', trip.agency_email);
+notifyNewBooking({...}).catch(() => {});
     // ── Notification email agence (non-bloquant) ───────────────
     notifyNewBooking({
       agencyEmail: trip.agency_email,
