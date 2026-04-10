@@ -199,4 +199,51 @@ router.patch('/bookings/:id/cancel', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+
+router.post('/trips/bulk', auth, (req, res) => {
+  try {
+    const { bus_id, departure_city, arrival_city, departure_time, price, description, dates } = req.body;
+
+    if (!departure_city || !arrival_city) return res.status(400).json({ error: 'Départ et arrivée requis' });
+    if (departure_city === arrival_city)  return res.status(400).json({ error: 'Départ et arrivée doivent être différents' });
+    if (!departure_time || !price)        return res.status(400).json({ error: 'Heure et prix requis' });
+    if (!Array.isArray(dates) || dates.length === 0) return res.status(400).json({ error: 'Aucune date fournie' });
+    if (dates.length > 90) return res.status(400).json({ error: 'Maximum 90 dates à la fois' });
+
+    const db = getDb();
+    let busName = null;
+    let seats   = 50;
+
+    if (bus_id) {
+      const bus = db.prepare('SELECT * FROM buses WHERE id=? AND agency_id=?').get(bus_id, req.user.id);
+      if (bus) { busName = bus.bus_name; seats = bus.total_seats; }
+    }
+
+    let created = 0;
+    const insert = db.prepare(`
+      INSERT INTO trips
+        (id, agency_id, bus_id, bus_name, departure_city, arrival_city,
+         departure_date, departure_time, price, total_seats, available_seats, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    // Tout en une seule transaction pour la performance
+    const run = db.transaction(() => {
+      for (const date of dates) {
+        // Valide le format de date YYYY-MM-DD
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        insert.run(
+          uuidv4(), req.user.id, bus_id || null, busName,
+          departure_city, arrival_city, date, departure_time,
+          parseFloat(price), seats, seats, description || null
+        );
+        created++;
+      }
+    });
+
+    run();
+    res.status(201).json({ created, message: `${created} voyage(s) créé(s) avec succès` });
+
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 module.exports = router;
