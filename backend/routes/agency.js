@@ -23,7 +23,6 @@ router.get('/stats', auth, (req, res) => {
     const id = req.user.id;
     const agency = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(id);
     const rate = agency ? (agency.commission_rate || 10) : 10;
-
     const total_bookings    = db.prepare("SELECT COUNT(*) c FROM bookings WHERE agency_id=? AND status!='cancelled'").get(id).c;
     const total_revenue_raw = db.prepare("SELECT COALESCE(SUM(total_price),0) s FROM bookings WHERE agency_id=? AND status='confirmed'").get(id).s;
     const total_commission  = db.prepare("SELECT COALESCE(SUM(commission_amount),0) s FROM bookings WHERE agency_id=? AND status='confirmed'").get(id).s;
@@ -31,7 +30,6 @@ router.get('/stats', auth, (req, res) => {
     const active_trips      = db.prepare("SELECT COUNT(*) c FROM trips WHERE agency_id=? AND is_active=1 AND available_seats>0").get(id).c;
     const pending_bookings  = db.prepare("SELECT COUNT(*) c FROM bookings WHERE agency_id=? AND status='pending'").get(id).c;
     const total_buses       = db.prepare("SELECT COUNT(*) c FROM buses WHERE agency_id=? AND is_active=1").get(id).c;
-
     res.json({ total_bookings, total_revenue, total_commission, active_trips, pending_bookings, total_buses });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -118,6 +116,47 @@ router.post('/trips', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── GÉNÉRATION EN MASSE ────────────────────────────────────────
+router.post('/trips/bulk', auth, (req, res) => {
+  try {
+    const { bus_id, departure_city, arrival_city, departure_time, price, description, dates } = req.body;
+    if (!departure_city || !arrival_city) return res.status(400).json({ error: 'Départ et arrivée requis' });
+    if (departure_city === arrival_city)  return res.status(400).json({ error: 'Départ et arrivée doivent être différents' });
+    if (!departure_time || !price)        return res.status(400).json({ error: 'Heure et prix requis' });
+    if (!Array.isArray(dates) || dates.length === 0) return res.status(400).json({ error: 'Aucune date fournie' });
+    if (dates.length > 90)                return res.status(400).json({ error: 'Maximum 90 dates à la fois' });
+
+    const db = getDb();
+    let busName = null, seats = 50;
+    if (bus_id) {
+      const bus = db.prepare('SELECT * FROM buses WHERE id=? AND agency_id=?').get(bus_id, req.user.id);
+      if (bus) { busName = bus.bus_name; seats = bus.total_seats; }
+    }
+
+    let created = 0;
+    const stmt = db.prepare(`
+      INSERT INTO trips
+        (id, agency_id, bus_id, bus_name, departure_city, arrival_city,
+         departure_date, departure_time, price, total_seats, available_seats, description)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    runTransaction(db, () => {
+      for (const date of dates) {
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
+        stmt.run(
+          uuidv4(), req.user.id, bus_id || null, busName,
+          departure_city, arrival_city, date, departure_time,
+          parseFloat(price), seats, seats, description || null
+        );
+        created++;
+      }
+    });
+
+    res.status(201).json({ created });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 router.patch('/trips/:id', auth, (req, res) => {
   try {
     const { departure_city, arrival_city, departure_date, departure_time, price, available_seats, total_seats, description } = req.body;
@@ -199,90 +238,4 @@ router.patch('/bookings/:id/cancel', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-
-router.post('/trips/bulk', auth, (req, res) => {
-  try {
-    const { bus_id, departure_city, arrival_city, departure_time, price, description, dates } = req.body;
-
-    if (!departure_city || !arrival_city) return res.status(400).json({ error: 'Départ et arrivée requis' });
-    if (departure_city === arrival_city)  return res.status(400).json({ error: 'Départ et arrivée doivent être différents' });
-    if (!departure_time || !price)        return res.status(400).json({ error: 'Heure et prix requis' });
-    if (!Array.isArray(dates) || dates.length === 0) return res.status(400).json({ error: 'Aucune date fournie' });
-    if (dates.length > 90) return res.status(400).json({ error: 'Maximum 90 dates à la fois' });
-
-    const db = getDb();
-    let busName = null;
-    let seats   = 50;
-
-    if (bus_id) {
-      const bus = db.prepare('SELECT * FROM buses WHERE id=? AND agency_id=?').get(bus_id, req.user.id);
-      if (bus) { busName = bus.bus_name; seats = bus.total_seats; }
-    }
-
-    let created = 0;
-    const insert = db.prepare(`
-      INSERT INTO trips
-        (id, agency_id, bus_id, bus_name, departure_city, arrival_city,
-         departure_date, departure_time, price, total_seats, available_seats, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    // Tout en une seule transaction pour la performance
-   runTransaction(db, () => {
-  for (const date of dates) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-    insert.run(
-      uuidv4(), req.user.id, bus_id || null, busName,
-      departure_city, arrival_city, date, departure_time,
-      parseFloat(price), seats, seats, description || null
-    );
-    created++;
-  }
-});
-
-    run();
-    res.status(201).json({ created, message: `${created} voyage(s) créé(s) avec succès` });
-
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
-
-router.post('/trips/bulk', auth, (req, res) => {
-  try {
-    const { bus_id, departure_city, arrival_city, departure_time, price, description, dates } = req.body;
-    if (!departure_city || !arrival_city) return res.status(400).json({ error: 'Départ et arrivée requis' });
-    if (departure_city === arrival_city)  return res.status(400).json({ error: 'Départ et arrivée doivent être différents' });
-    if (!departure_time || !price)        return res.status(400).json({ error: 'Heure et prix requis' });
-    if (!Array.isArray(dates) || dates.length === 0) return res.status(400).json({ error: 'Aucune date fournie' });
-    if (dates.length > 90) return res.status(400).json({ error: 'Maximum 90 dates à la fois' });
-
-    const db = getDb();
-    let busName = null, seats = 50;
-    if (bus_id) {
-      const bus = db.prepare('SELECT * FROM buses WHERE id=? AND agency_id=?').get(bus_id, req.user.id);
-      if (bus) { busName = bus.bus_name; seats = bus.total_seats; }
-    }
-
-    let created = 0;
-    const insert = db.prepare(`
-      INSERT INTO trips
-        (id, agency_id, bus_id, bus_name, departure_city, arrival_city,
-         departure_date, departure_time, price, total_seats, available_seats, description)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-    `);
-
-    runTransaction(db, () => {
-      for (const date of dates) {
-        if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) continue;
-        insert.run(
-          uuidv4(), req.user.id, bus_id || null, busName,
-          departure_city, arrival_city, date, departure_time,
-          parseFloat(price), seats, seats, description || null
-        );
-        created++;
-      }
-    });
-
-    res.status(201).json({ created, message: `${created} voyage(s) créé(s) avec succès` });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
 module.exports = router;
