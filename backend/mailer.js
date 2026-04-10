@@ -1,7 +1,11 @@
 const { Resend } = require('resend');
 
 function getClient() {
-  if (!process.env.RESEND_API_KEY) return null;
+  if (!process.env.RESEND_API_KEY) {
+    console.error('❌ RESEND_API_KEY manquante — emails désactivés');
+    return null;
+  }
+  console.log('✅ Resend client initialisé');
   return new Resend(process.env.RESEND_API_KEY);
 }
 
@@ -9,7 +13,11 @@ const FROM = 'Nzela RDC <onboarding@resend.dev>';
 
 async function notifyNewBooking({ agencyEmail, agencyName, booking, trip }) {
   const client = getClient();
-  if (!client || !agencyEmail) return;
+  if (!client || !agencyEmail) {
+    console.log(`⚠️ Email non envoyé — client: ${!!client}, agencyEmail: ${agencyEmail}`);
+    return;
+  }
+  console.log(`📤 Envoi email à ${agencyEmail}...`);
   try {
     await client.emails.send({
       from: FROM,
