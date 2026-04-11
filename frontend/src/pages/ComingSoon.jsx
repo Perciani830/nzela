@@ -56,58 +56,58 @@ function useCountdown() {
 
 // ── Composant défilant ─────────────────────────────────────────
 function ScrollingNames() {
-  const track1 = useRef(null);
-  const track2 = useRef(null);
-
-  // Duplique la liste pour boucle infinie
-  const doubled = [...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS];
+  // Multiplie suffisamment pour couvrir n'importe quelle largeur d'écran
+  const many = [...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS];
 
   return (
     <div style={{
       overflow: 'hidden',
-      maskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
-      WebkitMaskImage: 'linear-gradient(90deg, transparent, black 10%, black 90%, transparent)',
+      maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)',
+      WebkitMaskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)',
       marginBottom: 48,
     }}>
       {/* Ligne 1 — gauche vers droite */}
-      <div ref={track1} style={{
-        display: 'flex', gap: 32, whiteSpace: 'nowrap',
-        animation: 'scroll-r 25s linear infinite',
+      <div style={{
+        display: 'flex', gap: 12, whiteSpace: 'nowrap',
+        width: 'max-content',
+        animation: 'scroll-r 40s linear infinite',
         marginBottom: 10,
       }}>
-        {doubled.map((name, i) => (
+        {many.map((name, i) => (
           <span key={i} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             fontWeight: 600, fontSize: 13,
             color: 'rgba(232,244,237,0.7)',
             background: 'rgba(61,170,106,0.08)',
             border: '1px solid rgba(61,170,106,0.15)',
-            borderRadius: 99, padding: '5px 16px',
+            borderRadius: 99, padding: '5px 14px',
             flexShrink: 0,
           }}>
-            <span style={{ color: 'var(--green-l)', fontSize: 10 }}>✦</span>
+            <span style={{ color: 'var(--green-l)', fontSize: 9 }}>✦</span>
             {name}
           </span>
         ))}
       </div>
+
       {/* Ligne 2 — droite vers gauche */}
-      <div ref={track2} style={{
-        display: 'flex', gap: 32, whiteSpace: 'nowrap',
-        animation: 'scroll-l 30s linear infinite',
+      <div style={{
+        display: 'flex', gap: 12, whiteSpace: 'nowrap',
+        width: 'max-content',
+        animation: 'scroll-l 50s linear infinite',
       }}>
-        {[...doubled].reverse().map((name, i) => (
+        {[...many].reverse().map((name, i) => (
           <span key={i} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 8,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
             fontWeight: 600, fontSize: 13,
             color: 'rgba(232,244,237,0.55)',
             background: 'rgba(61,170,106,0.05)',
             border: '1px solid rgba(61,170,106,0.1)',
-            borderRadius: 99, padding: '5px 16px',
+            borderRadius: 99, padding: '5px 14px',
             flexShrink: 0,
           }}>
-            <span style={{ color: 'var(--gold)', fontSize: 10 }}>♡</span>
+            <span style={{ color: 'var(--gold)', fontSize: 9 }}>♡</span>
             {name}
           </span>
         ))}
