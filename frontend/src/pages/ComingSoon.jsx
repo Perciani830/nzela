@@ -14,6 +14,7 @@ const SUPPORTERS = [
   'Pierdi T.',
   'Perla S',
   'P. Bernard',
+  'Sephora Ngoma',
   'Precieux P',
   'Israel O.',
   'Grâce M.',
