@@ -363,7 +363,7 @@ export default function ComingSoon() {
         <div className="cs-a1">
           <a href="/" className="cs-logo">
             <div className="cs-logo-icon">
-              <img src="/nzela-icone.png" alt="Nzela" />
+              <img src="frontend\public\nzela-icon.png" alt="Nzela" />
             </div>
             <div>
               <div className="cs-logo-text">nzela</div>
