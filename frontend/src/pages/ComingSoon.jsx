@@ -70,7 +70,7 @@ function ScrollingNames() {
       <div style={{
         display: 'flex', gap: 12, whiteSpace: 'nowrap',
         width: 'max-content',
-        animation: `scroll-r ${SUPPORTERS.length * 3}s linear infinite`,
+        animation: `scroll-r ${SUPPORTERS.length * 8}s linear infinite`,
         marginBottom: 10,
       }}>
         {many.map((name, i) => (
@@ -94,7 +94,7 @@ function ScrollingNames() {
       <div style={{
         display: 'flex', gap: 12, whiteSpace: 'nowrap',
         width: 'max-content',
-        animation: `scroll-l ${SUPPORTERS.length * 4}s linear infinite`,
+        animation: `scroll-l ${SUPPORTERS.length * 10}s linear infinite`,
       }}>
         {[...many].reverse().map((name, i) => (
           <span key={i} style={{
@@ -199,6 +199,7 @@ export default function ComingSoon() {
         .cs-logo {
           display: inline-flex; align-items: center; gap: 13px;
           margin-bottom: 44px; text-decoration: none;
+          background: linear-gradient(135deg, var(--green-d), var(--green-l));
         }
         .cs-logo-icon {
           width: 58px; height: 58px; border-radius: 16px;
@@ -361,18 +362,13 @@ export default function ComingSoon() {
       <div className="cs-wrap">
 
         {/* Logo */}
-        <div className="cs-a1">
-          <a href="/" className="cs-logo">
-            <div className="cs-logo-icon">
-              <img src="/nzela-icone.png" alt="Nzela" />
-            </div>
-            <div>
-              <div className="cs-logo-text">nzela</div>
-              <div className="cs-logo-sub">Ta route commence ici.</div>
-            </div>
-          </a>
-        </div>
-
+        <div className="cs-logo-icon">
+  <img 
+    src="/nzela-icon.png" 
+    alt="Nzela"
+    onError={e => { e.target.style.display='none'; }}
+  />
+</div>
         {/* Badge */}
         <div className="cs-a2">
           <div className="cs-badge">
