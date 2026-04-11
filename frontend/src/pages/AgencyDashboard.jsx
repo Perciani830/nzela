@@ -176,7 +176,7 @@ export default function AgencyDashboard() {
 
   useEffect(() => {
     load();
-    const interval = setInterval(() => load(true), 30000);
+    const interval = setInterval(() => load(true), 10000);
     return () => clearInterval(interval);
   }, []);
 
