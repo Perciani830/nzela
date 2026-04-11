@@ -60,7 +60,7 @@ function ScrollingNames() {
   const track2 = useRef(null);
 
   // Duplique la liste pour boucle infinie
-  const doubled = [...SUPPORTERS, ...SUPPORTERS];
+  const doubled = [...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS];
 
   return (
     <div style={{
@@ -79,7 +79,7 @@ function ScrollingNames() {
           <span key={i} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 600, fontSize: 14,
+            fontWeight: 600, fontSize: 13,
             color: 'rgba(232,244,237,0.7)',
             background: 'rgba(61,170,106,0.08)',
             border: '1px solid rgba(61,170,106,0.15)',
@@ -100,7 +100,7 @@ function ScrollingNames() {
           <span key={i} style={{
             display: 'inline-flex', alignItems: 'center', gap: 8,
             fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 600, fontSize: 14,
+            fontWeight: 600, fontSize: 13,
             color: 'rgba(232,244,237,0.55)',
             background: 'rgba(61,170,106,0.05)',
             border: '1px solid rgba(61,170,106,0.1)',
@@ -364,7 +364,7 @@ export default function ComingSoon() {
         <div className="cs-a1">
           <a href="/" className="cs-logo">
             <div className="cs-logo-icon">
-              <img src="frontend\public\nzela-icon.png" alt="Nzela" />
+              <img src="/nzela-icone.png" alt="Nzela" />
             </div>
             <div>
               <div className="cs-logo-text">nzela</div>
