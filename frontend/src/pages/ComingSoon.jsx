@@ -70,7 +70,7 @@ function ScrollingNames() {
       <div style={{
         display: 'flex', gap: 12, whiteSpace: 'nowrap',
         width: 'max-content',
-        animation: 'scroll-r 40s linear infinite',
+        animation: `scroll-r ${SUPPORTERS.length * 3}s linear infinite`,
         marginBottom: 10,
       }}>
         {many.map((name, i) => (
@@ -94,7 +94,7 @@ function ScrollingNames() {
       <div style={{
         display: 'flex', gap: 12, whiteSpace: 'nowrap',
         width: 'max-content',
-        animation: 'scroll-l 50s linear infinite',
+        animation: `scroll-l ${SUPPORTERS.length * 4}s linear infinite`,
       }}>
         {[...many].reverse().map((name, i) => (
           <span key={i} style={{
