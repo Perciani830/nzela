@@ -26,6 +26,7 @@ const SUPPORTERS = [
   'Chloé T.',
   'Aimerode I.',
   'Peace Holding.',
+  'Noela Babutana.'
 ];
 
 function pad(n) { return String(n).padStart(2, '0'); }
