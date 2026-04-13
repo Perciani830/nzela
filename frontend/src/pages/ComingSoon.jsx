@@ -28,6 +28,7 @@ const SUPPORTERS = [
   'Peace Holding.',
   'Nathalie Mbu.',
   'Jean Claude Mbiya',
+  'A. EMERY .M',
   'Capot John',
   'Noela Babutana.'
 ];
