@@ -9,7 +9,7 @@ const START  = new Date('2026-04-11T00:00:00');
 const SUPPORTERS = [
   'Maman Chérie',
   'Papa',
-  'My Wyfe.',
+  'My Wife.',
   'Peniel M.',
   'Pierdi T.',
   'Perla S',
@@ -26,6 +26,9 @@ const SUPPORTERS = [
   'Chloé T.',
   'Aimerode I.',
   'Peace Holding.',
+  'Nathalie Mbu.',
+  'Jean Claude Mbiya',
+  'Capot John',
   'Noela Babutana.'
 ];
 
