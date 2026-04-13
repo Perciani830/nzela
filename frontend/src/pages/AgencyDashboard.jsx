@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import ManifestTab from './ManifestTab';
 
 const API = 'https://nzela-production.up.railway.app/api';
 const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
@@ -103,7 +104,6 @@ function LogoUploader({ currentLogo, agencyName, onChange }) {
   );
 }
 
-// Calcule les dates dans une période selon les jours cochés
 function buildDates(dateFrom, dateTo, activeDays) {
   if (!dateFrom || !dateTo || activeDays.length === 0) return [];
   const dates = [];
@@ -144,6 +144,10 @@ export default function AgencyDashboard() {
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
   const goTab = (id) => { setTab(id); setSidebarOpen(false); };
+
+  // Wrapper pour ManifestTab — reçoit (msg, type) et appelle setToast
+  const showToast = (msg, type='info') => setToast({ msg, type });
+
   const prevPendingRef = useRef(null);
 
   const load = async (silent = false) => {
@@ -184,7 +188,6 @@ export default function AgencyDashboard() {
     setBulkPreview(buildDates(bulkForm.date_from, bulkForm.date_to, bulkForm.active_days));
   }, [bulkForm.date_from, bulkForm.date_to, bulkForm.active_days]);
 
-  // BUS
   const doCreateBus = async () => {
     if (!busForm.bus_name) return err('Nom du bus requis');
     try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté 🚌'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
@@ -199,8 +202,6 @@ export default function AgencyDashboard() {
     try { await axios.delete(`${API}/agency/buses/${id}`, { headers }); inf('Bus désactivé'); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
-
-  // TRIPS
   const doCreateTrip = async () => {
     const { departure_city, arrival_city, departure_date, departure_time, price } = tripForm;
     if (!departure_city||!arrival_city||!departure_date||!departure_time||!price) return err('Champs obligatoires manquants');
@@ -216,8 +217,6 @@ export default function AgencyDashboard() {
     try { await axios.delete(`${API}/agency/trips/${id}`, { headers }); inf('Voyage supprimé'); load(); }
     catch(e) { err(e.response?.data?.error||'Impossible : réservations actives sur ce voyage'); }
   };
-
-  // GÉNÉRATION EN MASSE
   const doCreateBulk = async () => {
     const { departure_city, arrival_city, departure_time, price, date_from, date_to, bus_id, description } = bulkForm;
     if (!departure_city || !arrival_city)   return err('Départ et arrivée requis');
@@ -236,8 +235,6 @@ export default function AgencyDashboard() {
     } catch(e) { err(e.response?.data?.error||'Erreur'); }
     finally { setBulkLoading(false); }
   };
-
-  // BOOKINGS
   const doConfirm = async id => {
     try { await axios.patch(`${API}/agency/bookings/${id}/confirm`, {}, { headers }); ok('Confirmée ✓'); load(); }
     catch { err('Erreur'); }
@@ -247,16 +244,18 @@ export default function AgencyDashboard() {
     try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
     catch { err('Erreur'); }
   };
-
   const toggleDay = (day) => setBulkForm(f => ({ ...f, active_days: f.active_days.includes(day) ? f.active_days.filter(d => d !== day) : [...f.active_days, day].sort() }));
 
+  // ── TABS — Manifeste ajouté ────────────────────────────────
   const TABS = [
-    { id:'overview', icon:'📊', label:"Vue d'ensemble" },
-    { id:'buses',    icon:'🚌', label:'Mes bus' },
-    { id:'trips',    icon:'🗺️', label:'Voyages' },
-    { id:'bookings', icon:'🎟️', label:'Réservations' },
-    { id:'settings', icon:'⚙️', label:'Paramètres' },
+    { id:'overview',  icon:'📊', label:"Vue d'ensemble" },
+    { id:'buses',     icon:'🚌', label:'Mes bus' },
+    { id:'trips',     icon:'🗺️', label:'Voyages' },
+    { id:'bookings',  icon:'🎟️', label:'Réservations' },
+    { id:'manifest',  icon:'📋', label:'Manifeste' },
+    { id:'settings',  icon:'⚙️', label:'Paramètres' },
   ];
+
   const pending = bookings.filter(b => b.status==='pending').length;
   const agencyName = settings.agency_name || user.agency_name || user.username;
 
@@ -307,9 +306,13 @@ export default function AgencyDashboard() {
           </div>
         </div>
 
-        {loading
-          ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
-          : <>
+        {/* Manifeste ne dépend pas du loading global */}
+        {tab === 'manifest'
+          ? <ManifestTab agencyName={agencyName} showToast={showToast} />
+          : loading
+            ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
+            : <>
+
           {tab==='overview' && <>
             <div className="grid-4" style={{ marginBottom:16 }}>
               {[
@@ -479,7 +482,6 @@ export default function AgencyDashboard() {
         ))}
       </nav>
 
-      {/* MODALS */}
       {busModal && <Modal title="🚌 Ajouter un bus" onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Nom du bus *"><input className="input-field" placeholder="Bus 1, Minibus A…" value={busForm.bus_name} onChange={e=>setBusForm({...busForm,bus_name:e.target.value})} /></Inp>
@@ -547,7 +549,6 @@ export default function AgencyDashboard() {
         </div>
       </Modal>}
 
-      {/* ── MODAL GÉNÉRATION EN MASSE ── */}
       {bulkModal && (
         <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setBulkModal(false)}>
           <div className="modal-box" style={{ maxWidth:540 }}>
@@ -588,8 +589,6 @@ export default function AgencyDashboard() {
                 </div>
               </div>
               <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={bulkForm.description} onChange={e=>setBulkForm({...bulkForm,description:e.target.value})} /></Inp>
-
-              {/* Prévisualisation */}
               {bulkPreview.length > 0 && (
                 <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'11px 13px' }}>
                   <div style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', marginBottom:8 }}>✅ {bulkPreview.length} voyage{bulkPreview.length > 1 ? 's' : ''} seront créés</div>
