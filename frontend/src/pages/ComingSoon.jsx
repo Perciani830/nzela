@@ -30,6 +30,10 @@ const SUPPORTERS = [
   'Jean Claude Mbiya',
   'A. EMERY .M',
   'Capot John',
+  'Daniella Ongala',
+  'Grace Kapamba',
+  'Josué Tambwe',
+  'Gemima Masela',
   'Noela Babutana.'
 ];
 
