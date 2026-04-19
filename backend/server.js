@@ -98,3 +98,4 @@ app.listen(PORT, () => {
   console.log(`🌍 Environnement : ${process.env.NODE_ENV || 'development'}`);
   console.log(`💳 MaishaPay     : ${process.env.MAISHAPAY_MODE || 'sandbox'}\n`);
 });
+
