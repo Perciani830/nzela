@@ -34,6 +34,7 @@ const SUPPORTERS = [
   'Grace Kapamba',
   'Josué Tambwe',
   'Gemima Masela',
+  'Pinos',
   'Noela Babutana.'
 ];
 
