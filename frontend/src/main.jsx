@@ -4,14 +4,13 @@ import ComingSoon from './pages/ComingSoon'
 import App from './App'
 import './index.css'
 
+const isLive = window.location.hostname === 'nzela.cd' || window.location.hostname === 'www.nzela.cd'
+
 createRoot(document.getElementById('root')).render(
+  isLive ? <ComingSoon /> :
   <BrowserRouter>
     <Routes>
-      <Route path="/" element={<App />} />
-      <Route path="/login" element={<App />} />
-      <Route path="/admin" element={<App />} />
-      <Route path="/agency" element={<App />} />
-      <Route path="*" element={<ComingSoon />} />
+      <Route path="/*" element={<App />} />
     </Routes>
   </BrowserRouter>
 )
