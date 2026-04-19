@@ -7,6 +7,7 @@ import './index.css'
 createRoot(document.getElementById('root')).render(
   <BrowserRouter>
     <Routes>
+      <Route path="/" element={<App />} />
       <Route path="/login" element={<App />} />
       <Route path="/admin" element={<App />} />
       <Route path="/agency" element={<App />} />
