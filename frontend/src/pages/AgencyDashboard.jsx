@@ -3,7 +3,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ManifestTab from './ManifestTab';
 
-const API = 'https://nzela-production.up.railway.app/api';
+const API = 'https://nzela-production-086a.up.railway.app/api';
 const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
 const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 

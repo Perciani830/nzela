@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API = 'https://nzela-production.up.railway.app/api';
+const API = 'https://nzela-production-086a.up.railway.app/api';
 
 function getAuth() {
   return { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
