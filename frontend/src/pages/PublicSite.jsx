@@ -440,7 +440,8 @@ export default function PublicSite() {
         <Logo size={28}/>
         <div style={{ display:'flex', alignItems:'center', gap:8 }}>
           <span style={{ fontSize:11, color:'var(--muted)' }}>🇨🇩 RDC</span>
-          <a href="/login" onClick={e => { e.preventDefault(); window.location.href='/login'; }} className="btn btn-ghost" style={{ fontSize:12, padding:'6px 13px' }}>Agences →</a>
+          <a href="/about" onClick={e => { e.preventDefault(); window.location.href='/about'; }} className="btn btn-ghost" style={{ fontSize:12, padding:'6px 13px' }}>À propos</a>
+<a href="/login" onClick={e => { e.preventDefault(); window.location.href='/login'; }} className="btn btn-ghost" style={{ fontSize:12, padding:'6px 13px' }}>Agences →</a>
         </div>
       </nav>
 
