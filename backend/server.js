@@ -99,3 +99,11 @@ app.listen(PORT, () => {
   console.log(`💳 MaishaPay     : ${process.env.MAISHAPAY_MODE || 'sandbox'}\n`);
 });
 
+app.get('/api/health', (_, res) => res.json({
+  ok: true,
+  ts: new Date().toISOString(),
+  env: process.env.NODE_ENV || 'development',
+  maishapay: process.env.MAISHAPAY_MODE || 'sandbox',
+  hasLiveKey: !!process.env.MAISHAPAY_LIVE_PUBLIC_KEY,
+  allMaishapay: Object.keys(process.env).filter(k => k.startsWith('MAISHAPAY'))
+}));
