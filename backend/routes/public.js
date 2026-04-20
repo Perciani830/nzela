@@ -150,5 +150,111 @@ router.post('/pay', async (req, res) => {
     res.json({ success: true, transaction_id: txId, reference: booking.reference, commission: commission_amount, net_agency });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+// ═══════════════════════════════════════════════════════════════
+// CONTRIBUTION — À coller dans backend/routes/public.js
+// AVANT la ligne : module.exports = router;
+// ═══════════════════════════════════════════════════════════════
+//
+// DIFFÉRENCES vs paiement billet pour le dashboard MaishaPay :
+//   Billet  → reference: "BUS-XXXXXXXX"  | description: "Billet bus Kinshasa→Matadi"
+//   Contrib → reference: "CONTRIB-XXXX-TIMESTAMP" | description: "Contribution Nzela - [Nom]"
+//
+// Ces préfixes distincts permettent de filtrer facilement dans
+// le tableau de bord MaishaPay et dans les exports.
+// ═══════════════════════════════════════════════════════════════
 
+router.post('/contribute', async (req, res) => {
+  const { contributor_name, phone_number, operator, amount, currency, message } = req.body;
+
+  // ── Validation ──────────────────────────────────────────────
+  const montant = parseFloat(amount);
+  if (!montant || isNaN(montant)) {
+    return res.status(400).json({ error: 'Montant invalide.' });
+  }
+  if (currency === 'CDF' && montant < 500) {
+    return res.status(400).json({ error: 'Montant minimum : 500 FC.' });
+  }
+  if (currency === 'USD' && montant < 1) {
+    return res.status(400).json({ error: 'Montant minimum : 1 USD.' });
+  }
+  if (!operator || !phone_number) {
+    return res.status(400).json({ error: 'Opérateur et numéro requis.' });
+  }
+  const devise = (currency === 'USD') ? 'USD' : 'CDF';
+
+  // ── Référence unique — préfixe CONTRIB (distinct des billets BUS-) ──
+  const reference = 'CONTRIB-' + Math.random().toString(36).slice(2,6).toUpperCase() + '-' + Date.now();
+  const nom       = (contributor_name && contributor_name.trim()) ? contributor_name.trim() : 'Anonyme';
+
+  // ── Appel MaishaPay ─────────────────────────────────────────
+  const isLive = process.env.MAISHAPAY_MODE === 'live';
+  const payload = {
+    gatewayMode:          isLive ? 1 : 0,
+    publicApiKey:         isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY  : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY,
+    secretApiKey:         isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY  : process.env.MAISHAPAY_SANDBOX_SECRET_KEY,
+    transactionReference: reference,           // ← "CONTRIB-XXXX-..." visible dans MaishaPay
+    amount:               montant,
+    currency:             devise,
+    chanel:               'MOBILEMONEY',
+    provider:             operator.toUpperCase(),
+    walletID:             phone_number,
+    customerName:         nom,                 // ← nom visible dans MaishaPay
+    customerPhone:        phone_number,
+    description:          `Contribution Nzela - ${nom}`, // ← distinct de "Billet bus ..."
+  };
+
+  try {
+    const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+    const r = await fetch('https://marchand.maishapay.online/api/payment/rest/vers1.0/merchant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d    = await r.json();
+    const orig = (d && d.original) ? d.original : d;
+
+    if (!orig || !orig.data || !['202','200'].includes(String(orig.data.statusCode))) {
+      return res.status(402).json({
+        error: orig?.data?.statusDescription || 'Paiement refusé. Vérifiez votre solde.'
+      });
+    }
+
+    const txId = orig.data.transactionId || reference;
+
+    // ── Enregistrement en DB ────────────────────────────────
+    const db = getDb();
+    runTransaction(db, () => {
+      db.prepare(`
+        INSERT INTO contributions
+          (id, reference, contributor_name, phone, operator, amount, currency, transaction_id, message, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
+      `).run(
+        uuidv4(), reference, nom, phone_number,
+        operator.toUpperCase(), montant, devise,
+        txId, message || null
+      );
+    });
+
+    // ── Message de succès personnalisé ──────────────────────
+    const montantFormate = devise === 'USD'
+      ? `${montant} $`
+      : `${Math.round(montant).toLocaleString()} FC`;
+
+    return res.json({
+      ok:             true,
+      reference,
+      transaction_id: txId,
+      amount:         montant,
+      currency:       devise,
+      contributor:    nom,
+      message:        nom === 'Anonyme'
+        ? `Merci pour votre contribution de ${montantFormate} ! Nzela grandit grâce à des personnes comme vous. 💚`
+        : `Merci ${nom} pour votre contribution de ${montantFormate} ! Votre soutien compte énormément pour toute l'équipe Nzela. 💚`,
+    });
+
+  } catch (e) {
+    console.error('Contribution error:', e.message);
+    return res.status(503).json({ error: 'Service de paiement indisponible. Réessayez plus tard.' });
+  }
+});
 module.exports = router;

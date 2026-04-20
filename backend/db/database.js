@@ -26,7 +26,7 @@ function runTransaction(db, fn) {
 function exportDatabase() {
   const db = getDb();
   const data = {};
-  const tables = ['admins','agencies','buses','trips','bookings','gallery','settings'];
+  const tables = ['admins','agencies','buses','trips','bookings','gallery','settings','contributions'];
   for (const t of tables) {
     try { data[t] = db.prepare(`SELECT * FROM ${t}`).all(); }
     catch(e) { data[t] = []; }
@@ -39,7 +39,7 @@ function exportDatabase() {
 function importDatabase(data) {
   const db = getDb();
   runTransaction(db, () => {
-    const order = ['admins','settings','agencies','buses','trips','bookings','gallery'];
+    const order = ['admins','settings','agencies','buses','trips','bookings','gallery','contributions'];
     for (const table of order) {
       if (!data[table] || !data[table].length) continue;
       db.exec(`DELETE FROM ${table}`);
@@ -105,6 +105,19 @@ function initDatabase() {
     );
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY, value TEXT NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS contributions (
+      id TEXT PRIMARY KEY,
+      reference TEXT UNIQUE NOT NULL,
+      contributor_name TEXT DEFAULT 'Anonyme',
+      phone TEXT,
+      operator TEXT,
+      amount REAL NOT NULL,
+      currency TEXT DEFAULT 'CDF',
+      transaction_id TEXT,
+      message TEXT,
+      status TEXT DEFAULT 'completed',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 

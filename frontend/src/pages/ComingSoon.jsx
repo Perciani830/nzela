@@ -1,41 +1,31 @@
 import { useState, useEffect, useRef } from 'react';
 
-// ── Date de lancement ──────────────────────────────────────────
+const API = 'https://nzela-production-086a.up.railway.app/api';
+
 const LAUNCH = new Date('2026-06-01T00:00:00');
 const START  = new Date('2026-04-11T00:00:00');
 
-// ── Liste des personnes à honorer ──────────────────────────────
-// Modifie cette liste avec les vrais noms
 const SUPPORTERS = [
-  'Maman Chérie',
-  'Papa',
-  'My Wife.',
-  'Peniel M.',
-  'Pierdi T.',
-  'Perla S',
-  'P. Bernard',
-  'Sephora Ngoma',
-  'Precieux P',
-  'Israel O.',
-  'Grâce M.',
-  'Junior T.',
-  'Bobiano',
-  'Arnold L.',
-  'Jolie N.',
-  'Tresor T.',
-  'Chloé T.',
-  'Aimerode I.',
-  'Peace Holding.',
-  'Nathalie Mbu.',
-  'Jean Claude Mbiya',
-  'A. EMERY .M',
-  'Capot John',
-  'Daniella Ongala',
-  'Grace Kapamba',
-  'Josué Tambwe',
-  'Gemima Masela',
-  'Pinos',
-  'Noela Babutana.'
+  'Maman Chérie','Papa','My Wife.','Peniel M.','Pierdi T.','Perla S',
+  'P. Bernard','Sephora Ngoma','Precieux P','Israel O.','Grâce M.',
+  'Junior T.','Bobiano','Arnold L.','Jolie N.','Tresor T.','Chloé T.',
+  'Aimerode I.','Peace Holding.','Nathalie Mbu.','Jean Claude Mbiya',
+  'A. EMERY .M','Capot John','Daniella Ongala','Grace Kapamba',
+  'Josué Tambwe','Gemima Masela','Pinos','Noela Babutana.'
+];
+
+const OBJECTIFS = [
+  { icon: '📱', titre: 'Digitaliser', desc: 'Éliminer les files d\'attente et la vente informelle de billets en RDC.' },
+  { icon: '💳', titre: 'Sécuriser',   desc: 'Mobile Money intégré — paiements fiables, traçables et sans cash.' },
+  { icon: '🚌', titre: 'Valoriser',   desc: 'Un tableau de bord professionnel pour chaque agence partenaire.' },
+  { icon: '🌍', titre: 'Relier',      desc: 'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
+];
+
+const OPERATORS = [
+  { id: 'MPESA',    label: 'M-Pesa',       logo: '/mpesa.png' },
+  { id: 'ORANGE',   label: 'Orange Money', logo: '/orange.png' },
+  { id: 'AIRTEL',   label: 'Airtel Money', logo: '/airtel.png' },
+  { id: 'AFRICELL', label: 'Africell',     logo: '/africell.png' },
 ];
 
 function pad(n) { return String(n).padStart(2, '0'); }
@@ -46,7 +36,7 @@ function useCountdown() {
     const tick = () => {
       const now  = new Date();
       const diff = LAUNCH - now;
-      if (diff <= 0) { setTime({ d:0, h:0, m:0, s:0, pct:100 }); return; }
+      if (diff <= 0) { setTime({ d:0,h:0,m:0,s:0,pct:100 }); return; }
       const total   = LAUNCH - START;
       const elapsed = now - START;
       setTime({
@@ -64,63 +54,226 @@ function useCountdown() {
   return time;
 }
 
-// ── Composant défilant ─────────────────────────────────────────
-function ScrollingNames() {
-  // Multiplie suffisamment pour couvrir n'importe quelle largeur d'écran
-  const many = [...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS, ...SUPPORTERS];
+const INP_STYLE = { width:'100%', padding:'11px 14px', borderRadius:12, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(61,170,106,0.2)', color:'#E8F4ED', fontSize:15, outline:'none', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box' };
+const LBL_STYLE = { display:'block', fontSize:13, color:'rgba(232,244,237,0.6)', marginBottom:6, fontWeight:600 };
+
+function ContribModal({ onClose }) {
+  const [step, setStep]     = useState(1);
+  const [currency, setCurr] = useState('CDF');
+  const [anon, setAnon]     = useState(false);
+  const [error, setError]   = useState('');
+  const [result, setResult] = useState(null);
+  const [form, setForm]     = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
+
+  const rapides = currency === 'CDF' ? [500,1000,2000,5000] : [1,2,5,10];
+
+  const validate = () => {
+    const m = parseFloat(form.amount);
+    if (!m || isNaN(m))                        return 'Entrez un montant valide.';
+    if (currency === 'CDF' && m < 500)         return 'Minimum 500 FC en franc congolais.';
+    if (currency === 'USD' && m < 1)           return 'Minimum 1 $ en dollar américain.';
+    if (!form.operator)                        return 'Choisissez un opérateur Mobile Money.';
+    if (form.phone.replace(/\D/g,'').length < 9) return 'Numéro de téléphone invalide.';
+    return null;
+  };
+
+  const submit = async () => {
+    const err = validate();
+    if (err) { setError(err); return; }
+    setError('');
+    setStep(2);
+    try {
+      const res = await fetch(`${API}/public/contribute`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contributor_name: anon ? '' : form.name.trim(),
+          amount:      form.amount,
+          currency,
+          operator:    form.operator,
+          phone_number: form.phone.replace(/\D/g,''),
+          message:     form.message.trim(),
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
+      setResult(data);
+      setStep(3);
+    } catch {
+      setError('Service indisponible. Réessayez dans quelques instants.');
+      setStep(4);
+    }
+  };
 
   return (
-    <div style={{
-      overflow: 'hidden',
-      maskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)',
-      WebkitMaskImage: 'linear-gradient(90deg, transparent, black 8%, black 92%, transparent)',
-      marginBottom: 48,
-    }}>
-      {/* Ligne 1 — gauche vers droite */}
-      <div style={{
-        display: 'flex', gap: 12, whiteSpace: 'nowrap',
-        width: 'max-content',
-        animation: `scroll-r ${SUPPORTERS.length * 8}s linear infinite`,
-        marginBottom: 10,
-      }}>
-        {many.map((name, i) => (
-          <span key={i} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 600, fontSize: 13,
-            color: 'rgba(232,244,237,0.7)',
-            background: 'rgba(61,170,106,0.08)',
-            border: '1px solid rgba(61,170,106,0.15)',
-            borderRadius: 99, padding: '5px 14px',
-            flexShrink: 0,
-          }}>
-            <span style={{ color: 'var(--green-l)', fontSize: 9 }}>✦</span>
-            {name}
-          </span>
-        ))}
-      </div>
+    <div style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(5,14,23,0.93)', backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+      onClick={e => e.target === e.currentTarget && onClose()}>
+      <div style={{ background:'linear-gradient(160deg,#0d1f16,#081220)', border:'1px solid rgba(61,170,106,0.3)', borderRadius:24, padding:36, width:'100%', maxWidth:460, position:'relative', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 32px 80px rgba(0,0,0,0.7)' }}>
+        <button onClick={onClose} style={{ position:'absolute', top:16, right:16, background:'none', border:'none', color:'rgba(232,244,237,0.35)', fontSize:22, cursor:'pointer', lineHeight:1 }}>✕</button>
 
-      {/* Ligne 2 — droite vers gauche */}
-      <div style={{
-        display: 'flex', gap: 12, whiteSpace: 'nowrap',
-        width: 'max-content',
-        animation: `scroll-l ${SUPPORTERS.length * 10}s linear infinite`,
-      }}>
-        {[...many].reverse().map((name, i) => (
-          <span key={i} style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            fontFamily: "'Plus Jakarta Sans', sans-serif",
-            fontWeight: 600, fontSize: 13,
-            color: 'rgba(232,244,237,0.55)',
-            background: 'rgba(61,170,106,0.05)',
-            border: '1px solid rgba(61,170,106,0.1)',
-            borderRadius: 99, padding: '5px 14px',
-            flexShrink: 0,
-          }}>
-            <span style={{ color: 'var(--gold)', fontSize: 9 }}>♡</span>
-            {name}
-          </span>
-        ))}
+        {/* ── ÉTAPE 1 : Formulaire ── */}
+        {step === 1 && (<>
+          <div style={{ textAlign:'center', marginBottom:28 }}>
+            <div style={{ fontSize:44, marginBottom:10 }}>💚</div>
+            <h2 style={{ fontSize:22, fontWeight:800, color:'#E8F4ED', margin:'0 0 6px', fontFamily:'Plus Jakarta Sans,sans-serif' }}>Soutenir Nzela</h2>
+            <p style={{ fontSize:13, color:'rgba(232,244,237,0.4)', margin:0 }}>100% Mobile Money · Paiement sécurisé · Anonyme possible</p>
+          </div>
+
+          {/* Devise */}
+          <div style={{ marginBottom:18 }}>
+            <label style={LBL_STYLE}>Devise</label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {['CDF','USD'].map(c => (
+                <button key={c} onClick={() => { setCurr(c); set('amount',''); }}
+                  style={{ padding:'11px', borderRadius:12, fontWeight:700, fontSize:15, cursor:'pointer', transition:'all 0.2s',
+                    background: currency===c ? '#3DAA6A' : 'rgba(61,170,106,0.07)',
+                    color:      currency===c ? '#050E17' : '#3DAA6A',
+                    border:    `1px solid ${currency===c ? '#3DAA6A' : 'rgba(61,170,106,0.2)'}`,
+                  }}>
+                  {c === 'CDF' ? '🇨🇩 Franc CDF' : '🇺🇸 Dollar USD'}
+                </button>
+              ))}
+            </div>
+            <p style={{ fontSize:11, color:'rgba(232,244,237,0.28)', marginTop:5 }}>
+              Minimum : {currency === 'CDF' ? '500 FC' : '1 USD'}
+            </p>
+          </div>
+
+          {/* Montants rapides */}
+          <div style={{ marginBottom:16 }}>
+            <label style={LBL_STYLE}>Montant ({currency})</label>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6, marginBottom:8 }}>
+              {rapides.map(v => (
+                <button key={v} onClick={() => set('amount', String(v))}
+                  style={{ padding:'9px 4px', borderRadius:10, fontSize:13, fontWeight:700, cursor:'pointer', transition:'all 0.2s',
+                    background: form.amount===String(v) ? '#3DAA6A' : 'rgba(61,170,106,0.07)',
+                    color:      form.amount===String(v) ? '#050E17' : '#3DAA6A',
+                    border:    `1px solid ${form.amount===String(v) ? '#3DAA6A' : 'rgba(61,170,106,0.15)'}`,
+                  }}>
+                  {currency==='CDF' ? v.toLocaleString() : `$${v}`}
+                </button>
+              ))}
+            </div>
+            <input value={form.amount} onChange={e => set('amount', e.target.value.replace(/[^0-9.]/g,''))}
+              placeholder={`Autre montant en ${currency}...`} style={INP_STYLE} type="text" inputMode="decimal" />
+          </div>
+
+          {/* Opérateur */}
+          <div style={{ marginBottom:16 }}>
+            <label style={LBL_STYLE}>Opérateur Mobile Money</label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {OPERATORS.map(op => (
+                <button key={op.id} onClick={() => set('operator', op.id)}
+                  style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:12, cursor:'pointer', transition:'all 0.2s',
+                    background: form.operator===op.id ? 'rgba(61,170,106,0.15)' : 'rgba(255,255,255,0.03)',
+                    border:    `1px solid ${form.operator===op.id ? '#3DAA6A' : 'rgba(255,255,255,0.07)'}`,
+                    color:'#E8F4ED', fontSize:13, fontWeight:600,
+                  }}>
+                  <img src={op.logo} alt={op.label} style={{ width:22, height:22, objectFit:'contain' }} onError={e => e.target.style.display='none'} />
+                  {op.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Téléphone */}
+          <div style={{ marginBottom:16 }}>
+            <label style={LBL_STYLE}>Numéro de téléphone</label>
+            <input value={form.phone} onChange={e => set('phone', e.target.value)}
+              placeholder="ex: 0812345678" style={INP_STYLE} type="tel" inputMode="numeric" />
+          </div>
+
+          {/* Toggle anonyme */}
+          <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, padding:'12px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
+            <input type="checkbox" id="anon" checked={anon} onChange={e => setAnon(e.target.checked)}
+              style={{ width:17, height:17, accentColor:'#3DAA6A', cursor:'pointer', flexShrink:0 }} />
+            <label htmlFor="anon" style={{ fontSize:14, color:'rgba(232,244,237,0.75)', cursor:'pointer', userSelect:'none' }}>
+              Contribuer anonymement
+            </label>
+          </div>
+
+          {/* Nom si pas anonyme */}
+          {!anon && (
+            <div style={{ marginBottom:16 }}>
+              <label style={LBL_STYLE}>Votre nom (optionnel)</label>
+              <input value={form.name} onChange={e => set('name', e.target.value)}
+                placeholder="Prénom Nom" style={INP_STYLE} />
+            </div>
+          )}
+
+          {/* Message */}
+          <div style={{ marginBottom:24 }}>
+            <label style={LBL_STYLE}>Message d'encouragement (optionnel)</label>
+            <input value={form.message} onChange={e => set('message', e.target.value)}
+              placeholder="Un mot pour l'équipe Nzela..." style={INP_STYLE} maxLength={200} />
+          </div>
+
+          {error && (
+            <div style={{ background:'rgba(220,50,50,0.1)', border:'1px solid rgba(220,50,50,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:13, color:'#ff8080' }}>
+              ⚠️ {error}
+            </div>
+          )}
+
+          <button onClick={submit} style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background:'#3DAA6A', color:'#050E17', fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', transition:'opacity 0.2s' }}
+            onMouseEnter={e => e.currentTarget.style.opacity='0.88'}
+            onMouseLeave={e => e.currentTarget.style.opacity='1'}>
+            Contribuer {form.amount ? `${parseFloat(form.amount||0).toLocaleString()} ${currency}` : ''} 💚
+          </button>
+          <p style={{ fontSize:11, color:'rgba(232,244,237,0.22)', textAlign:'center', marginTop:10 }}>
+            Vous recevrez une confirmation sur votre téléphone
+          </p>
+        </>)}
+
+        {/* ── ÉTAPE 2 : Chargement ── */}
+        {step === 2 && (
+          <div style={{ textAlign:'center', padding:'52px 0' }}>
+            <div style={{ fontSize:52, marginBottom:20, display:'inline-block', animation:'spin 1.2s linear infinite' }}>⏳</div>
+            <h3 style={{ color:'#E8F4ED', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>Traitement en cours...</h3>
+            <p style={{ color:'rgba(232,244,237,0.45)', fontSize:14, lineHeight:1.7 }}>
+              Vérifiez votre téléphone et confirmez<br/>le paiement Mobile Money.
+            </p>
+          </div>
+        )}
+
+        {/* ── ÉTAPE 3 : Succès ── */}
+        {step === 3 && (
+          <div style={{ textAlign:'center', padding:'20px 0' }}>
+            <div style={{ fontSize:64, marginBottom:16 }}>🎉</div>
+            <h3 style={{ color:'#3DAA6A', fontSize:24, fontWeight:800, marginBottom:12, fontFamily:'Plus Jakarta Sans,sans-serif' }}>
+              Merci pour votre soutien !
+            </h3>
+            <p style={{ color:'#E8F4ED', fontSize:16, lineHeight:1.7, marginBottom:16 }}>
+              {result?.message}
+            </p>
+            {result?.reference && (
+              <p style={{ color:'rgba(232,244,237,0.3)', fontSize:12, marginBottom:20, fontFamily:'monospace', letterSpacing:'0.05em' }}>
+                Réf : {result.reference}
+              </p>
+            )}
+            <div style={{ background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:16, padding:'18px 20px', marginBottom:28, textAlign:'left' }}>
+              <p style={{ fontSize:14, color:'rgba(232,244,237,0.65)', lineHeight:1.8, margin:0 }}>
+                🇨🇩 Votre contribution aide directement à construire la plateforme de transport de demain en RDC. Nzela est fier de vous compter parmi ses premiers soutiens.
+              </p>
+            </div>
+            <button onClick={onClose} style={{ background:'#3DAA6A', color:'#050E17', border:'none', borderRadius:12, padding:'13px 40px', fontWeight:800, fontSize:15, cursor:'pointer' }}>
+              Fermer
+            </button>
+          </div>
+        )}
+
+        {/* ── ÉTAPE 4 : Erreur ── */}
+        {step === 4 && (
+          <div style={{ textAlign:'center', padding:'32px 0' }}>
+            <div style={{ fontSize:52, marginBottom:16 }}>❌</div>
+            <h3 style={{ color:'#ff8080', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>Paiement échoué</h3>
+            <p style={{ color:'rgba(232,244,237,0.55)', fontSize:14, marginBottom:28, lineHeight:1.7 }}>{error}</p>
+            <button onClick={() => { setStep(1); setError(''); }}
+              style={{ background:'rgba(61,170,106,0.1)', color:'#3DAA6A', border:'1px solid rgba(61,170,106,0.3)', borderRadius:12, padding:'12px 32px', fontWeight:700, fontSize:15, cursor:'pointer' }}>
+              Réessayer
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -128,341 +281,179 @@ function ScrollingNames() {
 
 export default function ComingSoon() {
   const { d, h, m, s, pct } = useCountdown();
+  const [showContrib, setShowContrib] = useState(false);
+
+  const half = Math.ceil(SUPPORTERS.length / 2);
+  const row1 = [...SUPPORTERS.slice(0, half), ...SUPPORTERS.slice(0, half)];
+  const row2 = [...SUPPORTERS.slice(half),    ...SUPPORTERS.slice(half)];
+
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;700;800&family=DM+Sans:wght@400;600&display=swap');
+      *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
+      body { background:#050E17; color:#E8F4ED; font-family:'DM Sans',sans-serif; }
+      @keyframes scrollLeft  { from{transform:translateX(0)}    to{transform:translateX(-50%)} }
+      @keyframes scrollRight { from{transform:translateX(-50%)} to{transform:translateX(0)}    }
+      @keyframes floatUp     { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-12px)} }
+      @keyframes pulse-dot   { 0%,100%{opacity:1} 50%{opacity:0.3} }
+      @keyframes spin        { to{transform:rotate(360deg)} }
+      @keyframes fadeSlide   { from{opacity:0;transform:translateY(22px)} to{opacity:1;transform:none} }
+      .cs-in { animation:fadeSlide 0.7s ease forwards; opacity:0; }
+      .obj-card { transition:border-color 0.3s,transform 0.3s; }
+      .obj-card:hover { border-color:rgba(61,170,106,0.45) !important; transform:translateY(-5px); }
+      .cs-main-btn { transition:transform 0.25s,box-shadow 0.25s; }
+      .cs-main-btn:hover { transform:scale(1.05); box-shadow:0 16px 48px rgba(61,170,106,0.45) !important; }
+      .cs-ghost-btn { transition:background 0.2s; }
+      .cs-ghost-btn:hover { background:rgba(61,170,106,0.13) !important; }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
 
   return (
-    <>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+    <div style={{ minHeight:'100vh', background:'#050E17', overflowX:'hidden' }}>
+      {showContrib && <ContribModal onClose={() => setShowContrib(false)} />}
 
-        :root {
-          --green: #3DAA6A; --green-l: #52C882; --green-d: #2A7D4F;
-          --green-bg: rgba(61,170,106,0.1); --green-glow: rgba(61,170,106,0.25);
-          --night: #050E17; --deep: #081220;
-          --text: #E8F4ED; --muted: rgba(232,244,237,0.45);
-          --gold: #F5A623;
-          --font: 'Plus Jakarta Sans', sans-serif;
-          --body: 'DM Sans', sans-serif;
-        }
+      {/* Grille fond */}
+      <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, backgroundImage:'linear-gradient(rgba(61,170,106,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(61,170,106,0.025) 1px,transparent 1px)', backgroundSize:'55px 55px' }} />
 
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        html { scroll-behavior: smooth; }
-        body {
-          font-family: var(--body);
-          background: var(--night);
-          color: var(--text);
-          overflow-x: hidden;
-          -webkit-font-smoothing: antialiased;
-          min-height: 100vh;
-        }
+      {/* ══ HERO ══ */}
+      <section style={{ position:'relative', zIndex:1, minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'80px 24px 60px', textAlign:'center' }}>
+        <div style={{ position:'absolute', top:'25%', left:'50%', transform:'translateX(-50%)', width:640, height:640, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.09) 0%,transparent 70%)', pointerEvents:'none', animation:'floatUp 10s ease-in-out infinite' }} />
 
-        /* ── FOND ── */
-        .cs-bg {
-          position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          background:
-            radial-gradient(ellipse 90% 50% at 50% -5%, rgba(61,170,106,0.2) 0%, transparent 65%),
-            radial-gradient(ellipse 40% 40% at 85% 90%, rgba(42,125,79,0.1) 0%, transparent 60%),
-            var(--night);
-        }
-        .cs-grid {
-          position: fixed; inset: 0; z-index: 0; pointer-events: none;
-          background-image:
-            linear-gradient(rgba(61,170,106,0.035) 1px, transparent 1px),
-            linear-gradient(90deg, rgba(61,170,106,0.035) 1px, transparent 1px);
-          background-size: 56px 56px;
-          mask-image: radial-gradient(ellipse 100% 100% at 50% 50%, black 20%, transparent 75%);
-        }
-        .cs-orb {
-          position: fixed; width: 700px; height: 700px; border-radius: 50%;
-          background: radial-gradient(circle, rgba(61,170,106,0.06) 0%, transparent 70%);
-          top: 50%; left: 50%; transform: translate(-50%, -50%);
-          animation: cs-float 10s ease-in-out infinite;
-          pointer-events: none; z-index: 0;
-        }
-        @keyframes cs-float {
-          0%,100% { transform: translate(-50%,-50%) scale(1); }
-          50% { transform: translate(-50%,-53%) scale(1.04); }
-        }
-
-        /* ── WRAP ── */
-        .cs-wrap {
-          position: relative; z-index: 1;
-          max-width: 680px; margin: 0 auto;
-          padding: 60px 24px 40px;
-          text-align: center;
-        }
-
-        /* ── ANIMATIONS ── */
-        .cs-a1 { animation: cs-rise .8s .1s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a2 { animation: cs-rise .8s .2s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a3 { animation: cs-rise .8s .3s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a4 { animation: cs-rise .8s .4s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a5 { animation: cs-rise .8s .5s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a6 { animation: cs-rise .8s .6s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a7 { animation: cs-rise .8s .7s cubic-bezier(.16,1,.3,1) both; }
-        .cs-a8 { animation: cs-rise .8s .8s cubic-bezier(.16,1,.3,1) both; }
-        @keyframes cs-rise {
-          from { opacity: 0; transform: translateY(28px); }
-          to   { opacity: 1; transform: none; }
-        }
-
-        /* ── LOGO ── */
-        .cs-logo {
-          display: inline-flex; align-items: center; gap: 13px;
-          margin-bottom: 44px; text-decoration: none;
-          background: linear-gradient(135deg, var(--green-d), var(--green-l));
-        }
-        .cs-logo-icon {
-          width: 58px; height: 58px; border-radius: 16px;
-          background: linear-gradient(135deg, var(--green-d), var(--green-l));
-          display: flex; align-items: center; justify-content: center;
-          box-shadow: 0 8px 32px rgba(61,170,106,0.4);
-          overflow: hidden; flex-shrink: 0;
-        }
-        .cs-logo-icon img { width: 78%; height: 78%; object-fit: contain; }
-        .cs-logo-text {
-          font-family: var(--font); font-size: 34px; font-weight: 800;
-          background: linear-gradient(90deg, #fff, var(--green-l));
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-          letter-spacing: -0.03em; line-height: 1;
-        }
-        .cs-logo-sub {
-          font-size: 11px; color: var(--muted); -webkit-text-fill-color: var(--muted);
-          font-weight: 400; letter-spacing: 0.04em;
-        }
-
-        /* ── BADGE ── */
-        .cs-badge {
-          display: inline-flex; align-items: center; gap: 7px;
-          background: rgba(61,170,106,0.1); border: 1px solid rgba(61,170,106,0.22);
-          border-radius: 99px; padding: 5px 18px; margin-bottom: 22px;
-          font-size: 11px; font-weight: 600; color: var(--green-l);
-          letter-spacing: .1em; text-transform: uppercase;
-        }
-        .cs-badge-dot {
-          width: 6px; height: 6px; border-radius: 50%;
-          background: var(--green-l); animation: cs-pulse 2s ease infinite;
-        }
-        @keyframes cs-pulse {
-          0%,100% { opacity:1; transform:scale(1); }
-          50% { opacity:.3; transform:scale(.6); }
-        }
-
-        /* ── TITRE ── */
-        .cs-title {
-          font-family: var(--font);
-          font-size: clamp(36px, 7vw, 64px);
-          font-weight: 800; line-height: 1.08;
-          margin-bottom: 16px;
-          letter-spacing: -0.02em;
-        }
-        .cs-title .hl {
-          background: linear-gradient(90deg, var(--green-d), var(--green-l));
-          -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-        }
-        .cs-sub {
-          font-size: clamp(14px, 2vw, 16px);
-          color: var(--muted); line-height: 1.75;
-          max-width: 480px; margin: 0 auto 48px;
-        }
-
-        /* ── COMPTE À REBOURS ── */
-        .cs-countdown {
-          display: flex; align-items: flex-start; justify-content: center;
-          gap: clamp(10px, 2.5vw, 24px); margin-bottom: 36px;
-        }
-        .cs-block { display: flex; flex-direction: column; align-items: center; gap: 8px; }
-        .cs-num {
-          font-family: var(--font);
-          font-size: clamp(32px, 7vw, 64px);
-          font-weight: 800; line-height: 1;
-          min-width: clamp(68px, 12vw, 104px);
-          text-align: center;
-          background: var(--deep);
-          border: 1px solid rgba(61,170,106,0.18);
-          border-radius: 14px; padding: 14px 10px;
-          box-shadow: 0 4px 20px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.04);
-          position: relative; transition: border-color .3s;
-        }
-        .cs-num::after {
-          content: ''; position: absolute;
-          left: 0; right: 0; top: 50%; height: 1px;
-          background: rgba(255,255,255,0.05);
-        }
-        .cs-block:hover .cs-num { border-color: rgba(61,170,106,0.35); }
-        .cs-lbl {
-          font-size: 10px; font-weight: 600; color: var(--muted);
-          text-transform: uppercase; letter-spacing: .1em;
-        }
-        .cs-sep {
-          font-family: var(--font);
-          font-size: clamp(28px, 5vw, 52px); font-weight: 800;
-          color: rgba(61,170,106,0.35); line-height: 1;
-          padding-top: clamp(8px,1.5vw,14px);
-          animation: cs-blink 1s step-end infinite;
-        }
-        @keyframes cs-blink { 0%,100%{opacity:1} 50%{opacity:.15} }
-
-        /* ── BARRE ── */
-        .cs-progress { margin-bottom: 52px; }
-        .cs-prog-top {
-          display: flex; justify-content: space-between;
-          font-size: 11px; color: var(--muted); margin-bottom: 8px;
-        }
-        .cs-prog-bar {
-          height: 3px; background: rgba(255,255,255,0.06);
-          border-radius: 99px; overflow: hidden;
-        }
-        .cs-prog-fill {
-          height: 100%; border-radius: 99px;
-          background: linear-gradient(90deg, var(--green-d), var(--green-l));
-          box-shadow: 0 0 10px rgba(61,170,106,0.5);
-          transition: width 1s ease;
-        }
-
-        /* ── SECTION SOUTIENS ── */
-        .cs-thanks-label {
-          font-size: 11px; font-weight: 700; color: var(--muted);
-          text-transform: uppercase; letter-spacing: .12em;
-          margin-bottom: 18px;
-          display: flex; align-items: center; justify-content: center; gap: 10px;
-        }
-        .cs-thanks-label::before, .cs-thanks-label::after {
-          content: ''; flex: 1; max-width: 60px; height: 1px;
-          background: rgba(255,255,255,0.08);
-        }
-
-        /* ── SCROLL NOMS ── */
-        @keyframes scroll-r {
-          from { transform: translateX(0); }
-          to   { transform: translateX(-50%); }
-        }
-        @keyframes scroll-l {
-          from { transform: translateX(-50%); }
-          to   { transform: translateX(0); }
-        }
-
-        /* ── DATE LANCEMENT ── */
-        .cs-date {
-          display: inline-flex; align-items: center; gap: 10px;
-          background: rgba(245,166,35,0.08); border: 1px solid rgba(245,166,35,0.2);
-          border-radius: 12px; padding: 12px 24px; margin-bottom: 44px;
-          font-family: var(--font); font-weight: 700; font-size: 15px; color: var(--gold);
-        }
-
-        /* ── FOOTER ── */
-        .cs-foot {
-          font-size: 12px; color: var(--muted);
-          border-top: 1px solid rgba(255,255,255,0.06);
-          padding-top: 24px; margin-top: 8px;
-        }
-        .cs-foot a { color: var(--green-l); text-decoration: none; }
-
-        /* ── MOBILE ── */
-        @media (max-width: 480px) {
-          .cs-wrap { padding: 40px 16px 32px; }
-          .cs-countdown { gap: 7px; }
-          .cs-num { padding: 10px 8px; border-radius: 10px; }
-        }
-      `}</style>
-
-      <div className="cs-bg"/>
-      <div className="cs-grid"/>
-      <div className="cs-orb"/>
-
-      <div className="cs-wrap">
-
-        {/* Logo */}
-        <div className="cs-logo-icon">
-  <img 
-    src="/nzela-icon.png" 
-    alt="Nzela"
-    onError={e => { e.target.style.display='none'; }}
-  />
-</div>
-        {/* Badge */}
-        <div className="cs-a2">
-          <div className="cs-badge">
-            <div className="cs-badge-dot"/>
-            Lancement officiel · 1er Juin 2026
-          </div>
+        <div className="cs-in" style={{ animationDelay:'0ms' }}>
+          <img src="/nzela-icon.png" alt="Nzela" style={{ width:76, height:76, borderRadius:20, marginBottom:28, boxShadow:'0 8px 32px rgba(61,170,106,0.35)', animation:'floatUp 7s ease-in-out infinite' }} onError={e => e.target.style.display='none'} />
         </div>
 
-        {/* Titre */}
-        <div className="cs-a3">
-          <h1 className="cs-title">
-            La RDC se déplace<br/>
-            <span className="hl">autrement, bientôt.</span>
-          </h1>
-          <p className="cs-sub">
-            La première plateforme de réservation de bus en République Démocratique du Congo.
-            Kinshasa · Boma · Matadi · Moanda — Mobile Money accepté.
-          </p>
+        <div className="cs-in" style={{ animationDelay:'80ms', display:'inline-flex', alignItems:'center', gap:8, background:'rgba(61,170,106,0.1)', border:'1px solid rgba(61,170,106,0.25)', borderRadius:100, padding:'6px 20px', marginBottom:28 }}>
+          <span style={{ width:7, height:7, borderRadius:'50%', background:'#3DAA6A', display:'inline-block', animation:'pulse-dot 1.5s ease infinite' }} />
+          <span style={{ fontSize:12, color:'#3DAA6A', fontWeight:700, letterSpacing:'0.1em' }}>BIENTÔT DISPONIBLE · 1ER JUIN 2026</span>
         </div>
+
+        <h1 className="cs-in" style={{ animationDelay:'160ms', fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(42px,9vw,90px)', fontWeight:800, lineHeight:1.05, marginBottom:14 }}>
+          <span style={{ background:'linear-gradient(135deg,#E8F4ED 40%,#5dca8a 100%)', WebkitBackgroundClip:'text', WebkitTextFillColor:'transparent', backgroundClip:'text' }}>Nzela</span>
+        </h1>
+
+        <p className="cs-in" style={{ animationDelay:'240ms', fontSize:'clamp(15px,2.2vw,19px)', color:'rgba(232,244,237,0.5)', marginBottom:52, maxWidth:500, lineHeight:1.7 }}>
+          Ta route commence ici — La plateforme de réservation de bus en République Démocratique du Congo.
+        </p>
 
         {/* Compte à rebours */}
-        <div className="cs-a4">
-          <div className="cs-countdown">
-            <div className="cs-block">
-              <div className="cs-num">{pad(d)}</div>
-              <div className="cs-lbl">Jours</div>
+        <div className="cs-in" style={{ animationDelay:'320ms', display:'flex', gap:'clamp(10px,3vw,28px)', marginBottom:52 }}>
+          {[['J',d],['H',h],['M',m],['S',s]].map(([label,val]) => (
+            <div key={label} style={{ textAlign:'center' }}>
+              <div style={{ width:'clamp(70px,13vw,98px)', height:'clamp(70px,13vw,98px)', borderRadius:16, background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', backdropFilter:'blur(8px)' }}>
+                <span style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(24px,5vw,40px)', fontWeight:800, color:'#E8F4ED' }}>{pad(val)}</span>
+              </div>
+              <span style={{ fontSize:11, color:'rgba(232,244,237,0.3)', marginTop:8, display:'block', letterSpacing:'0.12em' }}>{label}</span>
             </div>
-            <div className="cs-sep">:</div>
-            <div className="cs-block">
-              <div className="cs-num">{pad(h)}</div>
-              <div className="cs-lbl">Heures</div>
-            </div>
-            <div className="cs-sep">:</div>
-            <div className="cs-block">
-              <div className="cs-num">{pad(m)}</div>
-              <div className="cs-lbl">Minutes</div>
-            </div>
-            <div className="cs-sep">:</div>
-            <div className="cs-block">
-              <div className="cs-num">{pad(s)}</div>
-              <div className="cs-lbl">Secondes</div>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Barre de progression */}
-        <div className="cs-a5">
-          <div className="cs-progress">
-            <div className="cs-prog-top">
-              <span>Progression vers le lancement</span>
-              <span style={{ color:'var(--green-l)', fontWeight:600 }}>{pct}%</span>
-            </div>
-            <div className="cs-prog-bar">
-              <div className="cs-prog-fill" style={{ width: `${pct}%` }}/>
-            </div>
+        <div className="cs-in" style={{ animationDelay:'400ms', width:'100%', maxWidth:420, marginBottom:52 }}>
+          <div style={{ display:'flex', justifyContent:'space-between', marginBottom:8 }}>
+            <span style={{ fontSize:12, color:'rgba(232,244,237,0.3)' }}>Avancement</span>
+            <span style={{ fontSize:12, color:'#3DAA6A', fontWeight:700 }}>{pct}%</span>
+          </div>
+          <div style={{ height:6, background:'rgba(61,170,106,0.08)', borderRadius:3, overflow:'hidden' }}>
+            <div style={{ height:'100%', width:`${pct}%`, background:'linear-gradient(90deg,#1e6e40,#3DAA6A,#5dca8a)', borderRadius:3, transition:'width 1s ease', boxShadow:'0 0 12px rgba(61,170,106,0.35)' }} />
           </div>
         </div>
 
-        {/* Date officielle */}
-        <div className="cs-a6">
-          <div style={{ display:'flex', justifyContent:'center', marginBottom:48 }}>
-            <div className="cs-date">
-              🗓️ &nbsp;Lancement officiel — <strong>1er Juin 2026</strong>
-            </div>
+        {/* CTA */}
+        <div className="cs-in" style={{ animationDelay:'480ms' }}>
+          <button className="cs-main-btn" onClick={() => setShowContrib(true)} style={{ background:'#3DAA6A', color:'#050E17', border:'none', borderRadius:100, padding:'16px 42px', fontWeight:800, fontSize:17, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', boxShadow:'0 8px 32px rgba(61,170,106,0.3)', display:'inline-flex', alignItems:'center', gap:10 }}>
+            💚 Soutenir le projet
+          </button>
+          <p style={{ fontSize:12, color:'rgba(232,244,237,0.28)', marginTop:12 }}>
+            À partir de 500 FC ou 1 $ · Anonyme possible · Mobile Money
+          </p>
+        </div>
+      </section>
+
+      {/* ══ VISION & MISSION ══ */}
+      <section style={{ position:'relative', zIndex:1, padding:'80px 24px', maxWidth:1100, margin:'0 auto' }}>
+        <div style={{ textAlign:'center', marginBottom:52 }}>
+          <p style={{ fontSize:12, letterSpacing:'0.15em', color:'#3DAA6A', fontWeight:700, marginBottom:10 }}>QUI SOMMES-NOUS</p>
+          <h2 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(26px,4vw,46px)', fontWeight:800 }}>Vision & Mission</h2>
+        </div>
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:24 }}>
+          <div style={{ background:'linear-gradient(135deg,rgba(61,170,106,0.1),rgba(5,14,23,0.9))', border:'1px solid rgba(61,170,106,0.2)', borderRadius:24, padding:'40px 32px', position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', top:-20, right:-20, width:120, height:120, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.1),transparent)', pointerEvents:'none' }} />
+            <div style={{ fontSize:42, marginBottom:16 }}>🌟</div>
+            <h3 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:24, fontWeight:800, color:'#3DAA6A', marginBottom:14 }}>Notre Vision</h3>
+            <p style={{ fontSize:16, lineHeight:1.85, color:'rgba(232,244,237,0.7)' }}>
+              Devenir la plateforme de référence du transport terrestre en Afrique Centrale. Un Congo où chaque citoyen peut planifier, réserver et payer son voyage en quelques secondes depuis son téléphone.
+            </p>
+          </div>
+          <div style={{ background:'rgba(5,14,23,0.85)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:24, padding:'40px 32px', position:'relative', overflow:'hidden' }}>
+            <div style={{ position:'absolute', bottom:-20, left:-20, width:120, height:120, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.06),transparent)', pointerEvents:'none' }} />
+            <div style={{ fontSize:42, marginBottom:16 }}>🎯</div>
+            <h3 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:24, fontWeight:800, color:'#E8F4ED', marginBottom:14 }}>Notre Mission</h3>
+            <p style={{ fontSize:16, lineHeight:1.85, color:'rgba(232,244,237,0.7)' }}>
+              Connecter les voyageurs congolais aux agences de bus fiables grâce à une technologie simple et adaptée — Mobile Money intégré, zéro cash, zéro file d'attente, 100% traçable.
+            </p>
           </div>
         </div>
+      </section>
 
-        {/* Section soutiens */}
-        <div className="cs-a7">
-          <div className="cs-thanks-label">
-            ✦ &nbsp;Avec la force de ceux qui y ont cru&nbsp; ✦
+      {/* ══ OBJECTIFS ══ */}
+      <section style={{ position:'relative', zIndex:1, background:'rgba(61,170,106,0.025)', borderTop:'1px solid rgba(61,170,106,0.07)', borderBottom:'1px solid rgba(61,170,106,0.07)', padding:'72px 24px' }}>
+        <div style={{ maxWidth:1100, margin:'0 auto' }}>
+          <div style={{ textAlign:'center', marginBottom:52 }}>
+            <p style={{ fontSize:12, letterSpacing:'0.15em', color:'#3DAA6A', fontWeight:700, marginBottom:10 }}>CE QUE NOUS CONSTRUISONS</p>
+            <h2 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(26px,4vw,46px)', fontWeight:800 }}>Nos Objectifs</h2>
           </div>
-          <ScrollingNames />
-        </div>
-
-        {/* Footer */}
-        <div className="cs-a8">
-          <div className="cs-foot">
-            © 2026 Nzela · Kinshasa, RDC &nbsp;·&nbsp;
-            <a href="mailto:support@nzela.cd">support@nzela.cd</a>
+          <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:20 }}>
+            {OBJECTIFS.map((obj, i) => (
+              <div key={i} className="obj-card" style={{ background:'#050E17', border:'1px solid rgba(61,170,106,0.12)', borderRadius:20, padding:'28px 22px' }}>
+                <div style={{ fontSize:36, marginBottom:14 }}>{obj.icon}</div>
+                <div style={{ width:30, height:3, background:'#3DAA6A', borderRadius:2, marginBottom:14 }} />
+                <h4 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:18, fontWeight:800, marginBottom:10, color:'#E8F4ED' }}>{obj.titre}</h4>
+                <p style={{ fontSize:14, color:'rgba(232,244,237,0.5)', lineHeight:1.75 }}>{obj.desc}</p>
+              </div>
+            ))}
           </div>
         </div>
+      </section>
 
-      </div>
-    </>
+      {/* ══ SUPPORTERS ══ */}
+      <section style={{ position:'relative', zIndex:1, padding:'72px 0 80px' }}>
+        <div style={{ textAlign:'center', marginBottom:44, padding:'0 24px' }}>
+          <p style={{ fontSize:12, letterSpacing:'0.15em', color:'rgba(232,244,237,0.3)', fontWeight:700, marginBottom:10 }}>ILS NOUS FONT CONFIANCE</p>
+          <h2 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(22px,4vw,40px)', fontWeight:800 }}>Nos Supporters</h2>
+        </div>
+        <div style={{ overflow:'hidden', marginBottom:12 }}>
+          <div style={{ display:'flex', gap:14, width:'max-content', animation:'scrollLeft 38s linear infinite' }}>
+            {row1.map((name, i) => (
+              <div key={i} style={{ flexShrink:0, background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:100, padding:'8px 22px', fontSize:13, color:'rgba(232,244,237,0.8)', whiteSpace:'nowrap', fontWeight:600 }}>
+                💚 {name}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ overflow:'hidden', marginBottom:48 }}>
+          <div style={{ display:'flex', gap:14, width:'max-content', animation:'scrollRight 44s linear infinite' }}>
+            {row2.map((name, i) => (
+              <div key={i} style={{ flexShrink:0, background:'rgba(61,170,106,0.04)', border:'1px solid rgba(61,170,106,0.09)', borderRadius:100, padding:'8px 22px', fontSize:13, color:'rgba(232,244,237,0.55)', whiteSpace:'nowrap' }}>
+                ✦ {name}
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ textAlign:'center' }}>
+          <button className="cs-ghost-btn" onClick={() => setShowContrib(true)} style={{ background:'rgba(61,170,106,0.07)', color:'#3DAA6A', border:'1px solid rgba(61,170,106,0.25)', borderRadius:100, padding:'13px 34px', fontWeight:700, fontSize:15, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif' }}>
+            + Rejoindre les supporters
+          </button>
+        </div>
+      </section>
+
+      {/* ══ FOOTER ══ */}
+      <footer style={{ borderTop:'1px solid rgba(61,170,106,0.07)', padding:'28px 24px', textAlign:'center', position:'relative', zIndex:1 }}>
+        <p style={{ fontSize:13, color:'rgba(232,244,237,0.22)' }}>© 2026 Nzela · Ta route commence ici 🇨🇩</p>
+      </footer>
+    </div>
   );
 }
