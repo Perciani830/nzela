@@ -11,7 +11,7 @@ const SUPPORTERS = [
   'Junior T.','Bobiano','Arnold L.','Jolie N.','Tresor T.','Chloé T.',
   'Aimerode I.','Peace Holding.','Nathalie Mbu.','Jean Claude Mbiya',
   'A. EMERY .M','Capot John','Daniella Ongala','Grace Kapamba',
-  'Josué Tambwe','Gemima Masela','Pinos','Noela Babutana.'
+  'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Noela Babutana.'
 ];
 
 const OBJECTIFS = [
@@ -172,8 +172,8 @@ function ContribModal({ onClose }) {
             <label style={LBL_STYLE}>Méthode de paiement</label>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
               {[
-                { id:'mobile', label:'📱 Mobile Money', sub:'M-Pesa · Orange · Airtel · Africell' },
-                { id:'card',   label:'💳 Carte bancaire', sub:'Visa · Mastercard · AmEx' },
+                { id:'mobile', label:' Mobile Money', sub:'M-Pesa · Orange · Airtel · Africell' },
+                { id:'card',   label:' Carte bancaire', sub:'Visa · Mastercard · AmEx' },
               ].map(meth => (
                 <button key={meth.id} onClick={() => setPayMethod(meth.id)}
                   style={{ padding:'12px 10px', borderRadius:14, cursor:'pointer', transition:'all 0.2s', textAlign:'center',
