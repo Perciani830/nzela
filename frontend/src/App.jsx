@@ -5,6 +5,8 @@ import LoginAgency from './pages/LoginAgency';
 import AgencyDashboard from './pages/AgencyDashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import AboutPage from './pages/AboutPage';
+import PaymentSuccess from './pages/PaymentSuccess';
+import PaymentFailed  from './pages/PaymentFailed';
 
 function Guard({ children, role }) {
   const token = localStorage.getItem('token');
@@ -22,6 +24,8 @@ export default function App() {
       <Route path="/agency" element={<Guard role="agency"><AgencyDashboard /></Guard>} />
       <Route path="/admin" element={<Guard role="admin"><AdminDashboard /></Guard>} />
       <Route path="/about" element={<AboutPage />} />
+      <Route path="/paiement-succes" element={<PaymentSuccess />} />
+<Route path="/paiement-echec"  element={<PaymentFailed />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );

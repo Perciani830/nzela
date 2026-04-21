@@ -53,7 +53,32 @@ function useCountdown() {
   }, []);
   return time;
 }
-
+function genRef() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  return 'CONTRIB-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('') + '-' + Date.now();
+}
+ 
+function submitCardForm(params) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = params.checkoutUrl;
+  form.style.display = 'none';
+  const fields = {
+    gatewayMode: params.gatewayMode, publicApiKey: params.publicApiKey,
+    secretApiKey: params.secretApiKey, montant: params.montant,
+    devise: params.devise, transactionReference: params.transactionReference,
+    customerName: params.customerName, callbackUrl: params.callbackUrl,
+    successUrl: params.successUrl, failureUrl: params.failureUrl,
+  };
+  Object.entries(fields).forEach(([k, v]) => {
+    if (v === undefined || v === null) return;
+    const input = document.createElement('input');
+    input.type = 'hidden'; input.name = k; input.value = String(v);
+    form.appendChild(input);
+  });
+  document.body.appendChild(form);
+  form.submit();
+}
 const INP_STYLE = { width:'100%', padding:'11px 14px', borderRadius:12, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(61,170,106,0.2)', color:'#E8F4ED', fontSize:15, outline:'none', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box' };
 const LBL_STYLE = { display:'block', fontSize:13, color:'rgba(232,244,237,0.6)', marginBottom:6, fontWeight:600 };
 
@@ -64,17 +89,20 @@ function ContribModal({ onClose }) {
   const [error, setError]   = useState('');
   const [result, setResult] = useState(null);
   const [form, setForm]     = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
+  const [payMethod, setPayMethod] = useState('mobile'); 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const rapides = currency === 'CDF' ? [500,1000,2000,5000] : [1,2,5,10];
 
-  const validate = () => {
+    const validate = () => {
     const m = parseFloat(form.amount);
-    if (!m || isNaN(m))                        return 'Entrez un montant valide.';
-    if (currency === 'CDF' && m < 500)         return 'Minimum 500 FC en franc congolais.';
-    if (currency === 'USD' && m < 1)           return 'Minimum 1 $ en dollar américain.';
-    if (!form.operator)                        return 'Choisissez un opérateur Mobile Money.';
-    if (form.phone.replace(/\D/g,'').length < 9) return 'Numéro de téléphone invalide.';
+    if (!m || isNaN(m))                          return 'Entrez un montant valide.';
+    if (currency === 'CDF' && m < 500)           return 'Minimum 500 FC en franc congolais.';
+    if (currency === 'USD' && m < 1)             return 'Minimum 1 $ en dollar américain.';
+    if (payMethod === 'mobile') {
+      if (!form.operator)                        return 'Choisissez un opérateur Mobile Money.';
+      if (form.phone.replace(/\D/g,'').length < 9) return 'Numéro de téléphone invalide.';
+    }
     return null;
   };
 
@@ -83,23 +111,44 @@ function ContribModal({ onClose }) {
     if (err) { setError(err); return; }
     setError('');
     setStep(2);
+    const nom   = (anon || !form.name.trim()) ? 'Anonyme' : form.name.trim();
+ 
+    // ── Mobile Money ─────────────────────────────────────────
+    if (payMethod === 'mobile') {
+      try {
+        const res = await fetch(`${API}/public/contribute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contributor_name: anon ? '' : form.name.trim(),
+            amount: form.amount, currency,
+            operator: form.operator,
+            phone_number: form.phone.replace(/\D/g,''),
+            message: form.message.trim(),
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
+        setResult(data);
+        setStep(3);
+      } catch {
+        setError('Service indisponible. Réessayez dans quelques instants.');
+        setStep(4);
+      }
+      return;
+    }
+ 
+    // ── Carte bancaire ───────────────────────────────────────
+    const reference = genRef();
     try {
-      const res = await fetch(`${API}/public/contribute`, {
+      const res = await fetch(`${API}/public/card-checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contributor_name: anon ? '' : form.name.trim(),
-          amount:      form.amount,
-          currency,
-          operator:    form.operator,
-          phone_number: form.phone.replace(/\D/g,''),
-          message:     form.message.trim(),
-        }),
+        body: JSON.stringify({ amount: form.amount, currency, type: 'contribution', reference, nom }),
       });
-      const data = await res.json();
-      if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
-      setResult(data);
-      setStep(3);
+      const params = await res.json();
+      if (!res.ok) { setError(params.error || 'Erreur de paiement.'); setStep(4); return; }
+      submitCardForm(params); // redirige vers MaishaPay, l'utilisateur quitte la page
     } catch {
       setError('Service indisponible. Réessayez dans quelques instants.');
       setStep(4);
@@ -119,7 +168,24 @@ function ContribModal({ onClose }) {
             <h2 style={{ fontSize:22, fontWeight:800, color:'#E8F4ED', margin:'0 0 6px', fontFamily:'Plus Jakarta Sans,sans-serif' }}>Soutenir Nzela</h2>
             <p style={{ fontSize:13, color:'rgba(232,244,237,0.4)', margin:0 }}>100% Mobile Money · Paiement sécurisé · Anonyme possible</p>
           </div>
-
+          <div style={{ marginBottom:20 }}>
+            <label style={LBL_STYLE}>Méthode de paiement</label>
+            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+              {[
+                { id:'mobile', label:'📱 Mobile Money', sub:'M-Pesa · Orange · Airtel · Africell' },
+                { id:'card',   label:'💳 Carte bancaire', sub:'Visa · Mastercard · AmEx' },
+              ].map(meth => (
+                <button key={meth.id} onClick={() => setPayMethod(meth.id)}
+                  style={{ padding:'12px 10px', borderRadius:14, cursor:'pointer', transition:'all 0.2s', textAlign:'center',
+                    background: payMethod===meth.id ? 'rgba(61,170,106,0.15)' : 'rgba(255,255,255,0.03)',
+                    border:    `1px solid ${payMethod===meth.id ? '#3DAA6A' : 'rgba(255,255,255,0.08)'}`,
+                  }}>
+                  <div style={{ fontSize:14, fontWeight:700, color: payMethod===meth.id ? '#3DAA6A' : '#E8F4ED', marginBottom:3 }}>{meth.label}</div>
+                  <div style={{ fontSize:11, color:'rgba(232,244,237,0.4)' }}>{meth.sub}</div>
+                </button>
+              ))}
+            </div>
+          </div>
           {/* Devise */}
           <div style={{ marginBottom:18 }}>
             <label style={LBL_STYLE}>Devise</label>
@@ -159,31 +225,46 @@ function ContribModal({ onClose }) {
               placeholder={`Autre montant en ${currency}...`} style={INP_STYLE} type="text" inputMode="decimal" />
           </div>
 
-          {/* Opérateur */}
-          <div style={{ marginBottom:16 }}>
-            <label style={LBL_STYLE}>Opérateur Mobile Money</label>
-            <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
-              {OPERATORS.map(op => (
-                <button key={op.id} onClick={() => set('operator', op.id)}
-                  style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:12, cursor:'pointer', transition:'all 0.2s',
-                    background: form.operator===op.id ? 'rgba(61,170,106,0.15)' : 'rgba(255,255,255,0.03)',
-                    border:    `1px solid ${form.operator===op.id ? '#3DAA6A' : 'rgba(255,255,255,0.07)'}`,
-                    color:'#E8F4ED', fontSize:13, fontWeight:600,
-                  }}>
-                  <img src={op.logo} alt={op.label} style={{ width:22, height:22, objectFit:'contain' }} onError={e => e.target.style.display='none'} />
-                  {op.label}
-                </button>
-              ))}
+          {/* Opérateur + Téléphone — Mobile Money uniquement */}
+          {payMethod === 'mobile' && (<>
+            <div style={{ marginBottom:16 }}>
+              <label style={LBL_STYLE}>Opérateur Mobile Money</label>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+                {OPERATORS.map(op => (
+                  <button key={op.id} onClick={() => set('operator', op.id)}
+                    style={{ display:'flex', alignItems:'center', gap:8, padding:'10px 12px', borderRadius:12, cursor:'pointer', transition:'all 0.2s',
+                      background: form.operator===op.id ? 'rgba(61,170,106,0.15)' : 'rgba(255,255,255,0.03)',
+                      border:    `1px solid ${form.operator===op.id ? '#3DAA6A' : 'rgba(255,255,255,0.07)'}`,
+                      color:'#E8F4ED', fontSize:13, fontWeight:600,
+                    }}>
+                    <img src={op.logo} alt={op.label} style={{ width:22, height:22, objectFit:'contain' }} onError={e => e.target.style.display='none'} />
+                    {op.label}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* Téléphone */}
-          <div style={{ marginBottom:16 }}>
-            <label style={LBL_STYLE}>Numéro de téléphone</label>
-            <input value={form.phone} onChange={e => set('phone', e.target.value)}
-              placeholder="ex: 0812345678" style={INP_STYLE} type="tel" inputMode="numeric" />
-          </div>
-
+            <div style={{ marginBottom:16 }}>
+              <label style={LBL_STYLE}>Numéro de téléphone</label>
+              <input value={form.phone} onChange={e => set('phone', e.target.value)}
+                placeholder="ex: 0812345678" style={INP_STYLE} type="tel" inputMode="numeric" />
+            </div>
+          </>)}
+ 
+          {/* Info sécurité — Carte uniquement */}
+          {payMethod === 'card' && (
+            <div style={{ marginBottom:16, padding:'14px 16px', background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:14 }}>
+              <p style={{ fontSize:13, color:'rgba(232,244,237,0.7)', lineHeight:1.7, margin:'0 0 10px' }}>
+                🔒 Vous serez redirigé vers la page sécurisée MaishaPay pour saisir vos données de carte (3D Secure).
+              </p>
+              <div style={{ display:'flex', gap:8 }}>
+                {['VISA','Mastercard','AmEx'].map(c => (
+                  <span key={c} style={{ background:'rgba(255,255,255,0.06)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, padding:'4px 10px', fontSize:12, color:'rgba(232,244,237,0.6)', fontWeight:600 }}>
+                    {c}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
           {/* Toggle anonyme */}
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, padding:'12px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
             <input type="checkbox" id="anon" checked={anon} onChange={e => setAnon(e.target.checked)}
@@ -218,10 +299,12 @@ function ContribModal({ onClose }) {
           <button onClick={submit} style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background:'#3DAA6A', color:'#050E17', fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', transition:'opacity 0.2s' }}
             onMouseEnter={e => e.currentTarget.style.opacity='0.88'}
             onMouseLeave={e => e.currentTarget.style.opacity='1'}>
-            Contribuer {form.amount ? `${parseFloat(form.amount||0).toLocaleString()} ${currency}` : ''} 💚
+            {payMethod === 'card' ? '💳 Payer par carte' : '📱 Contribuer'} {form.amount ? `${parseFloat(form.amount||0).toLocaleString()} ${currency}` : ''} 💚
           </button>
           <p style={{ fontSize:11, color:'rgba(232,244,237,0.22)', textAlign:'center', marginTop:10 }}>
-            Vous recevrez une confirmation sur votre téléphone
+            {payMethod === 'card'
+              ? 'Vous serez redirigé vers la page sécurisée MaishaPay'
+              : 'Vous recevrez une confirmation sur votre téléphone'}
           </p>
         </>)}
 
@@ -229,10 +312,15 @@ function ContribModal({ onClose }) {
         {step === 2 && (
           <div style={{ textAlign:'center', padding:'52px 0' }}>
             <div style={{ fontSize:52, marginBottom:20, display:'inline-block', animation:'spin 1.2s linear infinite' }}>⏳</div>
-            <h3 style={{ color:'#E8F4ED', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>Traitement en cours...</h3>
+            <h3 style={{ color:'#E8F4ED', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>
+              {payMethod === 'card' ? 'Redirection en cours...' : 'Traitement en cours...'}
+            </h3>
             <p style={{ color:'rgba(232,244,237,0.45)', fontSize:14, lineHeight:1.7 }}>
-              Vérifiez votre téléphone et confirmez<br/>le paiement Mobile Money.
+              {payMethod === 'card'
+                ? 'Vous allez être redirigé vers la page de paiement sécurisée MaishaPay.'
+                : 'Vérifiez votre téléphone et confirmez le paiement Mobile Money.'}
             </p>
+
           </div>
         )}
 

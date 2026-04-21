@@ -257,4 +257,95 @@ router.post('/contribute', async (req, res) => {
     return res.status(503).json({ error: 'Service de paiement indisponible. Réessayez plus tard.' });
   }
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// COLLER CES 2 ROUTES dans backend/routes/public.js
+// JUSTE AVANT la ligne : module.exports = router;
+// ═══════════════════════════════════════════════════════════════════
+
+// ── ÉTAPE 1 : Préparer le checkout carte ────────────────────────────
+// Le frontend reçoit les params et soumet un formulaire vers MaishaPay
+router.post('/card-checkout', (req, res) => {
+  const { amount, currency, type, reference, nom } = req.body;
+  // type = 'contribution' ou 'booking'
+
+  if (!amount || !currency || !type || !reference) {
+    return res.status(400).json({ error: 'Paramètres manquants.' });
+  }
+
+  const isLive     = process.env.MAISHAPAY_MODE === 'live';
+  const frontendUrl = isLive
+    ? 'https://nzela.cd'
+    : 'https://nzela-rust.vercel.app';
+
+  // URL de callback serveur → Railway reçoit la confirmation MaishaPay
+  const callbackUrl = `https://nzela-production-086a.up.railway.app/api/public/card-callback?type=${type}&ref=${reference}`;
+
+  // MaishaPay redirige l'utilisateur ici après paiement
+  const successUrl = `${frontendUrl}/paiement-succes?ref=${reference}&type=${type}`;
+  const failureUrl = `${frontendUrl}/paiement-echec?ref=${reference}&type=${type}`;
+
+  return res.json({
+    checkoutUrl:   'https://marchand.maishapay.online/payment/vers1.0/merchant/checkout',
+    gatewayMode:   isLive ? 1 : 0,
+    publicApiKey:  isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY  : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY,
+    secretApiKey:  isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY  : process.env.MAISHAPAY_SANDBOX_SECRET_KEY,
+    montant:       String(amount),
+    devise:        currency,                // CDF, USD
+    transactionReference: reference,        // visible dans dashboard MaishaPay
+    customerName:  nom || 'Client Nzela',
+    callbackUrl,
+    successUrl,
+    failureUrl,
+  });
+});
+
+// ── ÉTAPE 2 : Callback serveur-à-serveur MaishaPay ──────────────────
+// MaishaPay appelle cette URL après le paiement carte (POST)
+router.post('/card-callback', (req, res) => {
+  const { type, ref } = req.query;
+  const body = req.body;
+
+  // MaishaPay envoie les détails de la transaction
+  const statusCode = body?.data?.statusCode || body?.statusCode;
+  const txId       = body?.data?.transactionId || body?.transactionId || ref;
+  const success    = ['200', '202', 200, 202].includes(statusCode) || body?.status === 'SUCCESS';
+
+  try {
+    const db = getDb();
+
+    if (type === 'contribution') {
+      // Marquer la contribution comme complétée
+      db.prepare(`
+        UPDATE contributions SET status=?, transaction_id=? WHERE reference=?
+      `).run(success ? 'completed' : 'failed', txId, ref);
+
+    } else if (type === 'booking') {
+      if (success) {
+        // Récupérer la réservation
+        const booking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(ref);
+        if (booking) {
+          const rate             = booking.commission_rate || 10;
+          const commission_amount = Math.round(booking.total_price * rate / 100);
+          runTransaction(db, () => {
+            db.prepare(`
+              UPDATE bookings
+              SET status='confirmed', payment_status='completed',
+                  payment_method='card', transaction_id=?,
+                  commission_rate=?, commission_amount=?
+              WHERE reference=?
+            `).run(txId, rate, commission_amount, ref);
+          });
+        }
+      }
+    }
+
+    // Réponse obligatoire pour MaishaPay
+    return res.json({ status: '1' });
+
+  } catch (e) {
+    console.error('Card callback error:', e.message);
+    return res.json({ status: '1' }); // toujours répondre 1 pour éviter les retries
+  }
+});
 module.exports = router;
