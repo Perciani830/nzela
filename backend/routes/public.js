@@ -346,4 +346,11 @@ router.post('/card-callback', (req, res) => {
     return res.json({ status: '1' }); // toujours répondre 1 pour éviter les retries
   }
 });
+
+// GET card-callback � MaishaPay redirige parfois en GET
+router.get('/card-callback', (req, res) => {
+  res.json({ status: '1' });
+});
+
 module.exports = router;
+
