@@ -3,7 +3,7 @@ import { useEffect, useRef, useState } from 'react';
 // ── ÉQUIPE — remplace les données ici ─────────────────────────
 const TEAM = [
   { name: 'Perciani Lukielo',   role: 'CEO & Fondateur', photo:'/photos/perciani_luks.png' },
-  { name: 'Israél Ongala',   role: 'Cyber Dev & DRH',                   photo: '/israel_ongala.jpg' },
+  { name: 'Israél Ongala',   role: 'Cyber Dev & DRH',    photo: '/public/photos/israe_ongala.jpg' },
   { name: 'Prénom Nom',   role: 'Directeur Commercial',  photo: null },
   { name: 'Prénom Nom',   role: 'Responsable Marketing', photo: null },
   { name: 'Prénom Nom',   role: 'Développeur Backend',   photo: null },
