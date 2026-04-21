@@ -11,7 +11,7 @@ const SUPPORTERS = [
   'Junior T.','Bobiano','Arnold L.','Jolie N.','Tresor T.','Chloé T.',
   'Aimerode I.','Peace Holding.','Nathalie Mbu.','Jean Claude Mbiya',
   'A. EMERY .M','Capot John','Daniella Ongala','Grace Kapamba',
-  'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Noela Babutana.'
+  'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.'
 ];
 
 const OBJECTIFS = [
@@ -424,7 +424,7 @@ export default function ComingSoon() {
         </h1>
 
         <p className="cs-in" style={{ animationDelay:'240ms', fontSize:'clamp(15px,2.2vw,19px)', color:'rgba(232,244,237,0.5)', marginBottom:52, maxWidth:500, lineHeight:1.7 }}>
-          Ta route commence ici — La plateforme de réservation de bus en République Démocratique du Congo.
+          Ta route commence ici <b /> La plateforme de réservation de bus en République Démocratique du Congo.
         </p>
 
         {/* Compte à rebours */}
