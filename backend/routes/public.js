@@ -52,7 +52,6 @@ router.get('/trips', (req, res) => {
     FROM trips t JOIN agencies a ON t.agency_id = a.id
     WHERE t.available_seats > 0 AND t.is_active = 1 AND a.is_active = 1
     AND (t.departure_date > date('now','localtime') OR (t.departure_date = date('now','localtime') AND t.departure_time > time('now','localtime')))
-    AND (t.departure_date > date('now','localtime') OR (t.departure_date = date('now','localtime') AND t.departure_time > time('now','localtime')))
   `;
   const p = [];
   if (from) { q += ' AND LOWER(t.departure_city) LIKE ?'; p.push('%' + from.toLowerCase() + '%'); }

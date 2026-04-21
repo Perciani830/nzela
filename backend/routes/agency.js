@@ -266,10 +266,9 @@ router.post('/bookings/walkin', auth, (req, res) => {
     const trip = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(trip_id, req.user.id);
     if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
     if (trip.available_seats < seats) return res.status(400).json({ error: 'Places insuffisantes' });
-    const agency = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(req.user.id);
-    const rate = agency ? (agency.commission_rate || 10) : 10;
     const total = trip.price * seats;
-    const commission_amount = Math.round(total * rate / 100);
+const rate = 0;
+const commission_amount = 0;
     const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const ref = 'WLK-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
     const id = uuidv4();
