@@ -51,6 +51,8 @@ router.get('/trips', (req, res) => {
            a.note agency_note, a.cancel_rate agency_cancel_rate
     FROM trips t JOIN agencies a ON t.agency_id = a.id
     WHERE t.available_seats > 0 AND t.is_active = 1 AND a.is_active = 1
+    AND (t.departure_date > date('now','localtime') OR (t.departure_date = date('now','localtime') AND t.departure_time > time('now','localtime')))
+    AND (t.departure_date > date('now','localtime') OR (t.departure_date = date('now','localtime') AND t.departure_time > time('now','localtime')))
   `;
   const p = [];
   if (from) { q += ' AND LOWER(t.departure_city) LIKE ?'; p.push('%' + from.toLowerCase() + '%'); }
@@ -371,3 +373,4 @@ router.get('/card-callback', (req, res) => {
 });
 
 module.exports = router;
+
