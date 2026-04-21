@@ -274,9 +274,7 @@ router.post('/card-checkout', (req, res) => {
   }
 
   const isLive     = process.env.MAISHAPAY_MODE === 'live';
-  const frontendUrl = isLive
-    ? 'https://nzela.cd'
-    : 'https://nzela-rust.vercel.app';
+  const frontendUrl = 'https://nzela-rust.vercel.app';
 
   // URL de callback serveur → Railway reçoit la confirmation MaishaPay
   const callbackUrl = `https://nzela-production-086a.up.railway.app/api/public/card-callback?type=${type}&ref=${reference}`;
