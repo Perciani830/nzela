@@ -68,7 +68,7 @@ function submitCardForm(params) {
     secretApiKey: params.secretApiKey, montant: params.montant,
     devise: params.devise, transactionReference: params.transactionReference,
     customerName: params.customerName, callbackUrl: params.callbackUrl,
-    successUrl: params.successUrl, failureUrl: params.failureUrl,
+    page_callback_success: params.successUrl, page_callback_failure: params.failureUrl,
   };
   Object.entries(fields).forEach(([k, v]) => {
     if (v === undefined || v === null) return;
