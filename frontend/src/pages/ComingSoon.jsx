@@ -64,15 +64,6 @@ if (params.paymentPage) {
   setError('Impossible d\'accéder à la page de paiement.');
   setStep(4);
 }
-  Object.entries(fields).forEach(([k, v]) => {
-    if (v === undefined || v === null) return;
-    const input = document.createElement('input');
-    input.type = 'hidden'; input.name = k; input.value = String(v);
-    form.appendChild(input);
-  });
-  document.body.appendChild(form);
-  form.submit();
-}
 const INP_STYLE = { width:'100%', padding:'11px 14px', borderRadius:12, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(61,170,106,0.2)', color:'#E8F4ED', fontSize:15, outline:'none', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box' };
 const LBL_STYLE = { display:'block', fontSize:13, color:'rgba(232,244,237,0.6)', marginBottom:6, fontWeight:600 };
 

@@ -180,8 +180,10 @@ router.post('/mm-callback', (req, res) => {
   const statusCode = body?.status_code || body?.statusCode;
   const txStatus   = body?.transactionStatus || '';
   const txId       = body?.transactionId || id;
-  const success    = statusCode === 200 || txStatus === 'SUCCESS';
-  const failed     = statusCode === 400 || txStatus === 'FAILED';
+const success = statusCode === 200 || txStatus === 'SUCCESS';
+const failed  = statusCode === 400 || txStatus === 'FAILED';
+// 202 PENDING = notification initiale, on l'ignore
+if (!success && !failed) return res.json({ status: '1' });
 
   try {
     const db = getDb();
@@ -349,7 +351,9 @@ router.post('/card-checkout', async (req, res) => {
       customerLastname:  (nom || 'Nzela').split(' ').slice(1).join(' ') || 'Nzela',
     },
     paymentChannel: {
-      callbackUrl: `${FRONTEND_URL}/paiement-succes?ref=${reference}&type=${type}`,
+      channel:     'CARD',                                           // ← AJOUT
+      callbackUrl: `${BACKEND_URL}/public/card-callback-post`,       // ← backend POST
+      redirectUrl: `${FRONTEND_URL}/paiement-succes?ref=${reference}&type=${type}`, // ← redirect user
     },
   };
 
@@ -360,14 +364,24 @@ router.post('/card-checkout', async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const d = await r.json();
+
+    // Log brut pour voir ce que MaishaPay renvoie exactement
+    const raw = await r.text();
+    console.log('💳 Card raw response:', raw);
+
+    let d;
+    try { d = JSON.parse(raw); }
+    catch { return res.status(502).json({ error: 'Réponse MaishaPay invalide (HTML reçu).' }); }
 
     if (d.status_code === 202 && d.paymentPage) {
       return res.json({ paymentPage: d.paymentPage, transactionId: d.transactionId });
     }
-    return res.status(402).json({ error: d.transactionDescription || 'Erreur paiement carte.' });
+
+    console.error('💳 Card checkout échec:', d);
+    return res.status(402).json({ error: d.transactionDescription || d.message || 'Erreur paiement carte.' });
 
   } catch(e) {
+    console.error('💳 Card checkout exception:', e.message);
     return res.status(503).json({ error: 'Service indisponible.' });
   }
 });
@@ -408,5 +422,13 @@ router.get('/card-callback', (req, res) => {
     : `${FRONTEND_URL}/paiement-echec?ref=${transactionRefId}&type=card`;
   return res.redirect(redirectUrl);
 });
-
+router.get('/contrib-status', (req, res) => {
+  const { ref } = req.query;
+  if (!ref) return res.status(400).json({ error: 'ref requis' });
+  try {
+    const c = getDb().prepare('SELECT status FROM contributions WHERE reference=?').get(ref);
+    if (!c) return res.status(404).json({ error: 'Introuvable' });
+    return res.json({ status: c.status }); // pending | completed | failed
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 module.exports = router;
