@@ -129,8 +129,37 @@ function ContribModal({ onClose }) {
         });
         const data = await res.json();
         if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
+
+if (data.pending) {
+  // Rester sur step 2 (chargement) et poller
+  const ref = data.reference;
+  const poll = setInterval(async () => {
+    try {
+      const r2 = await fetch(`${API}/public/contrib-status?ref=${ref}`);
+      const d2 = await r2.json();
+      if (d2.status === 'completed') {
+        clearInterval(poll);
         setResult(data);
         setStep(3);
+      } else if (d2.status === 'failed') {
+        clearInterval(poll);
+        setError('Paiement refusé ou annulé. Vérifiez votre solde et réessayez.');
+        setStep(4);
+      }
+    } catch { /* continuer à poller */ }
+  }, 3000);
+  // Timeout 2 minutes
+  setTimeout(() => {
+    clearInterval(poll);
+    if (step === 2) {
+      setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
+      setStep(4);
+    }
+  }, 120000);
+  return;
+}
+setResult(data);
+setStep(3);
       } catch {
         setError('Service indisponible. Réessayez dans quelques instants.');
         setStep(4);
