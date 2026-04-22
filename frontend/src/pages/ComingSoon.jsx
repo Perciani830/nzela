@@ -159,9 +159,14 @@ setStep(3);
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ amount: form.amount, currency, type: 'contribution', reference, nom }),
       });
-      const params = await res.json();
-      if (!res.ok) { setError(params.error || 'Erreur de paiement.'); setStep(4); return; }
-      submitCardForm(params); // redirige vers MaishaPay, l'utilisateur quitte la page
+      const data = await res.json();
+if (!res.ok) { setError(data.error || 'Erreur de paiement.'); setStep(4); return; }
+if (data.paymentPage) {
+  window.location.href = data.paymentPage;
+} else {
+  setError("Impossible d'accéder à la page de paiement.");
+  setStep(4);
+}
     } catch {
       setError('Service indisponible. Réessayez dans quelques instants.');
       setStep(4);
