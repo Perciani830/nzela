@@ -25,7 +25,7 @@ export default function App() {
       <Route path="/admin" element={<Guard role="admin"><AdminDashboard /></Guard>} />
       <Route path="/about" element={<AboutPage />} />
       <Route path="/paiement-succes" element={<PaymentSuccess />} />
-<Route path="/paiement-echec"  element={<PaymentFailed />} />
+      <Route path="/paiement-echec"  element={<PaymentFailed />} />
       <Route path="*" element={<Navigate to="/" />} />
     </Routes>
   );

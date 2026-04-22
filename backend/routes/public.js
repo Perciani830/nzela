@@ -1,437 +1,433 @@
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
 const { getDb, runTransaction } = require('../db/database');
-const { notifyNewBooking, notifyPaymentConfirmed } = require('../mailer');
-
-const BACKEND_URL  = 'https://nzela-production-086a.up.railway.app/api';
-const FRONTEND_URL = 'https://nzela-rust.vercel.app';
 
 function genRef() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  return 'BUS-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+  return 'BUS-' + Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
-function getMaishaKeys(isLive) {
-  return {
-    public: isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY  : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY,
-    secret: isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY  : process.env.MAISHAPAY_SANDBOX_SECRET_KEY,
-    mode:   isLive ? 1 : 0,
-  };
-}
-
-// ── GET /trips ─────────────────────────────────────────────────
+// ── GET /api/public/trips ──────────────────────────────────────
 router.get('/trips', (req, res) => {
   const { from, to, date } = req.query;
   const db = getDb();
   let q = `
-    SELECT t.*,
-           a.agency_name, a.logo_url agency_logo, a.phone agency_phone,
-           a.note agency_note, a.cancel_rate agency_cancel_rate
+    SELECT t.*, a.agency_name, a.logo_url agency_logo, a.phone agency_phone,
+           a.premium, a.premium_order, a.cancel_rate
     FROM trips t JOIN agencies a ON t.agency_id = a.id
     WHERE t.available_seats > 0 AND t.is_active = 1 AND a.is_active = 1
-    AND (t.departure_date > date('now','localtime') OR (t.departure_date = date('now','localtime') AND t.departure_time > time('now','localtime')))
   `;
   const p = [];
   if (from) { q += ' AND LOWER(t.departure_city) LIKE ?'; p.push('%' + from.toLowerCase() + '%'); }
-  if (to)   { q += ' AND LOWER(t.arrival_city) LIKE ?';   p.push('%' + to.toLowerCase() + '%'); }
+  if (to)   { q += ' AND LOWER(t.arrival_city)   LIKE ?'; p.push('%' + to.toLowerCase()   + '%'); }
   if (date) { q += ' AND t.departure_date = ?';            p.push(date); }
-  q += ' ORDER BY a.note DESC, t.price ASC, t.departure_time ASC';
+  q += ' ORDER BY a.premium DESC, a.premium_order ASC, t.price ASC, t.departure_time ASC';
   try { res.json(db.prepare(q).all(...p)); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── GET /gallery ───────────────────────────────────────────────
+// ── GET /api/public/gallery ───────────────────────────────────
 router.get('/gallery', (req, res) => {
   try { res.json(getDb().prepare('SELECT * FROM gallery WHERE is_active=1 ORDER BY sort_order ASC').all()); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── POST /book ─────────────────────────────────────────────────
+// ── GET /api/public/premium-agencies ─────────────────────────
+router.get('/premium-agencies', (req, res) => {
+  try {
+    res.json(getDb().prepare(`
+      SELECT id, agency_name, logo_url, premium_photo_url, premium_caption, phone
+      FROM agencies WHERE is_active=1 AND premium=1 ORDER BY premium_order ASC
+    `).all());
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── POST /api/public/book ─────────────────────────────────────
 router.post('/book', (req, res) => {
   const { trip_id, name, phone, email, passengers } = req.body;
-  if (!trip_id || !name || !phone) return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
-  const seats = Math.max(1, Math.min(10, parseInt(passengers)||1));
-  const db = getDb();
-  const trip = db.prepare(`
-    SELECT t.*, a.agency_name, a.email agency_email, a.commission_rate, a.cancel_rate
-    FROM trips t JOIN agencies a ON t.agency_id=a.id
-    WHERE t.id=? AND t.available_seats>=? AND a.is_active=1
+  if (!trip_id || !name || !phone)
+    return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
+  const seats = Math.max(1, Math.min(10, parseInt(passengers) || 1));
+  const db    = getDb();
+  const trip  = db.prepare(`
+    SELECT t.*, a.agency_name, a.commission_rate
+    FROM trips t JOIN agencies a ON t.agency_id = a.id
+    WHERE t.id=? AND t.available_seats>=? AND t.is_active=1 AND a.is_active=1
   `).get(trip_id, seats);
   if (!trip) return res.status(404).json({ error: 'Trajet indisponible ou places insuffisantes' });
-
   const total = trip.price * seats;
   const ref   = genRef();
   const id    = uuidv4();
-
   try {
     runTransaction(db, () => {
       db.prepare(`
         INSERT INTO bookings
-          (id,reference,trip_id,agency_id,passenger_name,passenger_phone,passenger_email,passengers,total_price,commission_rate,status,payment_status)
+          (id,reference,trip_id,agency_id,passenger_name,passenger_phone,
+           passenger_email,passengers,total_price,commission_rate,status,payment_status)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
-      `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null, seats, total, trip.commission_rate||10, 'pending', 'pending');
+      `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null,
+             seats, total, trip.commission_rate||10, 'pending', 'pending');
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
-
-    notifyNewBooking({
-      agencyEmail: trip.agency_email, agencyName: trip.agency_name,
-      booking: { reference:ref, passenger_name:name, passenger_phone:phone, passengers:seats, total_price:total },
-      trip,
-    }).catch(e => console.error('❌ notifyNewBooking:', e.message));
-
     res.status(201).json({ booking_id: id, reference: ref, total_price: total });
-  } catch(e) { res.status(500).json({ error: e.message }); }
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── POST /pay — Mobile Money v2 ────────────────────────────────
-// Lance le paiement → MaishaPay envoie notif au téléphone
-// La confirmation arrive via /mm-callback
+// ── GET /api/public/booking-status/:id ───────────────────────
+// Polling : le frontend interroge ce endpoint toutes les 3s après paiement
+router.get('/booking-status/:id', (req, res) => {
+  try {
+    const b = getDb().prepare('SELECT id,reference,status,payment_status,transaction_id FROM bookings WHERE id=?').get(req.params.id);
+    if (!b) return res.status(404).json({ error: 'Introuvable' });
+    res.json({
+      booking_id:     b.id,
+      reference:      b.reference,
+      status:         b.status,
+      payment_status: b.payment_status,
+      transaction_id: b.transaction_id,
+    });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// POST /api/public/pay
+//
+// Logique par méthode :
+//
+//  "cash"        → confirmation immédiate, pas d'API externe
+//
+//  "mobilemoney" + provider MPESA → API v1 SYNCHRONE
+//                                   (connexion ouverte jusqu'à réponse finale)
+//
+//  "mobilemoney" + provider AIRTEL/ORANGE/MTN → API v2 ASYNCHRONE
+//                  → répond {status:"pending"} au frontend immédiatement
+//                  → résultat final arrive via POST /api/public/callback/mobilemoney
+//
+//  "card"        → API v3 ASYNCHRONE
+//                  → répond {status:"redirect", paymentPage: URL} au frontend
+//                  → client redirigé vers CyberSource
+//                  → résultat final arrive via GET /api/public/callback/card
+// ═══════════════════════════════════════════════════════════════
 router.post('/pay', async (req, res) => {
-  const { booking_id, payment_method, operator, phone_number } = req.body;
+  const { booking_id, payment_method, operator, phone_number,
+          card_firstname, card_lastname, card_address,
+          card_city, card_phone, card_email, card_provider } = req.body;
+
   if (!booking_id) return res.status(400).json({ error: 'ID réservation requis' });
 
   const db      = getDb();
   const booking = db.prepare('SELECT * FROM bookings WHERE id=?').get(booking_id);
-  if (!booking)                                   return res.status(404).json({ error: 'Réservation introuvable' });
-  if (booking.payment_status === 'completed')     return res.status(400).json({ error: 'Déjà payée' });
+  if (!booking)                               return res.status(404).json({ error: 'Réservation introuvable' });
+  if (booking.payment_status === 'completed') return res.status(400).json({ error: 'Déjà payée' });
 
   const rate              = booking.commission_rate || 10;
   const commission_amount = Math.round(booking.total_price * rate / 100);
-  const net_agency        = booking.total_price - commission_amount;
+  const isLive            = process.env.MAISHAPAY_MODE === 'live';
+  const publicKey         = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY   : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
+  const secretKey         = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY   : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
+  const gatewayMode       = isLive ? '1' : '0';
+  const BASE_URL          = process.env.API_BASE_URL || 'https://api.nzela.cd';
 
-  // ── Paiement cash ──────────────────────────────────────────
+  // ──────────────────────────────────────────────────────────────
+  // 1. ESPÈCES — confirmation immédiate
+  // ──────────────────────────────────────────────────────────────
   if (payment_method === 'cash') {
     const txId = 'CASH-' + Date.now();
-    runTransaction(db, () => {
-      db.prepare(`
-        UPDATE bookings SET status='confirmed', payment_status='completed',
-          payment_method=?, transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?
-      `).run(payment_method, txId, rate, commission_amount, booking_id);
-    });
-    return res.json({ success: true, transaction_id: txId, reference: booking.reference, commission: commission_amount, net_agency });
+    try {
+      db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
+        payment_method=?, transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?`)
+        .run('cash', txId, rate, commission_amount, booking_id);
+      console.log(`✅ Espèces — ${booking.reference} | ${booking.total_price} FC`);
+      return res.json({ success: true, status: 'confirmed', reference: booking.reference, transaction_id: txId });
+    } catch (e) { return res.status(500).json({ error: e.message }); }
   }
 
-  // ── Paiement Mobile Money v2 ───────────────────────────────
-  if (!operator || !phone_number) return res.status(400).json({ error: 'Opérateur et numéro requis' });
-
-  const isLive = process.env.MAISHAPAY_MODE === 'live';
-  const keys   = getMaishaKeys(isLive);
-
-  // Formater le numéro en international +243XXXXXXXXX
-  const walletID = phone_number.replace(/\D/g,'').replace(/^0/, '+243');
-
-  const payload = {
-    transactionReference: booking.reference,
-    gatewayMode:          keys.mode,
-    publicApiKey:         keys.public,
-    secretApiKey:         keys.secret,
-    order: {
-      amount:           booking.total_price,
-      currency:         'CDF',
-      customerFullName: booking.passenger_name,
-    },
-    paymentChannel: {
-      channel:     'MOBILEMONEY',
-      provider:    operator.toUpperCase(),
-      walletID,
-      callbackUrl: `${BACKEND_URL}/public/mm-callback?type=booking&id=${booking_id}`,
-    },
-  };
-
-  try {
-    const fetch = (...a) => import('node-fetch').then(({default:f}) => f(...a));
-    const r = await fetch('https://marchand.maishapay.online/api/collect/v2/store/mobileMoney', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-
-    // 202 = PENDING = envoyé au téléphone ✅
-    if (d.status_code === 202 || d.transactionStatus === 'PENDING') {
-      const txId = d.transactionId || booking.reference;
-      // Marquer en attente de confirmation callback
-      db.prepare(`UPDATE bookings SET transaction_id=? WHERE id=?`).run(txId, booking_id);
-      return res.json({
-        success:    true,
-        pending:    true, // le frontend affiche "Vérifiez votre téléphone"
-        transaction_id: txId,
-        reference:  booking.reference,
-        message:    'Vérifiez votre téléphone pour confirmer le paiement.',
+  // ──────────────────────────────────────────────────────────────
+  // 2. MOBILE MONEY MPESA — API v1 SYNCHRONE (MPESA uniquement)
+  //    La connexion reste ouverte jusqu'à réponse finale de l'opérateur
+  // ──────────────────────────────────────────────────────────────
+  if (payment_method === 'mobilemoney' && operator && operator.toUpperCase() === 'MPESA') {
+    if (!phone_number) return res.status(400).json({ error: 'Numéro de téléphone requis' });
+    const payload = {
+      transactionReference: booking.reference,
+      gatewayMode,
+      publicApiKey:  publicKey,
+      secretApiKey:  secretKey,
+      amount:        booking.total_price,
+      currency:      'CDF',
+      chanel:        'MOBILEMONEY',
+      provider:      'MPESA',
+      walletID:      phone_number,
+    };
+    try {
+      const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+      const r = await fetch('https://marchand.maishapay.online/api/payment/rest/vers1.0/merchant', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-    }
+      const d = await r.json();
+      // v1 répond directement avec le statut final
+      const data   = d?.data || d;
+      const code   = String(data?.statusCode || '');
+      const status = data?.status || '';
+      const txId   = data?.transactionId || booking.reference;
 
-    // Échec immédiat
-    return res.status(402).json({ error: d.transactionStatus || 'Paiement refusé.' });
-
-  } catch(e) {
-    return res.status(503).json({ error: 'Service de paiement indisponible. Choisissez paiement espèces.' });
-  }
-});
-
-// ── POST /mm-callback — Callback MaishaPay Mobile Money v2 ─────
-// MaishaPay appelle cette URL (POST) quand le paiement est confirmé ou échoué
-router.post('/mm-callback', (req, res) => {
-  const { type, id } = req.query; // type=booking|contribution, id=booking_id|reference
-  const body = req.body;
-
-  console.log('📞 MM Callback reçu:', JSON.stringify(body));
-
-  const statusCode = body?.status_code || body?.statusCode;
-  const txStatus   = body?.transactionStatus || '';
-  const txId       = body?.transactionId || id;
-const success = statusCode === 200 || txStatus === 'SUCCESS';
-const failed  = statusCode === 400 || txStatus === 'FAILED';
-// 202 PENDING = notification initiale, on l'ignore
-if (!success && !failed) return res.json({ status: '1' });
-
-  try {
-    const db = getDb();
-
-    if (type === 'booking' && id) {
-      const booking = db.prepare('SELECT * FROM bookings WHERE id=?').get(id);
-      if (booking && booking.payment_status !== 'completed') {
-        if (success) {
-          const rate              = booking.commission_rate || 10;
-          const commission_amount = Math.round(booking.total_price * rate / 100);
-          runTransaction(db, () => {
-            db.prepare(`
-              UPDATE bookings SET status='confirmed', payment_status='completed',
-                payment_method='mobilemoney', transaction_id=?, commission_rate=?, commission_amount=?
-              WHERE id=?
-            `).run(txId, rate, commission_amount, id);
-          });
-
-          // Notifier l'agence
-          const tripInfo = db.prepare(`
-            SELECT t.departure_city, t.arrival_city, t.departure_date, t.departure_time,
-                   a.email agency_email, a.agency_name
-            FROM bookings b JOIN trips t ON b.trip_id=t.id JOIN agencies a ON b.agency_id=a.id
-            WHERE b.id=?
-          `).get(id);
-          if (tripInfo) {
-            notifyPaymentConfirmed({
-              agencyEmail: tripInfo.agency_email, agencyName: tripInfo.agency_name,
-              booking, trip: tripInfo, commission: commission_amount,
-            }).catch(e => console.error('❌ notifyPaymentConfirmed:', e.message));
-          }
-        } else if (failed) {
-          db.prepare(`UPDATE bookings SET payment_status='failed' WHERE id=?`).run(id);
-        }
+      if (code === '200' || status === 'APPROVED') {
+        db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
+          payment_method='mobilemoney', transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?`)
+          .run(txId, rate, commission_amount, booking_id);
+        console.log(`✅ MPESA v1 — ${booking.reference} | ${booking.total_price} CDF | tx: ${txId}`);
+        return res.json({ success: true, status: 'confirmed', reference: booking.reference, transaction_id: txId });
+      } else if (code === '201' || code === '202' || status === 'PENDING') {
+        // Rare cas pending v1
+        db.prepare(`UPDATE bookings SET payment_method='mobilemoney', transaction_id=? WHERE id=?`).run(txId, booking_id);
+        return res.json({ success: true, status: 'pending', reference: booking.reference,
+          message: 'Transaction en attente de confirmation opérateur.' });
+      } else {
+        const desc = data?.transactionDescription || data?.statusDescription || 'Paiement refusé';
+        console.error(`❌ MPESA v1 — ${booking.reference} | ${desc}`);
+        // Remettre les places
+        db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+        db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE id=?").run(booking_id);
+        return res.status(402).json({ error: desc });
       }
+    } catch (e) {
+      console.error('MPESA v1 erreur réseau:', e.message);
+      return res.status(503).json({ error: 'Service Mobile Money indisponible. Essayez paiement espèces.' });
     }
-
-    if (type === 'contribution' && id) {
-      if (success) {
-        db.prepare(`UPDATE contributions SET status='completed', transaction_id=? WHERE reference=?`).run(txId, id);
-      } else if (failed) {
-        db.prepare(`UPDATE contributions SET status='failed' WHERE reference=?`).run(id);
-      }
-    }
-
-    return res.json({ status: '1' }); // réponse obligatoire pour MaishaPay
-  } catch(e) {
-    console.error('MM callback error:', e.message);
-    return res.json({ status: '1' });
   }
-});
 
-// ── GET /pay-status — Frontend poll pour connaître le statut ───
-// Le frontend peut appeler cette route toutes les 3s pour savoir si confirmé
-router.get('/pay-status', (req, res) => {
-  const { booking_id } = req.query;
-  if (!booking_id) return res.status(400).json({ error: 'booking_id requis' });
-  try {
-    const db = getDb();
-    const b  = db.prepare('SELECT payment_status, status, transaction_id, reference FROM bookings WHERE id=?').get(booking_id);
-    if (!b) return res.status(404).json({ error: 'Réservation introuvable' });
-    return res.json({
-      payment_status: b.payment_status, // pending | completed | failed
-      status:         b.status,
-      transaction_id: b.transaction_id,
-      reference:      b.reference,
-    });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+  // ──────────────────────────────────────────────────────────────
+  // 3. MOBILE MONEY AIRTEL / ORANGE / MTN — API v2 ASYNCHRONE
+  //    Répond 202 PENDING immédiatement → résultat via callback POST
+  // ──────────────────────────────────────────────────────────────
+  if (payment_method === 'mobilemoney') {
+    if (!operator || !phone_number)
+      return res.status(400).json({ error: 'Opérateur et numéro de téléphone requis' });
 
-// ── POST /contribute — Contribution Mobile Money v2 ────────────
-router.post('/contribute', async (req, res) => {
-  const { contributor_name, phone_number, operator, amount, currency, message } = req.body;
-
-  const montant = parseFloat(amount);
-  if (!montant || isNaN(montant))          return res.status(400).json({ error: 'Montant invalide.' });
-  if (currency === 'CDF' && montant < 500) return res.status(400).json({ error: 'Montant minimum : 500 FC.' });
-  if (currency === 'USD' && montant < 1)   return res.status(400).json({ error: 'Montant minimum : 1 USD.' });
-  if (!operator || !phone_number)          return res.status(400).json({ error: 'Opérateur et numéro requis.' });
-
-  const devise    = currency === 'USD' ? 'USD' : 'CDF';
-  const reference = 'CONTRIB-' + Math.random().toString(36).slice(2,6).toUpperCase() + '-' + Date.now();
-  const nom       = (contributor_name && contributor_name.trim()) ? contributor_name.trim() : 'Anonyme';
-  const isLive    = process.env.MAISHAPAY_MODE === 'live';
-  const keys      = getMaishaKeys(isLive);
-  const walletID  = phone_number.replace(/\D/g,'').replace(/^0/, '+243');
-
-  const payload = {
-    transactionReference: reference,
-    gatewayMode:          keys.mode,
-    publicApiKey:         keys.public,
-    secretApiKey:         keys.secret,
-    order: {
-      amount:           montant,
-      currency:         devise,
-      customerFullName: nom,
-    },
-    paymentChannel: {
-      channel:     'MOBILEMONEY',
-      provider:    operator.toUpperCase(),
-      walletID,
-      callbackUrl: `${BACKEND_URL}/public/mm-callback?type=contribution&id=${reference}`,
-    },
-  };
-
-  try {
-    const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
-    const r = await fetch('https://marchand.maishapay.online/api/collect/v2/store/mobileMoney', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-    const d = await r.json();
-
-    if (d.status_code === 202 || d.transactionStatus === 'PENDING') {
-      const txId = d.transactionId || reference;
-
-      // Enregistrer en pending — sera mis à jour par le callback
-      const db = getDb();
-      runTransaction(db, () => {
-        db.prepare(`
-          INSERT INTO contributions
-            (id, reference, contributor_name, phone, operator, amount, currency, transaction_id, message, status)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
-        `).run(uuidv4(), reference, nom, phone_number, operator.toUpperCase(), montant, devise, txId, message || null);
+    const callbackUrl = `${BASE_URL}/api/public/callback/mobilemoney`;
+    const payload = {
+      transactionReference: booking.reference,
+      gatewayMode,
+      publicApiKey: publicKey,
+      secretApiKey: secretKey,
+      order: {
+        amount:              String(booking.total_price),
+        currency:            'CDF',
+        customerFullName:    booking.passenger_name  || '',
+        customerEmailAdress: booking.passenger_email || '',
+      },
+      paymentChannel: {
+        channel:     'MOBILEMONEY',
+        provider:    operator.toUpperCase(),
+        walletID:    phone_number,
+        callbackUrl,
+      },
+    };
+    try {
+      const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+      const r = await fetch('https://marchand.maishapay.online/api/collect/v2/store/mobileMoney', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
+      const d    = await r.json();
+      const code = String(d?.status_code || d?.statusCode || '');
 
-      const montantFormate = devise === 'USD' ? `${montant} $` : `${Math.round(montant).toLocaleString()} FC`;
-      return res.json({
-        ok:             true,
-        pending:        true,
-        reference,
-        transaction_id: txId,
-        message:        `Vérifiez votre téléphone et confirmez le paiement de ${montantFormate}. Merci ${nom === 'Anonyme' ? '' : nom + ' '}pour votre soutien ! 💚`,
-      });
-    }
-
-    return res.status(402).json({ error: d.transactionStatus || 'Paiement refusé. Vérifiez votre solde.' });
-
-  } catch(e) {
-    console.error('Contribution error:', e.message);
-    return res.status(503).json({ error: 'Service de paiement indisponible. Réessayez plus tard.' });
-  }
-});
-
-// ── POST /card-checkout — Carte v3 (redirection CyberSource) ───
-router.post('/card-checkout', async (req, res) => {
-  const { amount, currency, type, reference, nom } = req.body;
-  if (!amount || !currency || !type || !reference) {
-    return res.status(400).json({ error: 'Paramètres manquants.' });
-  }
-
-  const isLive = process.env.MAISHAPAY_MODE === 'live';
-  const keys   = getMaishaKeys(isLive);
-
-const payload = {
-  transactionReference: reference,
-  gatewayMode:          keys.mode,
-  publicApiKey:         keys.public,
-  secretApiKey:         keys.secret,
-  order: {
-    amount:            parseFloat(amount),
-    currency:          currency,
-    customerFirstname: (nom || 'Client').split(' ')[0],
-    customerLastname:  (nom || 'Nzela').split(' ').slice(1).join(' ') || 'Nzela',
-    customerAddress:   'Kinshasa',   // ← AJOUT
-    customerCity:      'Kinshasa',   // ← AJOUT
-  },
-  paymentChannel: {
-    channel:     'CARD',
-    provider:    'CYBERSOURCE',      // ← AJOUT (valeur MaishaPay v3)
-    callbackUrl: `${BACKEND_URL}/public/card-callback-post`,
-    redirectUrl: `${FRONTEND_URL}/paiement-succes?ref=${reference}&type=${type}`,
-  },
-};
-
-  try {
-    const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
-    const r = await fetch('https://marchand.maishapay.online/api/collect/v3/store/card', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    // Log brut pour voir ce que MaishaPay renvoie exactement
-    const raw = await r.text();
-    console.log('💳 Card raw response:', raw);
-
-    let d;
-    try { d = JSON.parse(raw); }
-    catch { return res.status(502).json({ error: 'Réponse MaishaPay invalide (HTML reçu).' }); }
-
-    if (d.status_code === 202 && d.paymentPage) {
-      return res.json({ paymentPage: d.paymentPage, transactionId: d.transactionId });
-    }
-
-    console.error('💳 Card checkout échec:', d);
-    return res.status(402).json({ error: d.transactionDescription || d.message || 'Erreur paiement carte.' });
-
-  } catch(e) {
-    console.error('💳 Card checkout exception:', e.message);
-    return res.status(503).json({ error: 'Service indisponible.' });
-  }
-});
-
-// ── GET /card-callback — Callback carte v3 (GET depuis CyberSource) ─
-router.get('/card-callback', (req, res) => {
-  const { status, description, transactionRefId } = req.query;
-  const success = status === '200' || description === 'APPROVED';
-
-  try {
-    const db = getDb();
-    if (transactionRefId) {
-      // Chercher si c'est une contribution ou un billet
-      const contrib = db.prepare('SELECT * FROM contributions WHERE reference=?').get(transactionRefId);
-      if (contrib) {
-        db.prepare(`UPDATE contributions SET status=? WHERE reference=?`)
-          .run(success ? 'completed' : 'failed', transactionRefId);
+      if (code === '202') {
+        // Enregistrer comme "en cours" — la confirmation viendra via callback
+        db.prepare(`UPDATE bookings SET payment_method='mobilemoney', transaction_id=? WHERE id=?`)
+          .run(String(d.transactionId || ''), booking_id);
+        console.log(`⏳ MM v2 — ${booking.reference} | ${operator} | en attente PIN client`);
+        return res.json({
+          success:    true,
+          status:     'pending',
+          reference:  booking.reference,
+          booking_id: booking_id,
+          message:    `Demande envoyée sur votre téléphone ${phone_number}. Veuillez saisir votre code PIN ${operator} pour confirmer.`,
+        });
+      } else {
+        const desc = d?.transactionStatus || d?.message || 'Paiement refusé par l\'opérateur';
+        // Remettre les places
+        db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+        db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE id=?").run(booking_id);
+        return res.status(402).json({ error: desc });
       }
-      const booking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(transactionRefId);
-      if (booking && success) {
+    } catch (e) {
+      console.error('MaishaPay v2 erreur réseau:', e.message);
+      return res.status(503).json({ error: 'Service Mobile Money indisponible. Essayez paiement espèces.' });
+    }
+  }
+
+  // ──────────────────────────────────────────────────────────────
+  // 4. CARTE BANCAIRE — API v3 ASYNCHRONE
+  //    Répond 202 + paymentPage URL → client redirigé vers CyberSource
+  //    Résultat arrive via GET /callback/card
+  // ──────────────────────────────────────────────────────────────
+  if (payment_method === 'card') {
+    if (!card_phone || !card_email || !card_provider)
+      return res.status(400).json({ error: 'Téléphone, email et type de carte requis' });
+
+    const CDF_TO_USD = parseFloat(process.env.CDF_TO_USD_RATE) || 2800;
+    const amountUSD  = Math.max(1, +(booking.total_price / CDF_TO_USD).toFixed(2));
+    const callbackUrl = `${BASE_URL}/api/public/callback/card`;
+
+    const payload = {
+      transactionReference: booking.reference,
+      gatewayMode,
+      publicApiKey: publicKey,
+      secretApiKey: secretKey,
+      order: {
+        amount:              String(amountUSD),
+        currency:            'USD',
+        customerFirstname:   card_firstname || booking.passenger_name.split(' ')[0] || '',
+        customerLastname:    card_lastname  || booking.passenger_name.split(' ').slice(1).join(' ') || '',
+        customerAddress:     card_address  || 'Kinshasa',
+        customerCity:        card_city     || 'Kinshasa',
+        customerPhoneNumber: card_phone,
+        customerEmailAdress: card_email,
+      },
+      paymentChannel: {
+        channel:     'CARD',
+        provider:    card_provider.toUpperCase(),
+        callbackUrl,
+      },
+    };
+    try {
+      const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+      const r = await fetch('https://marchand.maishapay.online/api/collect/v3/store/card', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const d    = await r.json();
+      const code = String(d?.status_code || d?.statusCode || '');
+
+      if (code === '202' && d?.paymentPage) {
+        db.prepare(`UPDATE bookings SET payment_method='card', transaction_id=? WHERE id=?`)
+          .run(String(d.transactionId || ''), booking_id);
+        console.log(`💳 Card v3 — ${booking.reference} | ${amountUSD} USD | redirect CyberSource`);
+        return res.json({
+          success:      true,
+          status:       'redirect',
+          reference:    booking.reference,
+          booking_id:   booking_id,
+          payment_page: d.paymentPage,
+          message:      'Veuillez compléter votre paiement sur la page sécurisée.',
+        });
+      } else {
+        const desc = d?.transactionDescription || d?.message || 'Initialisation carte échouée';
+        db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+        db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE id=?").run(booking_id);
+        return res.status(402).json({ error: desc });
+      }
+    } catch (e) {
+      console.error('MaishaPay v3 erreur réseau:', e.message);
+      return res.status(503).json({ error: 'Service carte indisponible. Essayez Mobile Money.' });
+    }
+  }
+
+  return res.status(400).json({ error: 'Méthode de paiement non reconnue : cash | mobilemoney | card' });
+});
+
+// ═══════════════════════════════════════════════════════════════
+// POST /api/public/callback/mobilemoney
+// MaishaPay appelle cette URL quand le client a saisi son PIN
+// Corps JSON : { status_code, transactionStatus, originatingTransactionId, transactionId, ... }
+// ═══════════════════════════════════════════════════════════════
+router.post('/callback/mobilemoney', (req, res) => {
+  try {
+    const body        = req.body;
+    const status_code = String(body?.status_code || body?.statusCode || '');
+    const txStatus    = (body?.transactionStatus || '').toUpperCase().trim();
+    const ref         = body?.originatingTransactionId || body?.transactionRefId || '';
+    const txId        = String(body?.transactionId || ref);
+
+    console.log(`📲 Callback MM v2 — ref: ${ref} | status: ${status_code} | ${txStatus}`);
+
+    const db      = getDb();
+    const booking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(ref);
+
+    if (!booking) {
+      console.error(`Callback MM — réservation introuvable pour référence: ${ref}`);
+      return res.status(200).json({ received: true }); // toujours 200 pour MaishaPay
+    }
+
+    if (booking.payment_status === 'completed') {
+      return res.status(200).json({ received: true }); // déjà traitée
+    }
+
+    if (status_code === '200' || txStatus === 'SUCCESS') {
+      const rate              = booking.commission_rate || 10;
+      const commission_amount = Math.round(booking.total_price * rate / 100);
+      db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
+        transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
+        .run(txId, rate, commission_amount, ref);
+      console.log(`✅ MM v2 CONFIRMÉ — ${ref} | ${booking.total_price} CDF | commission: ${commission_amount} FC`);
+
+    } else if (status_code === '400' || txStatus === 'FAILED') {
+      // Remettre les places disponibles
+      db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE reference=?").run(ref);
+      db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+      console.log(`❌ MM v2 ÉCHOUÉ — ${ref} | client n'a pas validé ou fonds insuffisants`);
+    }
+    // Si PENDING → on ne fait rien, on attend le prochain callback
+
+    res.status(200).json({ received: true }); // MaishaPay attend toujours un 200
+  } catch (e) {
+    console.error('Erreur callback MM:', e.message);
+    res.status(200).json({ received: true }); // Toujours 200 pour ne pas bloquer MaishaPay
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// GET /api/public/callback/card
+// MaishaPay appelle cette URL après paiement CyberSource
+// Query params: ?status=200&description=APPROVED&transactionRefId=XXXX&operatorRefId=1234
+// ═══════════════════════════════════════════════════════════════
+router.get('/callback/card', (req, res) => {
+  try {
+    const { status, description, transactionRefId, operatorRefId } = req.query;
+    const ref  = transactionRefId || '';
+    const txId = operatorRefId    || ref;
+
+    console.log(`💳 Callback Card v3 — ref: ${ref} | status: ${status} | ${description}`);
+
+    const db      = getDb();
+    const booking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(ref);
+
+    if (!booking) {
+      console.error(`Callback Card — réservation introuvable pour référence: ${ref}`);
+      // Rediriger vers la page d'accueil quand même
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=notfound`);
+    }
+
+    if (String(status) === '200' || description === 'APPROVED') {
+      if (booking.payment_status !== 'completed') {
         const rate              = booking.commission_rate || 10;
         const commission_amount = Math.round(booking.total_price * rate / 100);
-        runTransaction(db, () => {
-          db.prepare(`
-            UPDATE bookings SET status='confirmed', payment_status='completed',
-              payment_method='card', commission_rate=?, commission_amount=? WHERE reference=?
-          `).run(rate, commission_amount, transactionRefId);
-        });
+        db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
+          transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
+          .run(txId, rate, commission_amount, ref);
+        console.log(`✅ Card v3 APPROUVÉE — ${ref} | commission: ${commission_amount} FC`);
       }
-    }
-  } catch(e) {
-    console.error('Card callback error:', e.message);
-  }
+      // Rediriger vers la page de succès avec la référence
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=success&ref=${ref}`);
 
-  // Rediriger vers la page appropriée
-  const redirectUrl = success
-    ? `${FRONTEND_URL}/paiement-succes?ref=${transactionRefId}&type=card`
-    : `${FRONTEND_URL}/paiement-echec?ref=${transactionRefId}&type=card`;
-  return res.redirect(redirectUrl);
+    } else if (description === 'CANCELED') {
+      db.prepare("UPDATE bookings SET status='cancelled', payment_status='cancelled' WHERE reference=? AND payment_status!='completed'").run(ref);
+      db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+      console.log(`↩️ Card v3 ANNULÉE — ${ref}`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=cancelled&ref=${ref}`);
+
+    } else {
+      // DECLINED ou autre
+      db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE reference=? AND payment_status!='completed'").run(ref);
+      db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(booking.passengers||1, booking.trip_id);
+      console.log(`❌ Card v3 REFUSÉE — ${ref} | ${description}`);
+      return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=failed&ref=${ref}`);
+    }
+  } catch (e) {
+    console.error('Erreur callback Card:', e.message);
+    return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=error`);
+  }
 });
-router.get('/contrib-status', (req, res) => {
-  const { ref } = req.query;
-  if (!ref) return res.status(400).json({ error: 'ref requis' });
-  try {
-    const c = getDb().prepare('SELECT status FROM contributions WHERE reference=?').get(ref);
-    if (!c) return res.status(404).json({ error: 'Introuvable' });
-    return res.json({ status: c.status }); // pending | completed | failed
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+
 module.exports = router;

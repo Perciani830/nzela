@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
+import BookingModal from './BookingModal';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 const CITIES = ['Kinshasa', 'Matadi', 'Boma', 'Moanda'];
@@ -678,7 +679,7 @@ export default function PublicSite() {
         </div>
       </footer>
 
-      {selected && <BookingModal trip={selected} onClose={() => setSelected(null)} showToast={showToast} onSuccess={() => showToast('Réservation confirmée 🎊','success')}/>}
+      {selected && <BookingModal trip={selected} onClose={()=>setSelected(null)} onSuccess={()=>setSelected(null)} showToast={showToast}/>}
     </div>
   );
 }
