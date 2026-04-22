@@ -141,18 +141,38 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
     finally { setLoading(false); }
   };
 
-  const doPay = async () => {
-    if (!pay.method) return showToast('Choisissez un mode','error');
-    if (pay.method==='mobilemoney' && (!pay.operator||!pay.wallet)) return showToast('Opérateur et numéro requis','error');
-    setLoading(true);
-    try {
-      await axios.post(`${API}/public/pay`, { booking_id:booking.booking_id, payment_method:pay.method, operator:pay.operator, phone_number:pay.wallet });
-      setStep(3);
-      onSuccess();
-    }
-    catch(e) { showToast(e.response?.data?.error||'Erreur','error'); }
-    finally { setLoading(false); }
-  };
+const doPay = async () => {
+  if (!pay.method) return showToast('Choisissez un mode','error');
+  if (pay.method === 'mobilemoney' && (!pay.operator || !pay.wallet))
+    return showToast('Opérateur et numéro requis','error');
+  if (pay.method === 'card') {
+    const { card_firstname, card_lastname, card_address, card_city, card_phone, card_email, card_provider } = pay;
+    if (!card_firstname || !card_lastname || !card_address || !card_city || !card_phone || !card_email || !card_provider)
+      return showToast('Tous les champs carte sont requis','error');
+  }
+  setLoading(true);
+  try {
+    await axios.post(`${API}/public/pay`, {
+      booking_id:     booking.booking_id,
+      payment_method: pay.method,
+      operator:       pay.operator,
+      phone_number:   pay.wallet,
+      card_firstname: pay.card_firstname,
+      card_lastname:  pay.card_lastname,
+      card_address:   pay.card_address,
+      card_city:      pay.card_city,
+      card_phone:     pay.card_phone,
+      card_email:     pay.card_email,
+      card_provider:  pay.card_provider,
+    });
+    setStep(3);
+    onSuccess();
+  } catch(e) {
+    showToast(e.response?.data?.error || 'Erreur paiement','error');
+  } finally {
+    setLoading(false);
+  }
+};
 
   const STEP_LABELS = ['Passager','Conditions','Paiement','Confirmé'];
 
@@ -279,6 +299,56 @@ function BookingModal({ trip, onClose, showToast, onSuccess }) {
                   <div className="input-group"><label className="lbl">Numéro Mobile Money</label><input className="field" placeholder="+243 81 234 5678" value={pay.wallet} onChange={e=>setPay({...pay,wallet:e.target.value})}/></div>
                 </div>
               )}
+              <div className={`pay-opt${pay.method==='card'?' sel':''}`} onClick={() => setPay({...pay, method:'card'})} style={{ marginTop:8 }}>
+  <span className="pi">💳</span>
+  <div className="pinfo"><strong>Carte bancaire</strong><span>Visa, Mastercard — paiement en USD</span></div>
+  <div className="prado">{pay.method==='card' && <div style={{ width:8, height:8, borderRadius:'50%', background:'var(--green-l)' }}/>}</div>
+</div>
+
+{pay.method === 'card' && (
+  <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:10 }}>
+    <div className="g2">
+      <div className="input-group">
+        <label className="lbl">Prénom</label>
+        <input className="field" placeholder="Jean" value={pay.card_firstname} onChange={e => setPay({...pay, card_firstname:e.target.value})}/>
+      </div>
+      <div className="input-group">
+        <label className="lbl">Nom</label>
+        <input className="field" placeholder="Mukendi" value={pay.card_lastname} onChange={e => setPay({...pay, card_lastname:e.target.value})}/>
+      </div>
+    </div>
+    <div className="input-group">
+      <label className="lbl">Adresse</label>
+      <input className="field" placeholder="123 Avenue Kasa-Vubu" value={pay.card_address} onChange={e => setPay({...pay, card_address:e.target.value})}/>
+    </div>
+    <div className="g2">
+      <div className="input-group">
+        <label className="lbl">Ville</label>
+        <input className="field" placeholder="Kinshasa" value={pay.card_city} onChange={e => setPay({...pay, card_city:e.target.value})}/>
+      </div>
+      <div className="input-group">
+        <label className="lbl">Téléphone</label>
+        <input className="field" placeholder="+243 81 234 5678" value={pay.card_phone} onChange={e => setPay({...pay, card_phone:e.target.value})}/>
+      </div>
+    </div>
+    <div className="input-group">
+      <label className="lbl">Email</label>
+      <input className="field" type="email" placeholder="jean@exemple.cd" value={pay.card_email} onChange={e => setPay({...pay, card_email:e.target.value})}/>
+    </div>
+    <div className="input-group">
+      <label className="lbl">Réseau carte</label>
+      <select className="field" value={pay.card_provider} onChange={e => setPay({...pay, card_provider:e.target.value})}>
+        <option value="">Choisir...</option>
+        <option value="VISA">Visa</option>
+        <option value="MASTERCARD">Mastercard</option>
+        <option value="AMERICAN EXPRESS">American Express</option>
+      </select>
+    </div>
+    <div style={{ fontSize:11, color:'var(--muted)', padding:'6px 10px', background:'rgba(245,166,35,0.06)', borderRadius:8, border:'1px solid rgba(245,166,35,0.15)' }}>
+      ⚠️ Le montant sera converti en USD au taux en vigueur (~2800 CDF/USD)
+    </div>
+  </div>
+)}
             </div>
           )}
 
