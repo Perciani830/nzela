@@ -339,23 +339,26 @@ router.post('/card-checkout', async (req, res) => {
   const isLive = process.env.MAISHAPAY_MODE === 'live';
   const keys   = getMaishaKeys(isLive);
 
-  const payload = {
-    transactionReference: reference,
-    gatewayMode:          keys.mode,
-    publicApiKey:         keys.public,
-    secretApiKey:         keys.secret,
-    order: {
-      amount:            parseFloat(amount),
-      currency:          currency,
-      customerFirstname: (nom || 'Client').split(' ')[0],
-      customerLastname:  (nom || 'Nzela').split(' ').slice(1).join(' ') || 'Nzela',
-    },
-    paymentChannel: {
-      channel:     'CARD',                                           // ← AJOUT
-      callbackUrl: `${BACKEND_URL}/public/card-callback-post`,       // ← backend POST
-      redirectUrl: `${FRONTEND_URL}/paiement-succes?ref=${reference}&type=${type}`, // ← redirect user
-    },
-  };
+const payload = {
+  transactionReference: reference,
+  gatewayMode:          keys.mode,
+  publicApiKey:         keys.public,
+  secretApiKey:         keys.secret,
+  order: {
+    amount:            parseFloat(amount),
+    currency:          currency,
+    customerFirstname: (nom || 'Client').split(' ')[0],
+    customerLastname:  (nom || 'Nzela').split(' ').slice(1).join(' ') || 'Nzela',
+    customerAddress:   'Kinshasa',   // ← AJOUT
+    customerCity:      'Kinshasa',   // ← AJOUT
+  },
+  paymentChannel: {
+    channel:     'CARD',
+    provider:    'CYBERSOURCE',      // ← AJOUT (valeur MaishaPay v3)
+    callbackUrl: `${BACKEND_URL}/public/card-callback-post`,
+    redirectUrl: `${FRONTEND_URL}/paiement-succes?ref=${reference}&type=${type}`,
+  },
+};
 
   try {
     const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
