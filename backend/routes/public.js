@@ -12,6 +12,30 @@ function genContribRef() {
   return 'CONTRIB-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('') + '-' + Date.now();
 }
 
+// Normalise un numéro vers le format international 243XXXXXXXXX
+function normalizePhone(raw) {
+  const digits = String(raw).replace(/\D/g, '');
+  if (digits.startsWith('243')) return digits;
+  return '243' + digits.replace(/^0/, '');
+}
+
+// Parse la réponse MaishaPay — supporte statusCode et status_code
+function parseMaishaPay(d) {
+  const data = d?.original?.data || d?.data || d;
+  const code = String(
+    data?.statusCode  || data?.status_code  ||
+    d?.statusCode     || d?.status_code     || ''
+  );
+  const desc =
+    data?.statusDescription || data?.message ||
+    d?.statusDescription    || d?.message    ||
+    d?.title                || 'Paiement refusé';
+  const txId =
+    data?.transactionId || data?.originatingTransactionId ||
+    d?.transactionId    || d?.originatingTransactionId    || null;
+  return { code, desc, txId };
+}
+
 // ── GET /api/public/trips ─────────────────────────────────────
 router.get('/trips', (req, res) => {
   const { from, to, date } = req.query;
@@ -103,13 +127,17 @@ router.post('/pay', async (req, res) => {
 
   let txId = null;
 
+  // ── ESPÈCES ──────────────────────────────────────────────────
   if (payment_method === 'cash') {
     txId = 'CASH-' + Date.now();
   }
 
+  // ── MOBILE MONEY ─────────────────────────────────────────────
   else if (payment_method === 'mobilemoney') {
     if (!operator || !phone_number)
       return res.status(400).json({ error: 'Opérateur et numéro de téléphone requis' });
+
+    const walletID = normalizePhone(phone_number);
 
     const payload = {
       transactionReference: booking.reference,
@@ -125,7 +153,7 @@ router.post('/pay', async (req, res) => {
       paymentChannel: {
         channel:     'MOBILEMONEY',
         provider:    operator.toUpperCase(),
-        walletID:    phone_number,
+        walletID,
         callbackUrl,
       },
     };
@@ -137,13 +165,11 @@ router.post('/pay', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       });
-      const d    = await r.json();
-      const data = d?.original?.data || d?.data || d;
-      const code = String(data?.statusCode || d?.statusCode || '');
-      const desc = data?.statusDescription || d?.statusDescription || d?.message || 'Paiement refusé';
+      const d              = await r.json();
+      const { code, desc, txId: tid } = parseMaishaPay(d);
 
       if (['200', '202', '2000'].includes(code)) {
-        txId = data?.transactionId || data?.originatingTransactionId || booking.reference;
+        txId = tid || booking.reference;
         console.log(`✅ MM v2 — ${booking.reference} | ${booking.total_price} CDF | tx: ${txId}`);
       } else {
         console.error(`❌ MM v2 — ${booking.reference} | code: ${code} | ${desc}`);
@@ -155,6 +181,7 @@ router.post('/pay', async (req, res) => {
     }
   }
 
+  // ── CARTE BANCAIRE ───────────────────────────────────────────
   else if (payment_method === 'card') {
     if (!card_firstname || !card_lastname || !card_address || !card_city || !card_phone || !card_email || !card_provider)
       return res.status(400).json({ error: 'Tous les champs carte sont requis' });
@@ -176,7 +203,7 @@ router.post('/pay', async (req, res) => {
         customerLastname:    card_lastname,
         customerAddress:     card_address,
         customerCity:        card_city,
-        customerPhoneNumber: card_phone,
+        customerPhoneNumber: normalizePhone(card_phone),
         customerEmailAdress: card_email,
       },
       paymentChannel: {
@@ -193,13 +220,11 @@ router.post('/pay', async (req, res) => {
         headers: { 'Content-Type': 'application/json' },
         body:    JSON.stringify(payload),
       });
-      const d    = await r.json();
-      const data = d?.original?.data || d?.data || d;
-      const code = String(data?.statusCode || d?.statusCode || '');
-      const desc = data?.statusDescription || d?.statusDescription || d?.message || 'Paiement carte refusé';
+      const d              = await r.json();
+      const { code, desc, txId: tid } = parseMaishaPay(d);
 
       if (['200', '202', '2000'].includes(code)) {
-        txId = data?.transactionId || data?.originatingTransactionId || booking.reference;
+        txId = tid || booking.reference;
         console.log(`✅ Card v3 — ${booking.reference} | ${amountUSD} USD | tx: ${txId}`);
       } else {
         console.error(`❌ Card v3 — ${booking.reference} | code: ${code} | ${desc}`);
@@ -237,8 +262,7 @@ router.post('/pay', async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/public/contribute
-//
-// Contribution financière via Mobile Money (page ComingSoon).
+// Contribution Mobile Money — page ComingSoon
 // ═══════════════════════════════════════════════════════════════
 router.post('/contribute', async (req, res) => {
   const { contributor_name, amount, currency, operator, phone_number, message } = req.body;
@@ -247,15 +271,13 @@ router.post('/contribute', async (req, res) => {
     return res.status(400).json({ error: 'Montant, opérateur et téléphone requis' });
 
   const montant = parseFloat(amount);
-  if (isNaN(montant) || montant <= 0)
-    return res.status(400).json({ error: 'Montant invalide' });
-  if (currency === 'CDF' && montant < 500)
-    return res.status(400).json({ error: 'Minimum 500 FC' });
-  if (currency === 'USD' && montant < 1)
-    return res.status(400).json({ error: 'Minimum 1 USD' });
+  if (isNaN(montant) || montant <= 0)       return res.status(400).json({ error: 'Montant invalide' });
+  if (currency === 'CDF' && montant < 500)  return res.status(400).json({ error: 'Minimum 500 FC' });
+  if (currency === 'USD' && montant < 1)    return res.status(400).json({ error: 'Minimum 1 USD' });
 
   const nom       = contributor_name?.trim() || 'Anonyme';
   const reference = genContribRef();
+  const walletID  = normalizePhone(phone_number);
 
   const isLive      = process.env.MAISHAPAY_MODE === 'live';
   const publicKey   = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY   : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
@@ -277,7 +299,7 @@ router.post('/contribute', async (req, res) => {
     paymentChannel: {
       channel:     'MOBILEMONEY',
       provider:    operator.toUpperCase(),
-      walletID:    phone_number,
+      walletID,
       callbackUrl,
     },
   };
@@ -289,31 +311,22 @@ router.post('/contribute', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body:    JSON.stringify(payload),
     });
-    const d    = await r.json();
-console.log('🔍 MaishaPay réponse brute:', JSON.stringify(d)); // ← ligne temporaire
-const data = d?.original?.data || d?.data || d;
-const code = String(data?.statusCode || d?.statusCode || '');
-const desc = data?.statusDescription || d?.statusDescription || d?.message || 'Paiement refusé';
+    const d              = await r.json();
+    const { code, desc, txId } = parseMaishaPay(d);
 
     if (['200', '202', '2000'].includes(code)) {
-      const txId = data?.transactionId || data?.originatingTransactionId || reference;
-      console.log(`✅ Contribution MM — ${reference} | ${montant} ${currency} | ${nom} | tx: ${txId}`);
+      const finalTxId = txId || reference;
+      console.log(`✅ Contribution MM — ${reference} | ${montant} ${currency} | ${nom} | tx: ${finalTxId}`);
 
-      // Création table + enregistrement (non bloquant si erreur)
       try {
         const db = getDb();
         db.prepare(`
           CREATE TABLE IF NOT EXISTS contributions (
-            id TEXT PRIMARY KEY,
-            reference TEXT UNIQUE,
-            contributor_name TEXT,
-            amount REAL,
-            currency TEXT DEFAULT 'CDF',
-            operator TEXT,
-            phone_number TEXT,
-            message TEXT,
-            transaction_id TEXT,
-            status TEXT DEFAULT 'completed',
+            id TEXT PRIMARY KEY, reference TEXT UNIQUE,
+            contributor_name TEXT, amount REAL,
+            currency TEXT DEFAULT 'CDF', operator TEXT,
+            phone_number TEXT, message TEXT,
+            transaction_id TEXT, status TEXT DEFAULT 'completed',
             created_at TEXT DEFAULT (datetime('now'))
           )
         `).run();
@@ -321,7 +334,7 @@ const desc = data?.statusDescription || d?.statusDescription || d?.message || 'P
           INSERT OR IGNORE INTO contributions
             (id, reference, contributor_name, amount, currency, operator, phone_number, message, transaction_id)
           VALUES (?,?,?,?,?,?,?,?,?)
-        `).run(uuidv4(), reference, nom, montant, currency || 'CDF', operator, phone_number, message || '', txId);
+        `).run(uuidv4(), reference, nom, montant, currency || 'CDF', operator, phone_number, message || '', finalTxId);
       } catch (dbErr) {
         console.error('Contributions DB (non bloquant):', dbErr.message);
       }
@@ -345,10 +358,7 @@ const desc = data?.statusDescription || d?.statusDescription || d?.message || 'P
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/public/card-checkout
-//
-// Retourne les paramètres pour la redirection vers la page
-// de paiement hébergée MaishaPay (carte bancaire).
-// Appelé depuis la page ComingSoon.jsx
+// Paramètres de redirection vers la page hébergée MaishaPay
 // ═══════════════════════════════════════════════════════════════
 router.post('/card-checkout', (req, res) => {
   const { amount, currency, reference, nom } = req.body;
@@ -369,14 +379,10 @@ router.post('/card-checkout', (req, res) => {
   const secretKey   = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY   : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
   const gatewayMode = isLive ? '1' : '0';
 
-  // La carte MaishaPay n'accepte pas CDF — conversion si nécessaire
   const CDF_TO_USD_RATE = 2800;
-  const montantFinal = currency === 'CDF'
-    ? (montant / CDF_TO_USD_RATE).toFixed(2)
-    : montant.toFixed(2);
-  const deviseFinal = currency === 'CDF' ? 'USD' : (currency || 'USD');
-
-  const frontendUrl = process.env.FRONTEND_URL || 'https://nzela.cd';
+  const montantFinal    = currency === 'CDF' ? (montant / CDF_TO_USD_RATE).toFixed(2) : montant.toFixed(2);
+  const deviseFinal     = currency === 'CDF' ? 'USD' : (currency || 'USD');
+  const frontendUrl     = process.env.FRONTEND_URL || 'https://nzela.cd';
 
   res.json({
     checkoutUrl:          'https://marchand.maishapay.online/checkout',
@@ -395,9 +401,8 @@ router.post('/card-checkout', (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════
 // POST /api/public/maishapay-callback
-//
-// MaishaPay appelle cette route après traitement d'un paiement
-// carte. Gère les bookings (BUS-) et contributions (CONTRIB-).
+// Appelé par MaishaPay après traitement carte.
+// Gère bookings (BUS-) et contributions (CONTRIB-).
 // MAISHAPAY_CALLBACK_URL=https://api.nzela.cd/api/public/maishapay-callback
 // ═══════════════════════════════════════════════════════════════
 router.post('/maishapay-callback', (req, res) => {
@@ -408,17 +413,8 @@ router.post('/maishapay-callback', (req, res) => {
             || body?.original?.data?.transactionReference
             || body?.data?.transactionReference;
 
-  const code = String(
-    body?.statusCode
-    || body?.original?.data?.statusCode
-    || body?.data?.statusCode
-    || ''
-  );
-
-  const txId = body?.transactionId
-            || body?.original?.data?.transactionId
-            || body?.data?.transactionId
-            || ref;
+  const { code, txId: tid } = parseMaishaPay(body);
+  const txId = tid || ref;
 
   if (!ref) {
     console.error('❌ Callback sans transactionReference:', JSON.stringify(body));
@@ -429,7 +425,6 @@ router.post('/maishapay-callback', (req, res) => {
 
   if (['200', '202', '2000'].includes(code)) {
 
-    // Booking (BUS-...)
     if (ref.startsWith('BUS-')) {
       try {
         const booking = db.prepare('SELECT * FROM bookings WHERE reference = ?').get(ref);
@@ -455,7 +450,6 @@ router.post('/maishapay-callback', (req, res) => {
       }
     }
 
-    // Contribution (CONTRIB-...)
     else if (ref.startsWith('CONTRIB-')) {
       try {
         db.prepare(`UPDATE contributions SET status = 'completed', transaction_id = ? WHERE reference = ?`).run(txId, ref);
@@ -473,7 +467,6 @@ router.post('/maishapay-callback', (req, res) => {
     console.log(`❌ Callback échoué — ${ref} | code: ${code}`);
   }
 
-  // MaishaPay attend toujours un 200
   res.json({ received: true });
 });
 
