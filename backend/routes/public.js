@@ -290,9 +290,10 @@ router.post('/contribute', async (req, res) => {
       body:    JSON.stringify(payload),
     });
     const d    = await r.json();
-    const data = d?.original?.data || d?.data || d;
-    const code = String(data?.statusCode || d?.statusCode || '');
-    const desc = data?.statusDescription || d?.statusDescription || d?.message || 'Paiement refusé';
+console.log('🔍 MaishaPay réponse brute:', JSON.stringify(d)); // ← ligne temporaire
+const data = d?.original?.data || d?.data || d;
+const code = String(data?.statusCode || d?.statusCode || '');
+const desc = data?.statusDescription || d?.statusDescription || d?.message || 'Paiement refusé';
 
     if (['200', '202', '2000'].includes(code)) {
       const txId = data?.transactionId || data?.originatingTransactionId || reference;
