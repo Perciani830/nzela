@@ -112,8 +112,6 @@ function Carousel({ slides }) {
   );
 }
 
-{selected && <BookingModal trip={selected} onClose={()=>setSelected(null)} onSuccess={()=>setSelected(null)} showToast={showToast} />}
-
 function TripCard({ trip, onBook, delay=0 }) {
   const pct = Math.round((trip.available_seats/trip.total_seats)*100);
   const note = trip.agency_note || 3;
