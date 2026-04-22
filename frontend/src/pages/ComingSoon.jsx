@@ -6,19 +6,19 @@ const LAUNCH = new Date('2026-06-01T00:00:00');
 const START  = new Date('2026-04-11T00:00:00');
 
 const SUPPORTERS = [
-  'Maman ChÃ©rie','Papa','My Wife.','Peniel M.','Pierdi T.','Perla S',
-  'P. Bernard','Sephora Ngoma','Precieux P','Israel O.','GrÃ¢ce M.',
-  'Junior T.','Bobiano','Arnold L.','Jolie N.','Tresor T.','ChloÃ© T.',
+  'Maman Chérie','Papa','My Wife.','Peniel M.','Pierdi T.','Perla S',
+  'P. Bernard','Sephora Ngoma','Precieux P','Israel O.','Grâce M.',
+  'Junior T.','Bobiano','Arnold L.','Jolie N.','Tresor T.','Chloé T.',
   'Aimerode I.','Peace Holding.','Nathalie Mbu.','Jean Claude Mbiya',
   'A. EMERY .M','Capot John','Daniella Ongala','Grace Kapamba',
-  'JosuÃ© Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.'
+  'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.'
 ];
 
 const OBJECTIFS = [
-  { icon: 'ðŸ“±', titre: 'Digitaliser', desc: 'Ã‰liminer les files d\'attente et la vente informelle de billets en RDC.' },
-  { icon: 'ðŸ’³', titre: 'SÃ©curiser',   desc: 'Mobile Money intÃ©grÃ© â€” paiements fiables, traÃ§ables et sans cash.' },
-  { icon: 'ðŸšŒ', titre: 'Valoriser',   desc: 'Un tableau de bord professionnel pour chaque agence partenaire.' },
-  { icon: 'ðŸŒ', titre: 'Relier',      desc: 'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
+  { icon: '📱', titre: 'Digitaliser', desc: 'Éliminer les files d\'attente et la vente informelle de billets en RDC.' },
+  { icon: '💳', titre: 'Sécuriser',   desc: 'Mobile Money intégré – paiements fiables, traçables et sans cash.' },
+  { icon: '🚌', titre: 'Valoriser',   desc: 'Un tableau de bord professionnel pour chaque agence partenaire.' },
+  { icon: '🌍', titre: 'Relier',      desc: 'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
 ];
 
 const OPERATORS = [
@@ -53,10 +53,12 @@ function useCountdown() {
   }, []);
   return time;
 }
+
 function genRef() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return 'CONTRIB-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('') + '-' + Date.now();
 }
+
 const INP_STYLE = { width:'100%', padding:'11px 14px', borderRadius:12, background:'rgba(255,255,255,0.04)', border:'1px solid rgba(61,170,106,0.2)', color:'#E8F4ED', fontSize:15, outline:'none', fontFamily:'DM Sans,sans-serif', boxSizing:'border-box' };
 const LBL_STYLE = { display:'block', fontSize:13, color:'rgba(232,244,237,0.6)', marginBottom:6, fontWeight:600 };
 
@@ -67,20 +69,20 @@ function ContribModal({ onClose }) {
   const [error, setError]   = useState('');
   const [result, setResult] = useState(null);
   const [form, setForm]     = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
-  const [payMethod, setPayMethod] = useState('mobile'); 
+  const [payMethod, setPayMethod] = useState('mobile');
   const pollRef = useRef(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const rapides = currency === 'CDF' ? [500,1000,2000,5000] : [1,2,5,10];
 
-    const validate = () => {
+  const validate = () => {
     const m = parseFloat(form.amount);
     if (!m || isNaN(m))                          return 'Entrez un montant valide.';
     if (currency === 'CDF' && m < 500)           return 'Minimum 500 FC en franc congolais.';
-    if (currency === 'USD' && m < 1)             return 'Minimum 1 $ en dollar amÃ©ricain.';
+    if (currency === 'USD' && m < 1)             return 'Minimum 1 $ en dollar américain.';
     if (payMethod === 'mobile') {
-      if (!form.operator)                        return 'Choisissez un opÃ©rateur Mobile Money.';
-      if (form.phone.replace(/\D/g,'').length < 9) return 'NumÃ©ro de tÃ©lÃ©phone invalide.';
+      if (!form.operator)                        return 'Choisissez un opérateur Mobile Money.';
+      if (form.phone.replace(/\D/g,'').length < 9) return 'Numéro de téléphone invalide.';
     }
     return null;
   };
@@ -90,9 +92,9 @@ function ContribModal({ onClose }) {
     if (err) { setError(err); return; }
     setError('');
     setStep(2);
-    const nom   = (anon || !form.name.trim()) ? 'Anonyme' : form.name.trim();
- 
-    // â”€â”€ Mobile Money â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    const nom = (anon || !form.name.trim()) ? 'Anonyme' : form.name.trim();
+
+    // ── Mobile Money ──────────────────────────────────────────────
     if (payMethod === 'mobile') {
       try {
         const res = await fetch(`${API}/public/contribute`, {
@@ -107,44 +109,42 @@ function ContribModal({ onClose }) {
           }),
         });
         const data = await res.json();
-        if (!res.ok) { setError(data.error || 'Paiement refusÃ©.'); setStep(4); return; }
+        if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
 
-if (data.pending) {
-  // Rester sur step 2 (chargement) et poller
-  const ref = data.reference;
-  const poll = setInterval(async () => {
-    try {
-      const r2 = await fetch(`${API}/public/contrib-status?ref=${ref}`);
-      const d2 = await r2.json();
-      if (d2.status === 'completed') {
-        clearInterval(poll);
+        if (data.pending) {
+          const ref = data.reference;
+          const poll = setInterval(async () => {
+            try {
+              const r2 = await fetch(`${API}/public/contrib-status?ref=${ref}`);
+              const d2 = await r2.json();
+              if (d2.status === 'completed') {
+                clearInterval(poll);
+                setResult(data);
+                setStep(3);
+              } else if (d2.status === 'failed') {
+                clearInterval(poll);
+                setError('Paiement refusé ou annulé. Vérifiez votre solde et réessayez.');
+                setStep(4);
+              }
+            } catch { /* continuer à poller */ }
+          }, 3000);
+          pollRef.current = setTimeout(() => {
+            clearInterval(poll);
+            setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
+            setStep(4);
+          }, 120000);
+          return;
+        }
         setResult(data);
         setStep(3);
-      } else if (d2.status === 'failed') {
-        clearInterval(poll);
-        setError('Paiement refusÃ© ou annulÃ©. VÃ©rifiez votre solde et rÃ©essayez.');
-        setStep(4);
-      }
-    } catch { /* continuer Ã  poller */ }
-  }, 3000);
-  // Timeout 2 minutes
-pollRef.current = setTimeout(() => {
-    clearInterval(poll);
-    setError('DÃ©lai dÃ©passÃ©. Si vous avez confirmÃ© sur votre tÃ©lÃ©phone, contactez support@nzela.cd');
-    setStep(4);
-  }, 120000);
-  return;
-}
-setResult(data);
-setStep(3);
       } catch {
-        setError('Service indisponible. RÃ©essayez dans quelques instants.');
+        setError('Service indisponible. Réessayez dans quelques instants.');
         setStep(4);
       }
       return;
     }
- 
-    // â”€â”€ Carte bancaire â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+
+    // ── Carte bancaire ────────────────────────────────────────────
     const reference = genRef();
     try {
       const res = await fetch(`${API}/public/card-checkout`, {
@@ -153,15 +153,15 @@ setStep(3);
         body: JSON.stringify({ amount: form.amount, currency, type: 'contribution', reference, nom }),
       });
       const data = await res.json();
-if (!res.ok) { setError(data.error || 'Erreur de paiement.'); setStep(4); return; }
-if (data.paymentPage) {
-  window.location.href = data.paymentPage;
-} else {
-  setError("Impossible d'accÃ©der Ã  la page de paiement.");
-  setStep(4);
-}
+      if (!res.ok) { setError(data.error || 'Erreur de paiement.'); setStep(4); return; }
+      if (data.paymentPage) {
+        window.location.href = data.paymentPage;
+      } else {
+        setError("Impossible d'accéder à la page de paiement.");
+        setStep(4);
+      }
     } catch {
-      setError('Service indisponible. RÃ©essayez dans quelques instants.');
+      setError('Service indisponible. Réessayez dans quelques instants.');
       setStep(4);
     }
   };
@@ -170,21 +170,22 @@ if (data.paymentPage) {
     <div style={{ position:'fixed', inset:0, zIndex:2000, background:'rgba(5,14,23,0.93)', backdropFilter:'blur(14px)', display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
       onClick={e => e.target === e.currentTarget && onClose()}>
       <div style={{ background:'linear-gradient(160deg,#0d1f16,#081220)', border:'1px solid rgba(61,170,106,0.3)', borderRadius:24, padding:36, width:'100%', maxWidth:460, position:'relative', maxHeight:'92vh', overflowY:'auto', boxShadow:'0 32px 80px rgba(0,0,0,0.7)' }}>
-        <button onClick={onClose} style={{ position:'absolute', top:16, right:16, background:'none', border:'none', color:'rgba(232,244,237,0.35)', fontSize:22, cursor:'pointer', lineHeight:1 }}>âœ•</button>
+        <button onClick={onClose} style={{ position:'absolute', top:16, right:16, background:'none', border:'none', color:'rgba(232,244,237,0.35)', fontSize:22, cursor:'pointer', lineHeight:1 }}>✕</button>
 
-        {/* â”€â”€ Ã‰TAPE 1 : Formulaire â”€â”€ */}
+        {/* ── ÉTAPE 1 : Formulaire ── */}
         {step === 1 && (<>
           <div style={{ textAlign:'center', marginBottom:28 }}>
-            <div style={{ fontSize:44, marginBottom:10 }}>ðŸ’š</div>
+            <div style={{ fontSize:44, marginBottom:10 }}>💚</div>
             <h2 style={{ fontSize:22, fontWeight:800, color:'#E8F4ED', margin:'0 0 6px', fontFamily:'Plus Jakarta Sans,sans-serif' }}>Soutenir Nzela</h2>
-            <p style={{ fontSize:13, color:'rgba(232,244,237,0.4)', margin:0 }}>100% Mobile Money Â· Paiement sÃ©curisÃ© Â· Anonyme possible</p>
+            <p style={{ fontSize:13, color:'rgba(232,244,237,0.4)', margin:0 }}>100% Mobile Money · Paiement sécurisé · Anonyme possible</p>
           </div>
+
           <div style={{ marginBottom:20 }}>
-            <label style={LBL_STYLE}>MÃ©thode de paiement</label>
+            <label style={LBL_STYLE}>Méthode de paiement</label>
             <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
               {[
-                { id:'mobile', label:' Mobile Money', sub:'M-Pesa Â· Orange Â· Airtel Â· Africell' },
-                { id:'card',   label:' Carte bancaire', sub:'Visa Â· Mastercard Â· AmEx' },
+                { id:'mobile', label:'📱 Mobile Money', sub:'M-Pesa · Orange · Airtel · Africell' },
+                { id:'card',   label:'💳 Carte bancaire', sub:'Visa · Mastercard · AmEx' },
               ].map(meth => (
                 <button key={meth.id} onClick={() => setPayMethod(meth.id)}
                   style={{ padding:'12px 10px', borderRadius:14, cursor:'pointer', transition:'all 0.2s', textAlign:'center',
@@ -197,6 +198,7 @@ if (data.paymentPage) {
               ))}
             </div>
           </div>
+
           {/* Devise */}
           <div style={{ marginBottom:18 }}>
             <label style={LBL_STYLE}>Devise</label>
@@ -208,7 +210,7 @@ if (data.paymentPage) {
                     color:      currency===c ? '#050E17' : '#3DAA6A',
                     border:    `1px solid ${currency===c ? '#3DAA6A' : 'rgba(61,170,106,0.2)'}`,
                   }}>
-                  {c === 'CDF' ? 'ðŸ‡¨ðŸ‡© Franc CDF' : 'ðŸ‡ºðŸ‡¸ Dollar USD'}
+                  {c === 'CDF' ? '🇨🇩 Franc CDF' : '🇺🇸 Dollar USD'}
                 </button>
               ))}
             </div>
@@ -236,10 +238,10 @@ if (data.paymentPage) {
               placeholder={`Autre montant en ${currency}...`} style={INP_STYLE} type="text" inputMode="decimal" />
           </div>
 
-          {/* OpÃ©rateur + TÃ©lÃ©phone â€” Mobile Money uniquement */}
+          {/* Opérateur + Téléphone – Mobile Money uniquement */}
           {payMethod === 'mobile' && (<>
             <div style={{ marginBottom:16 }}>
-              <label style={LBL_STYLE}>OpÃ©rateur Mobile Money</label>
+              <label style={LBL_STYLE}>Opérateur Mobile Money</label>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                 {OPERATORS.map(op => (
                   <button key={op.id} onClick={() => set('operator', op.id)}
@@ -255,17 +257,17 @@ if (data.paymentPage) {
               </div>
             </div>
             <div style={{ marginBottom:16 }}>
-              <label style={LBL_STYLE}>NumÃ©ro de tÃ©lÃ©phone</label>
+              <label style={LBL_STYLE}>Numéro de téléphone</label>
               <input value={form.phone} onChange={e => set('phone', e.target.value)}
                 placeholder="ex: 0812345678" style={INP_STYLE} type="tel" inputMode="numeric" />
             </div>
           </>)}
- 
-          {/* Info sÃ©curitÃ© â€” Carte uniquement */}
+
+          {/* Info sécurité – Carte uniquement */}
           {payMethod === 'card' && (
             <div style={{ marginBottom:16, padding:'14px 16px', background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:14 }}>
               <p style={{ fontSize:13, color:'rgba(232,244,237,0.7)', lineHeight:1.7, margin:'0 0 10px' }}>
-                ðŸ”’ Vous serez redirigÃ© vers la page sÃ©curisÃ©e MaishaPay pour saisir vos donnÃ©es de carte (3D Secure).
+                🔒 Vous serez redirigé vers la page sécurisée MaishaPay pour saisir vos données de carte (3D Secure).
               </p>
               <div style={{ display:'flex', gap:8 }}>
                 {['VISA','Mastercard','AmEx'].map(c => (
@@ -276,6 +278,7 @@ if (data.paymentPage) {
               </div>
             </div>
           )}
+
           {/* Toggle anonyme */}
           <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, padding:'12px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
             <input type="checkbox" id="anon" checked={anon} onChange={e => setAnon(e.target.checked)}
@@ -290,7 +293,7 @@ if (data.paymentPage) {
             <div style={{ marginBottom:16 }}>
               <label style={LBL_STYLE}>Votre nom (optionnel)</label>
               <input value={form.name} onChange={e => set('name', e.target.value)}
-                placeholder="PrÃ©nom Nom" style={INP_STYLE} />
+                placeholder="Prénom Nom" style={INP_STYLE} />
             </div>
           )}
 
@@ -298,47 +301,46 @@ if (data.paymentPage) {
           <div style={{ marginBottom:24 }}>
             <label style={LBL_STYLE}>Message d'encouragement (optionnel)</label>
             <input value={form.message} onChange={e => set('message', e.target.value)}
-              placeholder="Un mot pour l'Ã©quipe Nzela..." style={INP_STYLE} maxLength={200} />
+              placeholder="Un mot pour l'équipe Nzela..." style={INP_STYLE} maxLength={200} />
           </div>
 
           {error && (
             <div style={{ background:'rgba(220,50,50,0.1)', border:'1px solid rgba(220,50,50,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:13, color:'#ff8080' }}>
-              âš ï¸ {error}
+              ⚠️ {error}
             </div>
           )}
 
           <button onClick={submit} style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background:'#3DAA6A', color:'#050E17', fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', transition:'opacity 0.2s' }}
             onMouseEnter={e => e.currentTarget.style.opacity='0.88'}
             onMouseLeave={e => e.currentTarget.style.opacity='1'}>
-            {payMethod === 'card' ? 'ðŸ’³ Payer par carte' : 'ðŸ“± Contribuer'} {form.amount ? `${parseFloat(form.amount||0).toLocaleString()} ${currency}` : ''} ðŸ’š
+            {payMethod === 'card' ? '💳 Payer par carte' : '📱 Contribuer'} {form.amount ? `${parseFloat(form.amount||0).toLocaleString()} ${currency}` : ''} 💚
           </button>
           <p style={{ fontSize:11, color:'rgba(232,244,237,0.22)', textAlign:'center', marginTop:10 }}>
             {payMethod === 'card'
-              ? 'Vous serez redirigÃ© vers la page sÃ©curisÃ©e MaishaPay'
-              : 'Vous recevrez une confirmation sur votre tÃ©lÃ©phone'}
+              ? 'Vous serez redirigé vers la page sécurisée MaishaPay'
+              : 'Vous recevrez une confirmation sur votre téléphone'}
           </p>
         </>)}
 
-        {/* â”€â”€ Ã‰TAPE 2 : Chargement â”€â”€ */}
+        {/* ── ÉTAPE 2 : Chargement ── */}
         {step === 2 && (
           <div style={{ textAlign:'center', padding:'52px 0' }}>
-            <div style={{ fontSize:52, marginBottom:20, display:'inline-block', animation:'spin 1.2s linear infinite' }}>â³</div>
+            <div style={{ fontSize:52, marginBottom:20, display:'inline-block', animation:'spin 1.2s linear infinite' }}>⏳</div>
             <h3 style={{ color:'#E8F4ED', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>
               {payMethod === 'card' ? 'Redirection en cours...' : 'Traitement en cours...'}
             </h3>
             <p style={{ color:'rgba(232,244,237,0.45)', fontSize:14, lineHeight:1.7 }}>
               {payMethod === 'card'
-                ? 'Vous allez Ãªtre redirigÃ© vers la page de paiement sÃ©curisÃ©e MaishaPay.'
-                : 'VÃ©rifiez votre tÃ©lÃ©phone et confirmez le paiement Mobile Money.'}
+                ? 'Vous allez être redirigé vers la page de paiement sécurisée MaishaPay.'
+                : 'Vérifiez votre téléphone et confirmez le paiement Mobile Money.'}
             </p>
-
           </div>
         )}
 
-        {/* â”€â”€ Ã‰TAPE 3 : SuccÃ¨s â”€â”€ */}
+        {/* ── ÉTAPE 3 : Succès ── */}
         {step === 3 && (
           <div style={{ textAlign:'center', padding:'20px 0' }}>
-            <div style={{ fontSize:64, marginBottom:16 }}>ðŸŽ‰</div>
+            <div style={{ fontSize:64, marginBottom:16 }}>🎉</div>
             <h3 style={{ color:'#3DAA6A', fontSize:24, fontWeight:800, marginBottom:12, fontFamily:'Plus Jakarta Sans,sans-serif' }}>
               Merci pour votre soutien !
             </h3>
@@ -347,12 +349,12 @@ if (data.paymentPage) {
             </p>
             {result?.reference && (
               <p style={{ color:'rgba(232,244,237,0.3)', fontSize:12, marginBottom:20, fontFamily:'monospace', letterSpacing:'0.05em' }}>
-                RÃ©f : {result.reference}
+                Réf : {result.reference}
               </p>
             )}
             <div style={{ background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:16, padding:'18px 20px', marginBottom:28, textAlign:'left' }}>
               <p style={{ fontSize:14, color:'rgba(232,244,237,0.65)', lineHeight:1.8, margin:0 }}>
-                ðŸ‡¨ðŸ‡© Votre contribution aide directement Ã  construire la plateforme de transport de demain en RDC. Nzela est fier de vous compter parmi ses premiers soutiens.
+                🇨🇩 Votre contribution aide directement à construire la plateforme de transport de demain en RDC. Nzela est fier de vous compter parmi ses premiers soutiens.
               </p>
             </div>
             <button onClick={onClose} style={{ background:'#3DAA6A', color:'#050E17', border:'none', borderRadius:12, padding:'13px 40px', fontWeight:800, fontSize:15, cursor:'pointer' }}>
@@ -361,15 +363,15 @@ if (data.paymentPage) {
           </div>
         )}
 
-        {/* â”€â”€ Ã‰TAPE 4 : Erreur â”€â”€ */}
+        {/* ── ÉTAPE 4 : Erreur ── */}
         {step === 4 && (
           <div style={{ textAlign:'center', padding:'32px 0' }}>
-            <div style={{ fontSize:52, marginBottom:16 }}>âŒ</div>
-            <h3 style={{ color:'#ff8080', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>Paiement Ã©chouÃ©</h3>
+            <div style={{ fontSize:52, marginBottom:16 }}>❌</div>
+            <h3 style={{ color:'#ff8080', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>Paiement échoué</h3>
             <p style={{ color:'rgba(232,244,237,0.55)', fontSize:14, marginBottom:28, lineHeight:1.7 }}>{error}</p>
             <button onClick={() => { setStep(1); setError(''); }}
               style={{ background:'rgba(61,170,106,0.1)', color:'#3DAA6A', border:'1px solid rgba(61,170,106,0.3)', borderRadius:12, padding:'12px 32px', fontWeight:700, fontSize:15, cursor:'pointer' }}>
-              RÃ©essayer
+              Réessayer
             </button>
           </div>
         )}
@@ -417,7 +419,7 @@ export default function ComingSoon() {
       {/* Grille fond */}
       <div style={{ position:'fixed', inset:0, pointerEvents:'none', zIndex:0, backgroundImage:'linear-gradient(rgba(61,170,106,0.025) 1px,transparent 1px),linear-gradient(90deg,rgba(61,170,106,0.025) 1px,transparent 1px)', backgroundSize:'55px 55px' }} />
 
-      {/* â•â• HERO â•â• */}
+      {/* ══ HERO ══ */}
       <section style={{ position:'relative', zIndex:1, minHeight:'100vh', display:'flex', flexDirection:'column', alignItems:'center', justifyContent:'center', padding:'80px 24px 60px', textAlign:'center' }}>
         <div style={{ position:'absolute', top:'25%', left:'50%', transform:'translateX(-50%)', width:640, height:640, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.09) 0%,transparent 70%)', pointerEvents:'none', animation:'floatUp 10s ease-in-out infinite' }} />
 
@@ -427,7 +429,7 @@ export default function ComingSoon() {
 
         <div className="cs-in" style={{ animationDelay:'80ms', display:'inline-flex', alignItems:'center', gap:8, background:'rgba(61,170,106,0.1)', border:'1px solid rgba(61,170,106,0.25)', borderRadius:100, padding:'6px 20px', marginBottom:28 }}>
           <span style={{ width:7, height:7, borderRadius:'50%', background:'#3DAA6A', display:'inline-block', animation:'pulse-dot 1.5s ease infinite' }} />
-          <span style={{ fontSize:12, color:'#3DAA6A', fontWeight:700, letterSpacing:'0.1em' }}>BIENTÃ”T DISPONIBLE Â· 1ER JUIN 2026</span>
+          <span style={{ fontSize:12, color:'#3DAA6A', fontWeight:700, letterSpacing:'0.1em' }}>BIENTÔT DISPONIBLE · 1ER JUIN 2026</span>
         </div>
 
         <h1 className="cs-in" style={{ animationDelay:'160ms', fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:'clamp(42px,9vw,90px)', fontWeight:800, lineHeight:1.05, marginBottom:14 }}>
@@ -435,10 +437,10 @@ export default function ComingSoon() {
         </h1>
 
         <p className="cs-in" style={{ animationDelay:'240ms', fontSize:'clamp(15px,2.2vw,19px)', color:'rgba(232,244,237,0.5)', marginBottom:52, maxWidth:500, lineHeight:1.7 }}>
-          Ta route commence ici <b /> La plateforme de rÃ©servation de bus en RÃ©publique DÃ©mocratique du Congo.
+          Ta route commence ici · La plateforme de réservation de bus en République Démocratique du Congo.
         </p>
 
-        {/* Compte Ã  rebours */}
+        {/* Compte à rebours */}
         <div className="cs-in" style={{ animationDelay:'320ms', display:'flex', gap:'clamp(10px,3vw,28px)', marginBottom:52 }}>
           {[['J',d],['H',h],['M',m],['S',s]].map(([label,val]) => (
             <div key={label} style={{ textAlign:'center' }}>
@@ -464,15 +466,15 @@ export default function ComingSoon() {
         {/* CTA */}
         <div className="cs-in" style={{ animationDelay:'480ms' }}>
           <button className="cs-main-btn" onClick={() => setShowContrib(true)} style={{ background:'#3DAA6A', color:'#050E17', border:'none', borderRadius:100, padding:'16px 42px', fontWeight:800, fontSize:17, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', boxShadow:'0 8px 32px rgba(61,170,106,0.3)', display:'inline-flex', alignItems:'center', gap:10 }}>
-            ðŸ’š Soutenir le projet
+            💚 Soutenir le projet
           </button>
           <p style={{ fontSize:12, color:'rgba(232,244,237,0.28)', marginTop:12 }}>
-            Ã€ partir de 500 FC ou 1 $ Â· Anonyme possible Â· Mobile Money
+            À partir de 500 FC ou 1 $ · Anonyme possible · Mobile Money
           </p>
         </div>
       </section>
 
-      {/* â•â• VISION & MISSION â•â• */}
+      {/* ══ VISION & MISSION ══ */}
       <section style={{ position:'relative', zIndex:1, padding:'80px 24px', maxWidth:1100, margin:'0 auto' }}>
         <div style={{ textAlign:'center', marginBottom:52 }}>
           <p style={{ fontSize:12, letterSpacing:'0.15em', color:'#3DAA6A', fontWeight:700, marginBottom:10 }}>QUI SOMMES-NOUS</p>
@@ -481,24 +483,24 @@ export default function ComingSoon() {
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(280px,1fr))', gap:24 }}>
           <div style={{ background:'linear-gradient(135deg,rgba(61,170,106,0.1),rgba(5,14,23,0.9))', border:'1px solid rgba(61,170,106,0.2)', borderRadius:24, padding:'40px 32px', position:'relative', overflow:'hidden' }}>
             <div style={{ position:'absolute', top:-20, right:-20, width:120, height:120, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.1),transparent)', pointerEvents:'none' }} />
-            <div style={{ fontSize:42, marginBottom:16 }}>ðŸŒŸ</div>
+            <div style={{ fontSize:42, marginBottom:16 }}>🌟</div>
             <h3 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:24, fontWeight:800, color:'#3DAA6A', marginBottom:14 }}>Notre Vision</h3>
             <p style={{ fontSize:16, lineHeight:1.85, color:'rgba(232,244,237,0.7)' }}>
-              Devenir la plateforme de rÃ©fÃ©rence du transport terrestre en Afrique Centrale. Un Congo oÃ¹ chaque citoyen peut planifier, rÃ©server et payer son voyage en quelques secondes depuis son tÃ©lÃ©phone.
+              Devenir la plateforme de référence du transport terrestre en Afrique Centrale. Un Congo où chaque citoyen peut planifier, réserver et payer son voyage en quelques secondes depuis son téléphone.
             </p>
           </div>
           <div style={{ background:'rgba(5,14,23,0.85)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:24, padding:'40px 32px', position:'relative', overflow:'hidden' }}>
             <div style={{ position:'absolute', bottom:-20, left:-20, width:120, height:120, borderRadius:'50%', background:'radial-gradient(circle,rgba(61,170,106,0.06),transparent)', pointerEvents:'none' }} />
-            <div style={{ fontSize:42, marginBottom:16 }}>ðŸŽ¯</div>
+            <div style={{ fontSize:42, marginBottom:16 }}>🎯</div>
             <h3 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:24, fontWeight:800, color:'#E8F4ED', marginBottom:14 }}>Notre Mission</h3>
             <p style={{ fontSize:16, lineHeight:1.85, color:'rgba(232,244,237,0.7)' }}>
-              Connecter les voyageurs congolais aux agences de bus fiables grÃ¢ce Ã  une technologie simple et adaptÃ©e â€” Mobile Money intÃ©grÃ©, zÃ©ro cash, zÃ©ro file d'attente, 100% traÃ§able.
+              Connecter les voyageurs congolais aux agences de bus fiables grâce à une technologie simple et adaptée — Mobile Money intégré, zéro cash, zéro file d'attente, 100% traçable.
             </p>
           </div>
         </div>
       </section>
 
-      {/* â•â• OBJECTIFS â•â• */}
+      {/* ══ OBJECTIFS ══ */}
       <section style={{ position:'relative', zIndex:1, background:'rgba(61,170,106,0.025)', borderTop:'1px solid rgba(61,170,106,0.07)', borderBottom:'1px solid rgba(61,170,106,0.07)', padding:'72px 24px' }}>
         <div style={{ maxWidth:1100, margin:'0 auto' }}>
           <div style={{ textAlign:'center', marginBottom:52 }}>
@@ -518,7 +520,7 @@ export default function ComingSoon() {
         </div>
       </section>
 
-      {/* â•â• SUPPORTERS â•â• */}
+      {/* ══ SUPPORTERS ══ */}
       <section style={{ position:'relative', zIndex:1, padding:'72px 0 80px' }}>
         <div style={{ textAlign:'center', marginBottom:44, padding:'0 24px' }}>
           <p style={{ fontSize:12, letterSpacing:'0.15em', color:'rgba(232,244,237,0.3)', fontWeight:700, marginBottom:10 }}>ILS NOUS FONT CONFIANCE</p>
@@ -528,7 +530,7 @@ export default function ComingSoon() {
           <div style={{ display:'flex', gap:14, width:'max-content', animation:'scrollLeft 38s linear infinite' }}>
             {row1.map((name, i) => (
               <div key={i} style={{ flexShrink:0, background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:100, padding:'8px 22px', fontSize:13, color:'rgba(232,244,237,0.8)', whiteSpace:'nowrap', fontWeight:600 }}>
-                ðŸ’š {name}
+                💚 {name}
               </div>
             ))}
           </div>
@@ -537,7 +539,7 @@ export default function ComingSoon() {
           <div style={{ display:'flex', gap:14, width:'max-content', animation:'scrollRight 44s linear infinite' }}>
             {row2.map((name, i) => (
               <div key={i} style={{ flexShrink:0, background:'rgba(61,170,106,0.04)', border:'1px solid rgba(61,170,106,0.09)', borderRadius:100, padding:'8px 22px', fontSize:13, color:'rgba(232,244,237,0.55)', whiteSpace:'nowrap' }}>
-                âœ¦ {name}
+                ✦ {name}
               </div>
             ))}
           </div>
@@ -549,9 +551,9 @@ export default function ComingSoon() {
         </div>
       </section>
 
-      {/* â•â• FOOTER â•â• */}
+      {/* ══ FOOTER ══ */}
       <footer style={{ borderTop:'1px solid rgba(61,170,106,0.07)', padding:'28px 24px', textAlign:'center', position:'relative', zIndex:1 }}>
-        <p style={{ fontSize:13, color:'rgba(232,244,237,0.22)' }}>Â© 2026 Nzela Â· Ta route commence ici ðŸ‡¨ðŸ‡©</p>
+        <p style={{ fontSize:13, color:'rgba(232,244,237,0.22)' }}>© 2026 Nzela · Ta route commence ici 🇨🇩</p>
       </footer>
     </div>
   );
