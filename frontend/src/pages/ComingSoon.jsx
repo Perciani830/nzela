@@ -58,18 +58,12 @@ function genRef() {
   return 'CONTRIB-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('') + '-' + Date.now();
 }
  
-function submitCardForm(params) {
-  const form = document.createElement('form');
-  form.method = 'POST';
-  form.action = params.checkoutUrl;
-  form.style.display = 'none';
-  const fields = {
-    gatewayMode: params.gatewayMode, publicApiKey: params.publicApiKey,
-    secretApiKey: params.secretApiKey, montant: params.montant,
-    devise: params.devise, transactionReference: params.transactionReference,
-    customerName: params.customerName, callbackUrl: params.callbackUrl,
-    page_callback_success: params.successUrl, page_callback_failure: params.failureUrl,
-  };
+if (params.paymentPage) {
+  window.location.href = params.paymentPage;
+} else {
+  setError('Impossible d\'accéder à la page de paiement.');
+  setStep(4);
+}
   Object.entries(fields).forEach(([k, v]) => {
     if (v === undefined || v === null) return;
     const input = document.createElement('input');
@@ -90,6 +84,7 @@ function ContribModal({ onClose }) {
   const [result, setResult] = useState(null);
   const [form, setForm]     = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
   const [payMethod, setPayMethod] = useState('mobile'); 
+  const pollRef = useRef(null);
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
   const rapides = currency === 'CDF' ? [500,1000,2000,5000] : [1,2,5,10];
@@ -149,12 +144,10 @@ if (data.pending) {
     } catch { /* continuer à poller */ }
   }, 3000);
   // Timeout 2 minutes
-  setTimeout(() => {
+pollRef.current = setTimeout(() => {
     clearInterval(poll);
-    if (step === 2) {
-      setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
-      setStep(4);
-    }
+    setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
+    setStep(4);
   }, 120000);
   return;
 }
