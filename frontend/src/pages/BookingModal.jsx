@@ -7,7 +7,7 @@
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
-const API = 'https://api.nzela.cd/api';
+const API = 'https://nzela-production-086a.up.railway.app/api';
 
 const OPS = [
   { id:'MPESA',   l:'M-Pesa',       e:'🔴', v:'v1' },
