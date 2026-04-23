@@ -16,8 +16,6 @@ const SUPPORTERS = [
   'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.',
 ];
 
-import { Smartphone, CreditCard, Bus, Globe } from 'lucide-react';
-
 const OBJECTIFS = [
   { Icon: Smartphone, titre:'Digitaliser', desc:"Éliminer les files d'attente et la vente informelle de billets en RDC." },
   { Icon: CreditCard, titre:'Sécuriser',   desc:'Mobile Money intégré – paiements fiables, traçables et sans cash.' },
