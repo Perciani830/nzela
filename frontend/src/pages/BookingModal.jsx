@@ -1,36 +1,26 @@
-// BookingModal.jsx
-// À importer dans PublicSite.jsx :
-//   import BookingModal from './BookingModal';
-// Et remplacer le modal inline par :
-//   {selected && <BookingModal trip={selected} onClose={()=>setSelected(null)} onSuccess={()=>setSelected(null)} showToast={showToast} />}
-
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 
 const PAYS = [
-  { code:'CD', nom:'🇨🇩 RDC',              currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
-  { code:'CG', nom:'🇨🇬 Congo-Brazza',      currency:'XAF', ops:['AIRTEL','MTN'] },
-  { code:'CM', nom:'🇨🇲 Cameroun',          currency:'XAF', ops:['ORANGE','MTN'] },
-  { code:'CI', nom:'🇨🇮 Côte d\'Ivoire',    currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
+  { code:'CD', nom:'🇨🇩 RDC',           currency:'CDF', ops:['MPESA','ORANGE','AIRTEL'] },
+  { code:'CG', nom:'🇨🇬 Congo-Brazza',   currency:'XAF', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'🇨🇲 Cameroun',       currency:'XAF', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:'🇨🇮 Côte d\'Ivoire', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
 ];
 
 const ALL_OPS = {
-  MPESA:   { id:'MPESA',   l:'M-Pesa',       logo:'/mpesa.png' },
-  ORANGE:  { id:'ORANGE',  l:'Orange Money', logo:'/orange.png' },
-  AIRTEL:  { id:'AIRTEL',  l:'Airtel',       logo:'/airtel.png' },
-  //AFRICEL: { id:'AFRICEL', l:'Africell',     logo:'/africell.png' },
-  MTN:     { id:'MTN',     l:'MTN',          logo:'/mtn.png' },
-  MOOV:    { id:'MOOV',    l:'Moov',         logo:'/moov.png' },
+  MPESA:  { id:'MPESA',  l:'M-Pesa',       logo:'/mpesa.png' },
+  ORANGE: { id:'ORANGE', l:'Orange Money', logo:'/orange.png' },
+  AIRTEL: { id:'AIRTEL', l:'Airtel',       logo:'/airtel.png' },
+  MTN:    { id:'MTN',    l:'MTN',          logo:'/mtn.png' },
+  MOOV:   { id:'MOOV',  l:'Moov',          logo:'/moov.png' },
 };
-const [pays, setPays] = useState('CD');
-const paysInfo = PAYS.find(p => p.code === pays);
-const OPS = paysInfo.ops.map(id => ALL_OPS[id]);
+
 const CARD_PROVIDERS = ['VISA','MASTERCARD','AMERICAN EXPRESS'];
 
 export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
-  // Steps : 0=Passager  1=Conditions  2=Paiement  3=Résultat
   const [step,     setStep]     = useState(0);
   const [form,     setForm]     = useState({ name:'', phone:'', email:'', passengers:1 });
   const [pay,      setPay]      = useState({ method:'', operator:'', wallet:'' });
@@ -38,6 +28,11 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
   const [accepted, setAccepted] = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [booking,  setBooking]  = useState(null);
+  const [result,   setResult]   = useState(null);
+  const [pays,     setPays]     = useState('CD'); // ← ICI, dans le composant
+
+  const paysInfo = PAYS.find(p => p.code === pays);
+  const OPS = paysInfo.ops.map(id => ALL_OPS[id]).filter(Boolean);
 
   // État du résultat (step 3)
   // type: 'confirmed' | 'pending_pin' | 'redirect_card' | 'error'
