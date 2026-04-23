@@ -141,7 +141,7 @@ if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operat
       amount:        booking.total_price,
       currency: req.body.currency || 'CDF',
       chanel:        'MOBILEMONEY',
-      provider:      'MPESA',
+      provider:      operator.toUpperCase(),
       walletID:      phone_number,
     };
     try {
