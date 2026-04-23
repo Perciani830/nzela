@@ -473,4 +473,59 @@ router.post('/contribute', async (req, res) => {
     return res.status(503).json({ error: 'Service indisponible' });
   }
 });
+
+router.post('/card-checkout', async (req, res) => {
+  const { amount, currency, type, reference, nom } = req.body;
+  if (!amount || !currency) return res.status(400).json({ error: 'Montant et devise requis' });
+
+  const isLive    = process.env.MAISHAPAY_MODE === 'live';
+  const publicKey = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
+  const secretKey = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
+  const BASE_URL  = process.env.API_BASE_URL || 'https://nzela-production-086a.up.railway.app';
+
+  const amountUSD = currency === 'USD' ? parseFloat(amount) : Math.max(1, +(parseFloat(amount) / (parseFloat(process.env.CDF_TO_USD_RATE) || 2800)).toFixed(2));
+
+  const payload = {
+    transactionReference: reference || ('CONTRIB-' + Date.now()),
+    gatewayMode:  isLive ? '1' : '0',
+    publicApiKey: publicKey,
+    secretApiKey: secretKey,
+    order: {
+      amount:              String(amountUSD),
+      currency:            'USD',
+      customerFirstname:   nom || 'Anonyme',
+      customerLastname:    '',
+      customerAddress:     'Kinshasa',
+      customerCity:        'Kinshasa',
+      customerPhoneNumber: '',
+      customerEmailAdress: 'contrib@nzela.cd',
+    },
+    paymentChannel: {
+      channel:     'CARD',
+      provider:    'VISA',
+      callbackUrl: `${BASE_URL}/api/public/callback/card`,
+    },
+  };
+
+  try {
+    const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+    const r = await fetch('https://marchand.maishapay.online/api/collect/v3/store/card', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d    = await r.json();
+    const code = String(d?.status_code || d?.statusCode || '');
+
+    if (code === '202' && d?.paymentPage) {
+      return res.json({ success: true, paymentPage: d.paymentPage, reference });
+    } else {
+      const desc = d?.transactionDescription || d?.message || 'Initialisation carte échouée';
+      return res.status(402).json({ error: desc });
+    }
+  } catch (e) {
+    console.error('card-checkout erreur:', e.message);
+    return res.status(503).json({ error: 'Service carte indisponible.' });
+  }
+});
 module.exports = router;
