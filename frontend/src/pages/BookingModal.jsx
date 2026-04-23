@@ -4,20 +4,18 @@ import axios from 'axios';
 const API = 'https://nzela-production-086a.up.railway.app/api';
 
 const PAYS = [
-  { code:'CD', nom:'RDC',           flag:'https://flagcdn.com/24x18/cd.png', currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
-  { code:'CG', nom:'Congo-Brazza',  flag:'https://flagcdn.com/24x18/cg.png', currency:'XAF', ops:['AIRTEL','MTN'] },
-  { code:'CM', nom:'Cameroun',      flag:'https://flagcdn.com/24x18/cm.png', currency:'XAF', ops:['ORANGE','MTN'] },
-  { code:'CI', nom:"Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
+  { code:'CD', nom:'🇨🇩 RDC',           currency:'CDF', ops:['MPESA','ORANGE','AIRTEL'] },
+  { code:'CG', nom:'🇨🇬 Congo-Brazza',   currency:'XAF', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'🇨🇲 Cameroun',       currency:'XAF', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:'🇨🇮 Côte d\'Ivoire', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
 ];
 
-/** Catalogue complet des opérateurs */
 const ALL_OPS = {
-  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/photos/mpesa.png' },
-  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/photos/orange.png' },
-  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/photos/airtel.png' },
-  //AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
-  MTN:     { id:'MTN',     label:'MTN',          logo:'/photos/mtn.png' },
-  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/photos/moov.png' },
+  MPESA:  { id:'MPESA',  l:'M-Pesa',       logo:'/photos/mpesa.png' },
+  ORANGE: { id:'ORANGE', l:'Orange Money', logo:'/photos/orange.png' },
+  AIRTEL: { id:'AIRTEL', l:'Airtel',       logo:'/photos/airtel.png' },
+  MTN:    { id:'MTN',    l:'MTN',          logo:'/photos/mtn.png' },
+  MOOV:   { id:'MOOV',  l:'Moov',          logo:'/photos/moov.png' },
 };
 
 const CARD_PROVIDERS = ['VISA','MASTERCARD','AMERICAN EXPRESS'];
