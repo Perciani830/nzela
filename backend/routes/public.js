@@ -459,7 +459,7 @@ router.post('/contribute', async (req, res) => {
 });
 
 router.post('/card-checkout', async (req, res) => {
-  const { amount, currency, type, reference, nom } = req.body;
+  const { amount, currency, reference, nom } = req.body;
   if (!amount || !currency) return res.status(400).json({ error: 'Montant et devise requis' });
 
   const isLive    = process.env.MAISHAPAY_MODE === 'live';
@@ -467,7 +467,13 @@ router.post('/card-checkout', async (req, res) => {
   const secretKey = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
   const BASE_URL  = process.env.API_BASE_URL || 'https://nzela-production-086a.up.railway.app';
 
-  const amountUSD = currency === 'USD' ? parseFloat(amount) : Math.max(1, +(parseFloat(amount) / (parseFloat(process.env.CDF_TO_USD_RATE) || 2800)).toFixed(2));
+  const amountUSD = currency === 'USD'
+    ? parseFloat(amount)
+    : Math.max(1, +(parseFloat(amount) / (parseFloat(process.env.CDF_TO_USD_RATE) || 2800)).toFixed(2));
+
+  const nomParts = (nom || 'Supporter Nzela').trim().split(' ');
+  const firstname = nomParts[0] || 'Supporter';
+  const lastname  = nomParts.slice(1).join(' ') || 'Nzela';
 
   const payload = {
     transactionReference: reference || ('CONTRIB-' + Date.now()),
@@ -477,11 +483,11 @@ router.post('/card-checkout', async (req, res) => {
     order: {
       amount:              String(amountUSD),
       currency:            'USD',
-      customerFirstname:   nom || 'Anonyme',
-      customerLastname:    '',
+      customerFirstname:   firstname,
+      customerLastname:    lastname,
       customerAddress:     'Kinshasa',
       customerCity:        'Kinshasa',
-      customerPhoneNumber: '',
+      customerPhoneNumber: '+243800000000',
       customerEmailAdress: 'contrib@nzela.cd',
     },
     paymentChannel: {
@@ -498,7 +504,8 @@ router.post('/card-checkout', async (req, res) => {
       headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const d    = await r.json();
+    const d = await r.json();
+    console.log('card-checkout MaishaPay response:', JSON.stringify(d));
     const code = String(d?.status_code || d?.statusCode || '');
 
     if (code === '202' && d?.paymentPage) {
