@@ -429,5 +429,48 @@ router.get('/callback/card', (req, res) => {
     return res.redirect(`${process.env.FRONTEND_URL || 'https://nzela.cd'}/?payment=error`);
   }
 });
+router.post('/contribute', async (req, res) => {
+  const { contributor_name, amount, currency, operator, phone_number, message } = req.body;
+  if (!amount || !operator || !phone_number)
+    return res.status(400).json({ error: 'Montant, opérateur et numéro requis' });
 
+  const isLive    = process.env.MAISHAPAY_MODE === 'live';
+  const publicKey = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
+  const secretKey = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
+
+  const payload = {
+    transactionReference: 'DON-' + Date.now(),
+    gatewayMode:  isLive ? '1' : '0',
+    publicApiKey: publicKey,
+    secretApiKey: secretKey,
+    amount,
+    currency:  currency || 'CDF',
+    chanel:    'MOBILEMONEY',
+    provider:  operator.toUpperCase(),
+    walletID:  phone_number,
+  };
+
+  try {
+    const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
+    const r = await fetch('https://marchand.maishapay.online/api/payment/rest/vers1.0/merchant', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const d    = await r.json();
+    const data = d?.data || d;
+    const code = String(data?.statusCode || '');
+
+    if (code === '200' || data?.status === 'APPROVED') {
+      console.log(`💚 Contribution reçue — ${contributor_name || 'Anonyme'} | ${amount} ${currency}`);
+      return res.json({ success: true, message: 'Merci pour votre contribution !' });
+    } else {
+      const desc = data?.transactionDescription || data?.statusDescription || 'Paiement refusé';
+      return res.status(402).json({ error: desc });
+    }
+  } catch (e) {
+    console.error('Contribution erreur:', e.message);
+    return res.status(503).json({ error: 'Service indisponible' });
+  }
+});
 module.exports = router;
