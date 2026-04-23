@@ -9,14 +9,24 @@ import axios from 'axios';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 
-const OPS = [
-  { id:'MPESA',   l:'M-Pesa',       e:'🔴', v:'v1' },
-  { id:'ORANGE',  l:'Orange Money', e:'🟠', v:'v2' },
-  { id:'AIRTEL',  l:'Airtel',       e:'📶', v:'v2' },
-  { id:'AFRICEL', l:'Africell',     e:'🟣', v:'v2' },
-  { id:'MTN',     l:'MTN',          e:'🟡', v:'v2' },
+const PAYS = [
+  { code:'CD', nom:'🇨🇩 RDC',              currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
+  { code:'CG', nom:'🇨🇬 Congo-Brazza',      currency:'XAF', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'🇨🇲 Cameroun',          currency:'XAF', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:'🇨🇮 Côte d\'Ivoire',    currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
 ];
 
+const ALL_OPS = {
+  MPESA:   { id:'MPESA',   l:'M-Pesa',       logo:'/mpesa.png' },
+  ORANGE:  { id:'ORANGE',  l:'Orange Money', logo:'/orange.png' },
+  AIRTEL:  { id:'AIRTEL',  l:'Airtel',       logo:'/airtel.png' },
+  //AFRICEL: { id:'AFRICEL', l:'Africell',     logo:'/africell.png' },
+  MTN:     { id:'MTN',     l:'MTN',          logo:'/mtn.png' },
+  MOOV:    { id:'MOOV',    l:'Moov',         logo:'/moov.png' },
+};
+const [pays, setPays] = useState('CD');
+const paysInfo = PAYS.find(p => p.code === pays);
+const OPS = paysInfo.ops.map(id => ALL_OPS[id]);
 const CARD_PROVIDERS = ['VISA','MASTERCARD','AMERICAN EXPRESS'];
 
 export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
@@ -106,7 +116,7 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
         payload.card_email     = cardInfo.email;
         payload.card_provider  = cardInfo.provider;
       }
-
+      payload.currency = paysInfo.currency;
       const r = await axios.post(`${API}/public/pay`, payload);
       const data = r.data;
 
@@ -248,7 +258,6 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
               {[
                 { m:'mobilemoney', i:'📱', t:'Mobile Money', s:'M-Pesa, Orange, Airtel, Africell, MTN' },
                 { m:'card',        i:'💳', t:'Carte bancaire', s:'Visa, Mastercard — paiement sécurisé 3D' },
-                { m:'cash',        i:'💵', t:'Espèces au guichet', s:"Payez à l'agence avant le départ" },
               ].map(o => (
                 <div key={o.m} className={`pay-opt${pay.method===o.m?' sel':''}`} onClick={()=>setPay({...pay,method:o.m})}>
                   <span className="pi">{o.i}</span>
@@ -256,7 +265,18 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                   <div className="prado">{pay.method===o.m&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--green-l)'}}/>}</div>
                 </div>
               ))}
-
+              <div style={{ marginBottom:10 }}>
+  <div className="lbl" style={{ marginBottom:6 }}>Pays</div>
+  <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
+    {PAYS.map(p => (
+      <button key={p.code}
+        className={`op-btn${pays===p.code?' act':''}`}
+        onClick={() => { setPays(p.code); setPay({...pay, operator:''}); }}>
+        {p.nom}
+      </button>
+    ))}
+  </div>
+</div>
               {/* Champs Mobile Money */}
               {pay.method==='mobilemoney' && (
                 <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:10}}>

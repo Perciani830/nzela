@@ -129,7 +129,9 @@ router.post('/pay', async (req, res) => {
   // 2. MOBILE MONEY MPESA — API v1 SYNCHRONE (MPESA uniquement)
   //    La connexion reste ouverte jusqu'à réponse finale de l'opérateur
   // ──────────────────────────────────────────────────────────────
-  if (payment_method === 'mobilemoney' && operator && operator.toUpperCase() === 'MPESA') {
+// ✅ Après
+const V1_OPERATORS = ['MPESA', 'ORANGE'];
+if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operator.toUpperCase())) {
     if (!phone_number) return res.status(400).json({ error: 'Numéro de téléphone requis' });
     const payload = {
       transactionReference: booking.reference,
@@ -137,7 +139,7 @@ router.post('/pay', async (req, res) => {
       publicApiKey:  publicKey,
       secretApiKey:  secretKey,
       amount:        booking.total_price,
-      currency:      'CDF',
+      currency: req.body.currency || 'CDF',
       chanel:        'MOBILEMONEY',
       provider:      'MPESA',
       walletID:      phone_number,
@@ -195,7 +197,7 @@ router.post('/pay', async (req, res) => {
       secretApiKey: secretKey,
       order: {
         amount:              String(booking.total_price),
-        currency:            'CDF',
+        currency: req.body.currency || 'CDF',
         customerFullName:    booking.passenger_name  || '',
         customerEmailAdress: booking.passenger_email || '',
       },
@@ -422,17 +424,17 @@ router.post('/contribute', async (req, res) => {
   const publicKey = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
   const secretKey = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
 
-  const payload = {
-    transactionReference: 'DON-' + Date.now(),
-    gatewayMode:  isLive ? '1' : '0',
-    publicApiKey: publicKey,
-    secretApiKey: secretKey,
-    amount,
-    currency:  currency || 'CDF',
-    chanel:    'MOBILEMONEY',
-    provider:  operator.toUpperCase(),
-    walletID:  phone_number,
-  };
+ const payload = {
+  transactionReference: booking.reference,
+  gatewayMode,
+  publicApiKey:  publicKey,
+  secretApiKey:  secretKey,
+  amount:        booking.total_price,
+  currency:      'CDF',
+  chanel:        'MOBILEMONEY',
+  provider:      operator.toUpperCase(), // ← était hardcodé 'MPESA'
+  walletID:      phone_number,
+};
 
   try {
     const fetch = (...a) => import('node-fetch').then(({ default: f }) => f(...a));
