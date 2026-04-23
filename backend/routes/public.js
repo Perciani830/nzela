@@ -90,24 +90,7 @@ router.get('/booking-status/:id', (req, res) => {
 });
 
 // ═══════════════════════════════════════════════════════════════
-// POST /api/public/pay
-//
-// Logique par méthode :
-//
-//  "cash"        → confirmation immédiate, pas d'API externe
-//
-//  "mobilemoney" + provider MPESA → API v1 SYNCHRONE
-//                                   (connexion ouverte jusqu'à réponse finale)
-//
-//  "mobilemoney" + provider AIRTEL/ORANGE/MTN → API v2 ASYNCHRONE
-//                  → répond {status:"pending"} au frontend immédiatement
-//                  → résultat final arrive via POST /api/public/callback/mobilemoney
-//
-//  "card"        → API v3 ASYNCHRONE
-//                  → répond {status:"redirect", paymentPage: URL} au frontend
-//                  → client redirigé vers CyberSource
-//                  → résultat final arrive via GET /api/public/callback/card
-// ═══════════════════════════════════════════════════════════════
+
 router.post('/pay', async (req, res) => {
   const { booking_id, payment_method, operator, phone_number,
           card_firstname, card_lastname, card_address,
@@ -298,6 +281,7 @@ router.post('/pay', async (req, res) => {
         body: JSON.stringify(payload),
       });
       const d    = await r.json();
+      console.log('card-checkout MaishaPay response:', JSON.stringify(d));
       const code = String(d?.status_code || d?.statusCode || '');
 
       if (code === '202' && d?.paymentPage) {
