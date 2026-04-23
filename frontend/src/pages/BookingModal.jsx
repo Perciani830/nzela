@@ -12,12 +12,12 @@ const PAYS = [
 
 /** Catalogue complet des opérateurs */
 const ALL_OPS = {
-  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png' },
-  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png' },
-  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png' },
+  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/photos/mpesa.png' },
+  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/photos/orange.png' },
+  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/photos/airtel.png' },
   //AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
-  MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png' },
-  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png' },
+  MTN:     { id:'MTN',     label:'MTN',          logo:'/photos/mtn.png' },
+  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/photos/moov.png' },
 };
 
 const CARD_PROVIDERS = ['VISA','MASTERCARD','AMERICAN EXPRESS'];
