@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-
+import { Menu, ArrowRight, Globe, Smartphone, CreditCard, Bus, Heart } from 'lucide-react';
 /* ─────────────────────────────────────────────────────────────
    CONSTANTES
 ───────────────────────────────────────────────────────────── */
@@ -16,19 +16,21 @@ const SUPPORTERS = [
   'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.',
 ];
 
+import { Smartphone, CreditCard, Bus, Globe } from 'lucide-react';
+
 const OBJECTIFS = [
-  { icon:'📱', titre:'Digitaliser', desc:"Éliminer les files d'attente et la vente informelle de billets en RDC." },
-  { icon:'💳', titre:'Sécuriser',   desc:'Mobile Money intégré – paiements fiables, traçables et sans cash.' },
-  { icon:'🚌', titre:'Valoriser',   desc:'Un tableau de bord professionnel pour chaque agence partenaire.' },
-  { icon:'🌍', titre:'Relier',      desc:'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
+  { Icon: Smartphone, titre:'Digitaliser', desc:"Éliminer les files d'attente et la vente informelle de billets en RDC." },
+  { Icon: CreditCard, titre:'Sécuriser',   desc:'Mobile Money intégré – paiements fiables, traçables et sans cash.' },
+  { Icon: Bus,        titre:'Valoriser',   desc:'Un tableau de bord professionnel pour chaque agence partenaire.' },
+  { Icon: Globe,      titre:'Relier',      desc:'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
 ];
 
 /** Pays disponibles avec leur devise et opérateurs Mobile Money */
 const PAYS = [
-  { code:'CD', nom:'🇨🇩 RDC',           currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
-  { code:'CG', nom:'🇨🇬 Congo-Brazza',   currency:'XAF', ops:['AIRTEL','MTN'] },
-  { code:'CM', nom:'🇨🇲 Cameroun',       currency:'XAF', ops:['ORANGE','MTN'] },
-  { code:'CI', nom:"🇨🇮 Côte d'Ivoire", currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
+  { code:'CD', nom:'RDC',           flag:'https://flagcdn.com/24x18/cd.png', currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
+  { code:'CG', nom:'Congo-Brazza',  flag:'https://flagcdn.com/24x18/cg.png', currency:'XAF', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'Cameroun',      flag:'https://flagcdn.com/24x18/cm.png', currency:'XAF', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:"Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
 ];
 
 /** Catalogue complet des opérateurs */
@@ -36,7 +38,7 @@ const ALL_OPS = {
   MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png' },
   ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png' },
   AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png' },
-  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
+  //AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
   MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png' },
   MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png' },
 };
