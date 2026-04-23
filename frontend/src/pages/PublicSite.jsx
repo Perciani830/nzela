@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import BookingModal from './BookingModal';
 
-const API = 'https://nzela-production-086a.up.railway.app/api';
+const API = 'https://api.nzela.cd/api';
 const CITIES = ['Kinshasa', 'Matadi', 'Boma', 'Moanda'];
 
 const SLIDES = [
