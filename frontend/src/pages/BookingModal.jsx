@@ -34,9 +34,6 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
   const paysInfo = PAYS.find(p => p.code === pays);
   const OPS = paysInfo.ops.map(id => ALL_OPS[id]).filter(Boolean);
 
-  // État du résultat (step 3)
-  // type: 'confirmed' | 'pending_pin' | 'redirect_card' | 'error'
-  const [result, setResult] = useState(null);
 
   // Polling pour Mobile Money v2 en attente de PIN
   const pollRef    = useRef(null);
