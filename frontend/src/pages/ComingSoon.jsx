@@ -684,7 +684,9 @@ export default function ComingSoon() {
           <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit,minmax(220px,1fr))', gap:20 }}>
             {OBJECTIFS.map((obj, i) => (
               <div key={i} className="obj-card" style={{ background:'#050E17', border:'1px solid rgba(61,170,106,0.12)', borderRadius:20, padding:'28px 22px' }}>
-                <div style={{ fontSize:36, marginBottom:14 }}>{obj.icon}</div>
+                <div style={{ fontSize:36, marginBottom:14 }}>
+  <obj.Icon />
+</div>
                 <div style={{ width:30, height:3, background:'#3DAA6A', borderRadius:2, marginBottom:14 }} />
                 <h4 style={{ fontFamily:'Plus Jakarta Sans,sans-serif', fontSize:18, fontWeight:800, marginBottom:10, color:'#E8F4ED' }}>{obj.titre}</h4>
                 <p style={{ fontSize:14, color:'rgba(232,244,237,0.5)', lineHeight:1.75 }}>{obj.desc}</p>
