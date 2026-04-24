@@ -109,7 +109,7 @@ router.post('/pay', async (req, res) => {
   const publicKey         = isLive ? process.env.MAISHAPAY_LIVE_PUBLIC_KEY   : process.env.MAISHAPAY_SANDBOX_PUBLIC_KEY;
   const secretKey         = isLive ? process.env.MAISHAPAY_LIVE_SECRET_KEY   : process.env.MAISHAPAY_SANDBOX_SECRET_KEY;
   const gatewayMode       = isLive ? '1' : '0';
-  const BASE_URL          = process.env.API_BASE_URL || 'https://api.nzela.cd';
+  const BASE_URL          = process.env.API_BASE_URL || 'https://nzela-production-086a.up.railway.app';
 
   // ──────────────────────────────────────────────────────────────
   // 1. ESPÈCES — confirmation immédiate
@@ -130,7 +130,7 @@ router.post('/pay', async (req, res) => {
   //    La connexion reste ouverte jusqu'à réponse finale de l'opérateur
   // ──────────────────────────────────────────────────────────────
 // ✅ Après
-const V1_OPERATORS = ['MPESA'];
+const V1_OPERATORS = ['MPESA', 'ORANGE'];
 const PROVIDER_MAP = {
   MPESA:   'MPESA',
   ORANGE:  'ORANGE',
