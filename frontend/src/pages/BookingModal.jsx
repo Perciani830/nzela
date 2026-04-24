@@ -3,29 +3,60 @@ import axios from 'axios';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 
+/**
+ * Pays disponibles pour Mobile Money.
+ * prefix : indicatif international requis par MaishaPay (+243XXXXXXXXX).
+ * currency : utilisé uniquement pour l'affichage opérateur — le montant
+ *            du booking est toujours en CDF (prix défini côté RDC).
+ */
 const PAYS = [
-  { code:'CD', nom:'🇨🇩 RDC',           flag:'https://flagcdn.com/24x18/cd.png', currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
-  { code:'CG', nom:'🇨🇬 Congo-Brazza',   flag:'https://flagcdn.com/24x18/cg.png', currency:'XAF', ops:['AIRTEL','MTN'] },
-  { code:'CM', nom:'🇨🇲 Cameroun',       flag:'https://flagcdn.com/24x18/cm.png', currency:'XAF', ops:['ORANGE','MTN'] },
-  { code:'CI', nom:"🇨🇮 Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
+  { code:'CD', nom:'🇨🇩 RDC',           flag:'https://flagcdn.com/24x18/cd.png', prefix:'+243', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
+  { code:'CG', nom:'🇨🇬 Congo-Brazza',   flag:'https://flagcdn.com/24x18/cg.png', prefix:'+242', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'🇨🇲 Cameroun',       flag:'https://flagcdn.com/24x18/cm.png', prefix:'+237', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:"🇨🇮 Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', prefix:'+225', ops:['ORANGE','MTN','MOOV'] },
 ];
 
 const ALL_OPS = {
-  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png' },
-  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png' },
-  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png' },
-  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
-  MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png' },
-  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png' },
+  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png',    v1:true  },
+  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png',   v1:false },
+  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png',   v1:false },
+  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png', v1:false },
+  MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png',      v1:false },
+  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png',     v1:false },
 };
 
 const CARD_PROVIDERS = ['VISA','MASTERCARD','AMERICAN EXPRESS'];
+
+/**
+ * Formate un numéro brut en format international MaishaPay.
+ * "0812345678"     + "+243" → "+243812345678"
+ * "+243812345678"           → "+243812345678" (déjà correct)
+ * "081 234 56 78"  + "+243" → "+243812345678"
+ */
+function formatPhone(raw, prefix) {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  const prefixDigits = prefix.replace('+', '');
+  // Si les chiffres commencent déjà par l'indicatif → on préfixe juste avec +
+  if (digits.startsWith(prefixDigits)) return '+' + digits;
+  // Sinon on retire le 0 initial local s'il existe
+  const local = digits.startsWith('0') ? digits.slice(1) : digits;
+  return prefix + local;
+}
+
+function validatePhone(formatted) {
+  // Doit commencer par + et avoir au moins 10 chiffres après
+  return /^\+\d{10,}$/.test(formatted);
+}
 
 export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
   const [step,     setStep]     = useState(0);
   const [form,     setForm]     = useState({ name:'', phone:'', email:'', passengers:1 });
   const [pay,      setPay]      = useState({ method:'', operator:'', wallet:'' });
-  const [cardInfo, setCardInfo] = useState({ firstname:'', lastname:'', address:'Kinshasa', city:'Kinshasa', phone:'', email:'', provider:'VISA' });
+  const [cardInfo, setCardInfo] = useState({
+    firstname:'', lastname:'', address:'Kinshasa', city:'Kinshasa',
+    phone:'', email:'', provider:'VISA',
+  });
   const [accepted, setAccepted] = useState(false);
   const [loading,  setLoading]  = useState(false);
   const [booking,  setBooking]  = useState(null);
@@ -35,35 +66,57 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
   const paysInfo = PAYS.find(p => p.code === pays);
   const OPS      = paysInfo.ops.map(id => ALL_OPS[id]).filter(Boolean);
 
-  const pollRef   = useRef(null);
-  const pollCount = useRef(0);
-  const MAX_POLLS = 40;
+  // Refs pour nettoyage propre — même pattern que ComingSoon
+  const pollRef     = useRef(null);
+  const pollTimeout = useRef(null);
+  const pollCount   = useRef(0);
+  const MAX_POLLS   = 40; // 40 × 3s = 2 min
 
+  // Nettoyage au démontage
   useEffect(() => {
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
+    return () => {
+      clearInterval(pollRef.current);
+      clearTimeout(pollTimeout.current);
+    };
   }, []);
 
+  const stopPolling = () => {
+    clearInterval(pollRef.current);
+    clearTimeout(pollTimeout.current);
+    pollRef.current     = null;
+    pollTimeout.current = null;
+  };
+
   const startPolling = (bookingId) => {
+    // FIX 3 : stopper tout polling existant avant d'en démarrer un nouveau
+    stopPolling();
     pollCount.current = 0;
+
     pollRef.current = setInterval(async () => {
       pollCount.current++;
       try {
         const r = await axios.get(`${API}/public/booking-status/${bookingId}`);
-        const { status, payment_status } = r.data;
+        const { status, payment_status, reference } = r.data;
+
         if (payment_status === 'completed' && status === 'confirmed') {
-          clearInterval(pollRef.current);
-          setResult({ type: 'confirmed', reference: r.data.reference });
+          stopPolling();
+          setResult({ type:'confirmed', reference });
+          // FIX 4 : onSuccess appelé aussi après confirmation par polling
+          onSuccess && onSuccess();
+
         } else if (status === 'cancelled') {
-          clearInterval(pollRef.current);
-          setResult({ type: 'error', message: "Paiement refusé ou annulé par l'opérateur." });
+          stopPolling();
+          setResult({ type:'error', message:"Paiement refusé ou annulé par l'opérateur." });
+
         } else if (pollCount.current >= MAX_POLLS) {
-          clearInterval(pollRef.current);
-          setResult({ type: 'error', message: 'Délai dépassé. Si vous avez été débité, contactez le support.' });
+          stopPolling();
+          setResult({ type:'error', message:'Délai dépassé. Si vous avez été débité, contactez le support.' });
         }
-      } catch {}
+      } catch { /* réseau instable, on continue à poller */ }
     }, 3000);
   };
 
+  // ── STEP 0 : Réservation ────────────────────────────────────
   const doBook = async () => {
     if (!form.name || !form.phone) return showToast('Nom et téléphone requis', 'error');
     setLoading(true);
@@ -75,10 +128,22 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
     finally { setLoading(false); }
   };
 
+  // ── STEP 2 : Paiement ───────────────────────────────────────
   const doPay = async () => {
     if (!pay.method) return showToast('Choisissez un mode de paiement', 'error');
-    if (pay.method === 'mobilemoney' && (!pay.operator || !pay.wallet))
-      return showToast('Opérateur et numéro requis', 'error');
+
+    if (pay.method === 'mobilemoney') {
+      if (!pay.operator) return showToast('Choisissez un opérateur', 'error');
+
+      // FIX 1+6 : formater et valider le numéro avant envoi
+      const phoneFormatted = formatPhone(pay.wallet, paysInfo.prefix);
+      if (!validatePhone(phoneFormatted))
+        return showToast(`Numéro invalide. Format attendu : ${paysInfo.prefix}XXXXXXXXX`, 'error');
+
+      // On stocke la version formatée dans le state pour l'envoyer
+      pay._phoneFormatted = phoneFormatted;
+    }
+
     if (pay.method === 'card' && (!cardInfo.phone || !cardInfo.email))
       return showToast('Téléphone et email requis pour le paiement par carte', 'error');
 
@@ -89,12 +154,15 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
       const payload = {
         booking_id:     booking.booking_id,
         payment_method: pay.method,
-        currency:       paysInfo.currency,
+        // FIX 2 : currency toujours CDF — les trips Nzela sont tarifés en CDF
+        // Le backend convertit en USD pour la carte (÷ CDF_TO_USD_RATE)
+        currency: 'CDF',
       };
 
       if (pay.method === 'mobilemoney') {
         payload.operator     = pay.operator;
-        payload.phone_number = pay.wallet;
+        // FIX 1 : numéro en format international (+243XXXXXXXXX)
+        payload.phone_number = pay._phoneFormatted;
       }
 
       if (pay.method === 'card') {
@@ -111,13 +179,15 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
       const data = r.data;
 
       if (data.status === 'confirmed') {
-        setResult({ type: 'confirmed', reference: data.reference });
+        setResult({ type:'confirmed', reference: data.reference });
         onSuccess && onSuccess();
+
       } else if (data.status === 'pending') {
-        setResult({ type: 'pending_pin', reference: data.reference, message: data.message });
+        setResult({ type:'pending_pin', reference: data.reference, message: data.message });
         startPolling(booking.booking_id);
+
       } else if (data.status === 'redirect') {
-        setResult({ type: 'redirect_card', reference: data.reference, paymentPage: data.payment_page });
+        setResult({ type:'redirect_card', reference: data.reference, paymentPage: data.payment_page });
         window.open(data.payment_page, '_blank');
         startPolling(booking.booking_id);
       }
@@ -125,14 +195,14 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
     } catch (e) {
       const msg = e.response?.data?.error || 'Erreur de paiement';
       showToast(msg, 'error');
-      setResult({ type: 'error', message: msg });
+      setResult({ type:'error', message: msg });
     } finally {
       setLoading(false);
     }
   };
 
-  const STEPS = ['Passager', 'Conditions', 'Paiement', 'Résultat'];
-  const total      = trip.price * form.passengers;
+  const STEPS   = ['Passager', 'Conditions', 'Paiement', 'Résultat'];
+  const total   = trip.price * form.passengers;
   const cancelRate = trip.cancel_rate || 20;
 
   return (
@@ -186,23 +256,27 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
             <div style={{display:'flex',flexDirection:'column',gap:10}}>
               <div className="input-group">
                 <label className="lbl">Nom complet *</label>
-                <input className="field" placeholder="Jean-Baptiste Mukendi" value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
+                <input className="field" placeholder="Jean-Baptiste Mukendi"
+                  value={form.name} onChange={e=>setForm({...form,name:e.target.value})}/>
               </div>
               <div className="g2">
                 <div className="input-group">
                   <label className="lbl">Téléphone *</label>
-                  <input className="field" placeholder="+243 81 234 5678" value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/>
+                  <input className="field" placeholder="+243 81 234 5678"
+                    value={form.phone} onChange={e=>setForm({...form,phone:e.target.value})}/>
                 </div>
                 <div className="input-group">
                   <label className="lbl">Passagers</label>
-                  <select className="field" value={form.passengers} onChange={e=>setForm({...form,passengers:Number(e.target.value)})}>
+                  <select className="field" value={form.passengers}
+                    onChange={e=>setForm({...form,passengers:Number(e.target.value)})}>
                     {[1,2,3,4,5].map(n=><option key={n} value={n}>{n} passager{n>1?'s':''}</option>)}
                   </select>
                 </div>
               </div>
               <div className="input-group">
                 <label className="lbl">Email (optionnel)</label>
-                <input className="field" placeholder="jean@exemple.cd" value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
+                <input className="field" placeholder="jean@exemple.cd"
+                  value={form.email} onChange={e=>setForm({...form,email:e.target.value})}/>
               </div>
             </div>
           )}
@@ -239,7 +313,8 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                 </div>
               ))}
               <label style={{display:'flex',alignItems:'flex-start',gap:10,cursor:'pointer',padding:'10px 12px',background:'rgba(255,255,255,.03)',border:`1.5px solid ${accepted?'var(--green)':'var(--border)'}`,borderRadius:10,marginTop:4}}>
-                <input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)} style={{width:16,height:16,marginTop:1,accentColor:'var(--green)',flexShrink:0}}/>
+                <input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}
+                  style={{width:16,height:16,marginTop:1,accentColor:'var(--green)',flexShrink:0}}/>
                 <span style={{fontSize:12,color:'var(--muted)',lineHeight:1.6}}>J'ai lu et j'accepte la politique d'annulation de <strong style={{color:'var(--text)'}}>{trip.agency_name}</strong>.</span>
               </label>
             </div>
@@ -258,7 +333,8 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                 { m:'mobilemoney', i:'📱', t:'Mobile Money',   s:'M-Pesa, Orange, Airtel, Africell, MTN' },
                 { m:'card',        i:'💳', t:'Carte bancaire', s:'Visa, Mastercard — paiement sécurisé 3D' },
               ].map(o => (
-                <div key={o.m} className={`pay-opt${pay.method===o.m?' sel':''}`} onClick={()=>setPay({...pay,method:o.m})}>
+                <div key={o.m} className={`pay-opt${pay.method===o.m?' sel':''}`}
+                  onClick={()=>setPay({...pay,method:o.m,operator:'',wallet:''})}>
                   <span className="pi">{o.i}</span>
                   <div className="pinfo"><strong>{o.t}</strong><span>{o.s}</span></div>
                   <div className="prado">{pay.method===o.m&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--green-l)'}}/>}</div>
@@ -273,7 +349,11 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                     {PAYS.map(p => (
                       <button key={p.code}
                         className={`op-btn${pays===p.code?' act':''}`}
-                        onClick={() => { setPays(p.code); setPay({...pay, operator:''}); }}
+                        onClick={() => {
+                          setPays(p.code);
+                          // FIX 5 : reset opérateur ET wallet quand on change de pays
+                          setPay(prev => ({...prev, operator:'', wallet:''}));
+                        }}
                         style={{display:'flex',alignItems:'center',gap:6}}>
                         <img src={p.flag} alt={p.nom}
                           style={{width:24,height:18,borderRadius:3,objectFit:'cover'}}
@@ -304,11 +384,43 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                       ))}
                     </div>
                   </div>
+
+                  {/* FIX 1 : Champ téléphone avec préfixe affiché + input numérique */}
                   <div className="input-group">
                     <label className="lbl">Numéro Mobile Money</label>
-                    <input className="field" placeholder="+243 81 234 5678"
-                      value={pay.wallet} onChange={e=>setPay({...pay,wallet:e.target.value})}/>
+                    <div style={{display:'flex',gap:6,alignItems:'center'}}>
+                      {/* Préfixe non-éditable */}
+                      <div style={{
+                        padding:'0 10px', height:38, display:'flex', alignItems:'center',
+                        background:'rgba(61,170,106,0.08)', border:'1px solid rgba(61,170,106,0.3)',
+                        borderRadius:'var(--rad)', color:'var(--green-l)', fontWeight:700,
+                        fontSize:13, flexShrink:0, whiteSpace:'nowrap',
+                      }}>
+                        {paysInfo.prefix}
+                      </div>
+                      <input
+                        className="field"
+                        style={{flex:1}}
+                        placeholder="8XXXXXXXX"
+                        inputMode="numeric"
+                        value={pay.wallet}
+                        onChange={e => setPay({...pay, wallet: e.target.value.replace(/[^\d]/g,'')})}
+                      />
+                    </div>
+                    <div style={{fontSize:11,color:'var(--muted)',marginTop:4}}>
+                      Sans le 0 initial — ex : <em>812345678</em>
+                    </div>
                   </div>
+
+                  {/* Indication v1 (MPESA) vs v2 (push async) */}
+                  {pay.operator && (
+                    <div style={{fontSize:12,color:'var(--muted)',background:'rgba(61,170,106,0.05)',border:'1px solid rgba(61,170,106,0.12)',borderRadius:8,padding:'8px 11px',lineHeight:1.7}}>
+                      {ALL_OPS[pay.operator]?.v1
+                        ? '📲 M-Pesa : une notification push sera envoyée. Saisissez votre code PIN pour valider.'
+                        : `📲 Une notification sera envoyée sur votre téléphone. Saisissez votre code PIN ${pay.operator} pour confirmer.`
+                      }
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -316,25 +428,51 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
               {pay.method === 'card' && (
                 <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:10}}>
                   <div style={{fontSize:11,color:'var(--muted)',background:'rgba(126,200,227,0.06)',border:'1px solid rgba(126,200,227,0.15)',borderRadius:8,padding:'8px 11px',lineHeight:1.6}}>
-                    💳 Vous serez redirigé vers une page de paiement sécurisée (CyberSource / Visa). Montant : ~{(total/2800).toFixed(2)} USD
+                    💳 Vous serez redirigé vers la page sécurisée MaishaPay / CyberSource (Visa).
+                    Montant : ~{(total/2800).toFixed(2)} USD
                   </div>
                   <div className="g2">
-                    <div className="input-group"><label className="lbl">Prénom *</label><input className="field" placeholder="Jean" value={cardInfo.firstname} onChange={e=>setCardInfo({...cardInfo,firstname:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Nom *</label><input className="field" placeholder="Mukendi" value={cardInfo.lastname} onChange={e=>setCardInfo({...cardInfo,lastname:e.target.value})}/></div>
+                    <div className="input-group">
+                      <label className="lbl">Prénom *</label>
+                      <input className="field" placeholder="Jean"
+                        value={cardInfo.firstname} onChange={e=>setCardInfo({...cardInfo,firstname:e.target.value})}/>
+                    </div>
+                    <div className="input-group">
+                      <label className="lbl">Nom *</label>
+                      <input className="field" placeholder="Mukendi"
+                        value={cardInfo.lastname} onChange={e=>setCardInfo({...cardInfo,lastname:e.target.value})}/>
+                    </div>
                   </div>
                   <div className="g2">
-                    <div className="input-group"><label className="lbl">Téléphone *</label><input className="field" placeholder="+243 81 234 5678" value={cardInfo.phone} onChange={e=>setCardInfo({...cardInfo,phone:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Email *</label><input className="field" type="email" placeholder="email@exemple.cd" value={cardInfo.email} onChange={e=>setCardInfo({...cardInfo,email:e.target.value})}/></div>
+                    <div className="input-group">
+                      <label className="lbl">Téléphone *</label>
+                      <input className="field" placeholder="+243 81 234 5678"
+                        value={cardInfo.phone} onChange={e=>setCardInfo({...cardInfo,phone:e.target.value})}/>
+                    </div>
+                    <div className="input-group">
+                      <label className="lbl">Email *</label>
+                      <input className="field" type="email" placeholder="email@exemple.cd"
+                        value={cardInfo.email} onChange={e=>setCardInfo({...cardInfo,email:e.target.value})}/>
+                    </div>
                   </div>
                   <div className="g2">
-                    <div className="input-group"><label className="lbl">Adresse</label><input className="field" placeholder="Kinshasa" value={cardInfo.address} onChange={e=>setCardInfo({...cardInfo,address:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Ville</label><input className="field" placeholder="Kinshasa" value={cardInfo.city} onChange={e=>setCardInfo({...cardInfo,city:e.target.value})}/></div>
+                    <div className="input-group">
+                      <label className="lbl">Adresse</label>
+                      <input className="field" placeholder="Kinshasa"
+                        value={cardInfo.address} onChange={e=>setCardInfo({...cardInfo,address:e.target.value})}/>
+                    </div>
+                    <div className="input-group">
+                      <label className="lbl">Ville</label>
+                      <input className="field" placeholder="Kinshasa"
+                        value={cardInfo.city} onChange={e=>setCardInfo({...cardInfo,city:e.target.value})}/>
+                    </div>
                   </div>
                   <div className="input-group">
                     <label className="lbl">Type de carte</label>
                     <div className="op-grid" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
                       {CARD_PROVIDERS.map(p=>(
-                        <button key={p} className={`op-btn${cardInfo.provider===p?' act':''}`} onClick={()=>setCardInfo({...cardInfo,provider:p})}>{p}</button>
+                        <button key={p} className={`op-btn${cardInfo.provider===p?' act':''}`}
+                          onClick={()=>setCardInfo({...cardInfo,provider:p})}>{p}</button>
                       ))}
                     </div>
                   </div>
@@ -360,12 +498,16 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                 <div>
                   <div style={{fontSize:52,marginBottom:12}}>🎊</div>
                   <h3 style={{fontFamily:'var(--font)',fontSize:18,marginBottom:6}}>Réservation confirmée !</h3>
-                  <p style={{color:'var(--muted)',fontSize:13,marginBottom:18}}>{trip.departure_city} → {trip.arrival_city} · {trip.agency_name}</p>
+                  <p style={{color:'var(--muted)',fontSize:13,marginBottom:18}}>
+                    {trip.departure_city} → {trip.arrival_city} · {trip.agency_name}
+                  </p>
                   <div style={{background:'var(--green-bg)',border:'1px solid rgba(61,170,106,.2)',borderRadius:12,padding:14,display:'inline-block',minWidth:200}}>
                     <div style={{fontSize:10,color:'var(--muted)',textTransform:'uppercase',letterSpacing:'.08em',marginBottom:4}}>Référence</div>
                     <div style={{fontFamily:'var(--font)',fontSize:20,fontWeight:800,color:'var(--green-l)',letterSpacing:'.05em'}}>{result.reference}</div>
                   </div>
-                  <p style={{fontSize:12,color:'var(--muted)',marginTop:12}}>Présentez ce code à l'agence <strong style={{color:'var(--text)'}}>{trip.agency_name}</strong></p>
+                  <p style={{fontSize:12,color:'var(--muted)',marginTop:12}}>
+                    Présentez ce code à l'agence <strong style={{color:'var(--text)'}}>{trip.agency_name}</strong>
+                  </p>
                 </div>
               )}
 
@@ -382,7 +524,9 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                   <div style={{background:'rgba(245,166,35,0.07)',border:'1px solid rgba(245,166,35,0.2)',borderRadius:10,padding:'10px 14px',fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
                     ⚠️ Ne fermez pas cette fenêtre. Cette page se mettra à jour automatiquement.
                   </div>
-                  <div style={{marginTop:12,fontSize:11,color:'var(--muted)'}}>Réf : <strong style={{color:'var(--green-l)'}}>{result.reference}</strong></div>
+                  <div style={{marginTop:12,fontSize:11,color:'var(--muted)'}}>
+                    Réf : <strong style={{color:'var(--green-l)'}}>{result.reference}</strong>
+                  </div>
                 </div>
               )}
 
@@ -392,19 +536,23 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                   <div style={{fontSize:48,marginBottom:12}}>💳</div>
                   <h3 style={{fontFamily:'var(--font)',fontSize:17,marginBottom:8}}>Paiement en cours</h3>
                   <p style={{color:'var(--muted)',fontSize:13,marginBottom:16,lineHeight:1.7}}>
-                    La page de paiement sécurisé s'est ouverte dans un nouvel onglet.<br/>Finalisez votre paiement carte là-bas.
+                    La page de paiement sécurisé s'est ouverte dans un nouvel onglet.<br/>
+                    Finalisez votre paiement carte là-bas.
                   </p>
                   <div style={{display:'flex',alignItems:'center',gap:10,justifyContent:'center',marginBottom:16}}>
                     <div className="spinner" style={{width:20,height:20,borderWidth:2,flexShrink:0}}/>
                     <span style={{fontSize:13,color:'var(--muted)'}}>En attente de confirmation…</span>
                   </div>
-                  <button className="btn btn-ghost" style={{fontSize:12,marginBottom:10}} onClick={()=>window.open(result.paymentPage,'_blank')}>
+                  <button className="btn btn-ghost" style={{fontSize:12,marginBottom:10}}
+                    onClick={()=>window.open(result.paymentPage,'_blank')}>
                     🔗 Rouvrir la page de paiement
                   </button>
                   <div style={{background:'rgba(126,200,227,0.06)',border:'1px solid rgba(126,200,227,0.15)',borderRadius:10,padding:'10px 14px',fontSize:12,color:'var(--muted)',lineHeight:1.6}}>
                     ⚠️ Ne fermez pas cette fenêtre. Elle se mettra à jour après votre paiement.
                   </div>
-                  <div style={{marginTop:12,fontSize:11,color:'var(--muted)'}}>Réf : <strong style={{color:'var(--green-l)'}}>{result.reference}</strong></div>
+                  <div style={{marginTop:12,fontSize:11,color:'var(--muted)'}}>
+                    Réf : <strong style={{color:'var(--green-l)'}}>{result.reference}</strong>
+                  </div>
                 </div>
               )}
 
@@ -414,7 +562,10 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                   <div style={{fontSize:48,marginBottom:12}}>❌</div>
                   <h3 style={{fontFamily:'var(--font)',fontSize:17,marginBottom:8,color:'var(--err)'}}>Paiement échoué</h3>
                   <p style={{color:'var(--muted)',fontSize:13,marginBottom:16,lineHeight:1.7}}>{result.message}</p>
-                  <button className="btn btn-ghost" style={{fontSize:12}} onClick={()=>{setStep(2);setResult(null);}}>← Réessayer</button>
+                  <button className="btn btn-ghost" style={{fontSize:12}}
+                    onClick={()=>{setStep(2);setResult(null);}}>
+                    ← Réessayer
+                  </button>
                 </div>
               )}
             </div>
