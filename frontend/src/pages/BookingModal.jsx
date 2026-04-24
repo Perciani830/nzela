@@ -251,7 +251,7 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
               <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
                 {PAYS.map(p => (
                   <button key={p.code}
-                    className={op-btn\}
+                    className={`op-btn${pays === p.code ? " act" : ""}`}
                     onClick={() => { setPays(p.code); setPay({...pay, operator:''}); }}
                     style={{ display:'flex', alignItems:'center', gap:6 }}>
                     <img src={p.flag} alt={p.nom}
