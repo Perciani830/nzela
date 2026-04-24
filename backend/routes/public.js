@@ -131,6 +131,14 @@ router.post('/pay', async (req, res) => {
   // ──────────────────────────────────────────────────────────────
 // ✅ Après
 const V1_OPERATORS = ['MPESA', 'ORANGE'];
+const PROVIDER_MAP = {
+  MPESA:   'MPESA',
+  ORANGE:  'ORANGE',
+  AIRTEL:  'AIRTEL_MONEY',
+  AFRICEL: 'AFRICELL',
+  MTN:     'MTN',
+  MOOV:    'MOOV',
+};
 if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operator.toUpperCase())) {
     if (!phone_number) return res.status(400).json({ error: 'Numéro de téléphone requis' });
     const payload = {
@@ -141,7 +149,7 @@ if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operat
       amount:        booking.total_price,
       currency: req.body.currency || 'CDF',
       chanel:        'MOBILEMONEY',
-      provider:      operator.toUpperCase(),
+      provider: PROVIDER_MAP[operator.toUpperCase()] || operator.toUpperCase(),
       walletID:      phone_number,
     };
     try {
@@ -203,7 +211,7 @@ if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operat
       },
       paymentChannel: {
         channel:     'MOBILEMONEY',
-        provider:    operator.toUpperCase(),
+        provider: PROVIDER_MAP[operator.toUpperCase()] || operator.toUpperCase(),
         walletID:    phone_number,
         callbackUrl,
       },
@@ -432,7 +440,7 @@ router.post('/contribute', async (req, res) => {
   amount:        booking.total_price,
   currency:      'CDF',
   chanel:        'MOBILEMONEY',
-  provider:      operator.toUpperCase(), // ← était hardcodé 'MPESA'
+  provider: PROVIDER_MAP[operator.toUpperCase()] || operator.toUpperCase(), // ← était hardcodé 'MPESA'
   walletID:      phone_number,
 };
 

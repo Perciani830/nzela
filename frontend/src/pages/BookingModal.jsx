@@ -10,6 +10,7 @@ const PAYS = [
   { code:'CI', nom:"Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
 ];
 
+/** Catalogue complet des opérateurs */
 const ALL_OPS = {
   MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png' },
   ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png' },
@@ -243,86 +244,51 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
           )}
 
           {/* ── STEP 2 : Paiement ── */}
-          {step===2 && (
-            <div>
-              <div style={{fontSize:12,color:'var(--muted)',marginBottom:10}}>Réf : <strong style={{color:'var(--green-l)'}}>{booking?.reference}</strong></div>
-
-              {/* Choix de méthode */}
-              {[
-                { m:'mobilemoney', i:'📱', t:'Mobile Money', s:'M-Pesa, Orange, Airtel, Africell, MTN' },
-                { m:'card',        i:'💳', t:'Carte bancaire', s:'Visa, Mastercard — paiement sécurisé 3D' },
-              ].map(o => (
-                <div key={o.m} className={`pay-opt${pay.method===o.m?' sel':''}`} onClick={()=>setPay({...pay,method:o.m})}>
-                  <span className="pi">{o.i}</span>
-                  <div className="pinfo"><strong>{o.t}</strong><span>{o.s}</span></div>
-                  <div className="prado">{pay.method===o.m&&<div style={{width:8,height:8,borderRadius:'50%',background:'var(--green-l)'}}/>}</div>
-                </div>
-              ))}
-              <div style={{ marginBottom:10 }}>
-  <div className="lbl" style={{ marginBottom:6 }}>Pays</div>
-  <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
-    {PAYS.map(p => (
-      <button key={p.code}
-        className={`op-btn${pays===p.code?' act':''}`}
-        onClick={() => { setPays(p.code); setPay({...pay, operator:''}); }}>
-        {p.nom}
-      </button>
-    ))}
-  </div>
-</div>
-              {/* Champs Mobile Money */}
-              {pay.method==='mobilemoney' && (
-                <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:10}}>
-                  <div><div className="lbl" style={{marginBottom:6}}>Opérateur</div>
-                    <div className="op-grid">
-                      {OPS.map(o=>(
-                        <button key={o.id} className={`op-btn${pay.operator===o.id?' act':''}`} onClick={()=>setPay({...pay,operator:o.id})}>
-                          {o.e} {o.l}
-                          {o.v==='v2'&&<span style={{fontSize:9,marginLeft:4,opacity:0.6}}>*</span>}
-                        </button>
-                      ))}
-                    </div>
-                    {pay.operator && OPS.find(o=>o.id===pay.operator)?.v==='v2' && (
-                      <div style={{fontSize:11,color:'var(--muted)',marginTop:6,lineHeight:1.5}}>
-                        * Vous recevrez une notification sur votre téléphone. Saisissez votre code PIN pour confirmer.
-                      </div>
-                    )}
-                  </div>
-                  <div className="input-group"><label className="lbl">Numéro Mobile Money</label>
-                    <input className="field" placeholder="+243 81 234 5678" value={pay.wallet} onChange={e=>setPay({...pay,wallet:e.target.value})}/>
-                  </div>
-                </div>
-              )}
-
-              {/* Champs Carte */}
-              {pay.method==='card' && (
-                <div style={{display:'flex',flexDirection:'column',gap:10,marginTop:10}}>
-                  <div style={{fontSize:11,color:'var(--muted)',background:'rgba(126,200,227,0.06)',border:'1px solid rgba(126,200,227,0.15)',borderRadius:8,padding:'8px 11px',lineHeight:1.6}}>
-                    💳 Vous serez redirigé vers une page de paiement sécurisée (CyberSource / Visa). Montant : ~{(total/2800).toFixed(2)} USD
-                  </div>
-                  <div className="g2">
-                    <div className="input-group"><label className="lbl">Prénom *</label><input className="field" placeholder="Jean" value={cardInfo.firstname} onChange={e=>setCardInfo({...cardInfo,firstname:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Nom *</label><input className="field" placeholder="Mukendi" value={cardInfo.lastname} onChange={e=>setCardInfo({...cardInfo,lastname:e.target.value})}/></div>
-                  </div>
-                  <div className="g2">
-                    <div className="input-group"><label className="lbl">Téléphone *</label><input className="field" placeholder="+243 81 234 5678" value={cardInfo.phone} onChange={e=>setCardInfo({...cardInfo,phone:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Email *</label><input className="field" type="email" placeholder="email@exemple.cd" value={cardInfo.email} onChange={e=>setCardInfo({...cardInfo,email:e.target.value})}/></div>
-                  </div>
-                  <div className="g2">
-                    <div className="input-group"><label className="lbl">Adresse</label><input className="field" placeholder="Kinshasa" value={cardInfo.address} onChange={e=>setCardInfo({...cardInfo,address:e.target.value})}/></div>
-                    <div className="input-group"><label className="lbl">Ville</label><input className="field" placeholder="Kinshasa" value={cardInfo.city} onChange={e=>setCardInfo({...cardInfo,city:e.target.value})}/></div>
-                  </div>
-                  <div className="input-group"><label className="lbl">Type de carte</label>
-                    <div className="op-grid" style={{gridTemplateColumns:'repeat(3,1fr)'}}>
-                      {CARD_PROVIDERS.map(p=>(
-                        <button key={p} className={`op-btn${cardInfo.provider===p?' act':''}`} onClick={()=>setCardInfo({...cardInfo,provider:p})}>{p}</button>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+          {/* S�lecteur de pays */}
+          {pay.method === 'mobilemoney' && (
+            <div style={{ marginBottom:10, marginTop:10 }}>
+              <div className='lbl' style={{ marginBottom:6 }}>Pays</div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
+                {PAYS.map(p => (
+                  <button key={p.code}
+                    className={op-btn\}
+                    onClick={() => { setPays(p.code); setPay({...pay, operator:''}); }}
+                    style={{ display:'flex', alignItems:'center', gap:6 }}>
+                    <img src={p.flag} alt={p.nom}
+                      style={{ width:24, height:18, borderRadius:3, objectFit:'cover' }}
+                      onError={e => { e.target.style.display='none'; }} />
+                    {p.nom}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
+          {/* Opérateur */}
+{pay.method === 'mobilemoney' && (
+  <div style={{ display:'flex', flexDirection:'column', gap:10, marginTop:10 }}>
+    <div>
+      <div className="lbl" style={{ marginBottom:6 }}>Opérateur</div>
+      <div className="op-grid">
+        {OPS.map(o => (
+          <button key={o.id}
+            className={`op-btn${pay.operator === o.id ? ' act' : ''}`}
+            onClick={() => setPay({...pay, operator: o.id})}
+            style={{ display:'flex', alignItems:'center', gap:6 }}>
+            <img src={o.logo} alt={o.label}
+              style={{ width:20, height:20, objectFit:'contain' }}
+              onError={e => { e.target.style.display = 'none'; }} />
+            {o.label}  {/* ✅ o.label pas o.l */}
+          </button>
+        ))}
+      </div>
+    </div>
+    <div className="input-group">
+      <label className="lbl">Numéro Mobile Money</label>
+      <input className="field" placeholder="+243 81 234 5678"
+        value={pay.wallet} onChange={e => setPay({...pay, wallet: e.target.value})} />
+    </div>
+  </div>
+)}
 
           {/* ── STEP 3 : Résultat ── */}
           {step===3 && (
