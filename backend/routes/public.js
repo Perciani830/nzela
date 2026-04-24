@@ -221,7 +221,8 @@ if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operat
       const r = await fetch('https://marchand.maishapay.online/api/collect/v2/store/mobileMoney', {
         method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload),
       });
-      const d    = await r.json();
+      const d = await r.json();
+      console.log('MaishaPay v2 response:', JSON.stringify(d));
       const code = String(d?.status_code || d?.statusCode || '');
 
       if (code === '202') {
@@ -290,7 +291,8 @@ if (payment_method === 'mobilemoney' && operator && V1_OPERATORS.includes(operat
         headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
         body: JSON.stringify(payload),
       });
-      const d    = await r.json();
+      const d = await r.json();
+      console.log('MaishaPay v2 response:', JSON.stringify(d));
       console.log('card-checkout MaishaPay response:', JSON.stringify(d));
       const code = String(d?.status_code || d?.statusCode || '');
 
@@ -451,7 +453,8 @@ router.post('/contribute', async (req, res) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
     });
-    const d    = await r.json();
+    const d = await r.json();
+      console.log('MaishaPay v2 response:', JSON.stringify(d));
     const data = d?.data || d;
     const code = String(data?.statusCode || '');
 
