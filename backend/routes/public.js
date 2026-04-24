@@ -130,7 +130,7 @@ router.post('/pay', async (req, res) => {
   //    La connexion reste ouverte jusqu'à réponse finale de l'opérateur
   // ──────────────────────────────────────────────────────────────
 // ✅ Après
-const V1_OPERATORS = ['MPESA', 'ORANGE'];
+const V1_OPERATORS = ['MPESA'];
 const PROVIDER_MAP = {
   MPESA:   'MPESA',
   ORANGE:  'ORANGE',
