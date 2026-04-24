@@ -11,7 +11,7 @@ const V1_OPERATORS = ['MPESA'];          // Opérateurs supportés par l'API v1 
 const PROVIDER_MAP = {
   MPESA:   'MPESA',
   ORANGE:  'ORANGE',
-  AIRTEL:  'AIRTEL_MONEY',
+  AIRTEL:  'AIRTEL',
   AFRICEL: 'AFRICELL',
   MTN:     'MTN',
   MOOV:    'MOOV',
