@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Heart, Smartphone, CreditCard, Bus, Globe,
   Star, Target, ShieldCheck, Loader2, CheckCircle2,
-  XCircle, X, AlertTriangle, Plus,
+  XCircle, X, AlertTriangle, Plus, DollarSign,
 } from 'lucide-react';
 
 /* ─────────────────────────────────────────────────────────────
@@ -21,7 +21,6 @@ const SUPPORTERS = [
   'Josué Tambwe','Gemima Masela','Pinos','Hubervelly Matias','Andy Binaki','Noela Babutana.',
 ];
 
-/** Icône stockée comme référence composant (majuscule obligatoire) */
 const OBJECTIFS = [
   { Icon: Smartphone, titre:'Digitaliser', desc:"Éliminer les files d'attente et la vente informelle de billets en RDC." },
   { Icon: CreditCard, titre:'Sécuriser',   desc:'Mobile Money intégré – paiements fiables, traçables et sans cash.' },
@@ -29,22 +28,24 @@ const OBJECTIFS = [
   { Icon: Globe,      titre:'Relier',      desc:'Couvrir toutes les routes majeures de Kinshasa vers les provinces.' },
 ];
 
-/** Pays disponibles avec leur devise et opérateurs Mobile Money */
+/**
+ * Pays disponibles pour Mobile Money.
+ * prefix : code international requis par MaishaPay (+243XXXXXXXXX)
+ */
 const PAYS = [
-  { code:'CD', nom:'RDC',           flag:'https://flagcdn.com/24x18/cd.png', currency:'CDF', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
-  { code:'CG', nom:'Congo-Brazza',  flag:'https://flagcdn.com/24x18/cg.png', currency:'XAF', ops:['AIRTEL','MTN'] },
-  { code:'CM', nom:'Cameroun',      flag:'https://flagcdn.com/24x18/cm.png', currency:'XAF', ops:['ORANGE','MTN'] },
-  { code:'CI', nom:"Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', ops:['ORANGE','MTN','MOOV'] },
+  { code:'CD', nom:'RDC',           flag:'https://flagcdn.com/24x18/cd.png', currency:'CDF', prefix:'+243', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
+  { code:'CG', nom:'Congo-Brazza',  flag:'https://flagcdn.com/24x18/cg.png', currency:'XAF', prefix:'+242', ops:['AIRTEL','MTN'] },
+  { code:'CM', nom:'Cameroun',      flag:'https://flagcdn.com/24x18/cm.png', currency:'XAF', prefix:'+237', ops:['ORANGE','MTN'] },
+  { code:'CI', nom:"Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', currency:'XOF', prefix:'+225', ops:['ORANGE','MTN','MOOV'] },
 ];
 
-/** Catalogue complet des opérateurs */
 const ALL_OPS = {
-  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png' },
-  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png' },
-  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png' },
-  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png' },
-  MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png' },
-  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png' },
+  MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png',    v1: true  },
+  ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png',   v1: false },
+  AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png',   v1: false },
+  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png', v1: false },
+  MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png',      v1: false },
+  MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png',     v1: false },
 };
 
 /* ─────────────────────────────────────────────────────────────
@@ -85,6 +86,24 @@ function getMinimum(currency) {
   return { val: 500, label: `500 ${currency}` };
 }
 
+/**
+ * Formate un numéro brut en format international MaishaPay.
+ * Ex: "0812345678" + "+243" => "+243812345678"
+ *     "+243812345678"       => "+243812345678" (déjà bon)
+ */
+function formatPhone(raw, prefix) {
+  const digits = raw.replace(/\D/g, '');
+  if (!digits) return '';
+  // Supprime le 0 ou les chiffres du préfixe s'ils sont déjà inclus
+  const prefixDigits = prefix.replace('+', '');
+  if (digits.startsWith(prefixDigits)) {
+    return '+' + digits;
+  }
+  // Supprime le 0 initial local si présent
+  const local = digits.startsWith('0') ? digits.slice(1) : digits;
+  return prefix + local;
+}
+
 /* ─────────────────────────────────────────────────────────────
    HOOK : COMPTE À REBOURS
 ───────────────────────────────────────────────────────────── */
@@ -118,20 +137,47 @@ function useCountdown() {
    COMPOSANT : MODALE DE CONTRIBUTION
 ───────────────────────────────────────────────────────────── */
 function ContribModal({ onClose }) {
-  const [step,      setStep]      = useState(1);
-  const [pays,      setPays]      = useState('CD');
-  const [anon,      setAnon]      = useState(false);
-  const [payMethod, setPayMethod] = useState('mobile');
-  const [error,     setError]     = useState('');
-  const [result,    setResult]    = useState(null);
-  const [form,      setForm]      = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
-  const pollRef = useRef(null);
+  const [step,       setStep]      = useState(1);
+  const [pays,       setPays]      = useState('CD');
+  const [anon,       setAnon]      = useState(false);
+  const [payMethod,  setPayMethod] = useState('mobile');
+  /**
+   * currencyUSD : true = l'utilisateur veut payer en USD
+   * Disponible aussi bien pour Mobile Money que pour la carte.
+   * Pour la carte, la devise est TOUJOURS USD (MaishaPay Carte n'accepte
+   * que USD / EUR — on fixe USD).
+   */
+  const [currencyUSD, setCurrencyUSD] = useState(false);
+  const [error,      setError]     = useState('');
+  const [result,     setResult]    = useState(null);
+  const [form,       setForm]      = useState({ name:'', amount:'', operator:'', phone:'', message:'' });
+
+  // Refs pour le nettoyage propre du polling
+  const pollIntervalRef = useRef(null);
+  const pollTimeoutRef  = useRef(null);
+
+  // Nettoyage au démontage du composant
+  useEffect(() => {
+    return () => {
+      clearInterval(pollIntervalRef.current);
+      clearTimeout(pollTimeoutRef.current);
+    };
+  }, []);
 
   const paysInfo = PAYS.find(p => p.code === pays);
-  const currency = paysInfo.currency;
-  const ops      = paysInfo.ops.map(id => ALL_OPS[id]);
-  const rapides  = getRapides(currency);
-  const minimum  = getMinimum(currency);
+
+  // ── Devise effective ──────────────────────────────────────
+  // Carte : toujours USD (MaishaPay Carte = USD/EUR uniquement)
+  // Mobile : choix utilisateur CDF|XAF|XOF ou USD
+  const currency = (payMethod === 'card' || currencyUSD) ? 'USD' : paysInfo.currency;
+
+  const ops     = paysInfo.ops.map(id => ALL_OPS[id]);
+  const rapides = getRapides(currency);
+  const minimum = getMinimum(currency);
+
+  // Opérateur sélectionné (pour déterminer v1/v2)
+  const selectedOp = form.operator ? ALL_OPS[form.operator] : null;
+  const isV1 = selectedOp?.v1 === true; // MPESA uniquement
 
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }));
 
@@ -143,13 +189,23 @@ function ContribModal({ onClose }) {
   /* ── Validation ──────────────────────────────────────────── */
   const validate = () => {
     const amount = parseFloat(form.amount);
-    if (!amount || isNaN(amount))                       return 'Entrez un montant valide.';
-    if (amount < minimum.val)                           return `Minimum ${minimum.label}.`;
+    if (!amount || isNaN(amount))                    return 'Entrez un montant valide.';
+    if (amount < minimum.val)                        return `Minimum ${minimum.label}.`;
     if (payMethod === 'mobile') {
-      if (!form.operator)                               return 'Choisissez un opérateur Mobile Money.';
-      if (form.phone.replace(/\D/g, '').length < 9)    return 'Numéro de téléphone invalide.';
+      if (!form.operator)                            return 'Choisissez un opérateur Mobile Money.';
+      const formatted = formatPhone(form.phone, paysInfo.prefix);
+      // Doit commencer par + et avoir au moins 10 chiffres après le +
+      if (!/^\+\d{10,}$/.test(formatted))           return `Numéro invalide. Format attendu : ${paysInfo.prefix}XXXXXXXXX`;
     }
     return null;
+  };
+
+  /* ── Nettoyage du poll ───────────────────────────────────── */
+  const stopPoll = () => {
+    clearInterval(pollIntervalRef.current);
+    clearTimeout(pollTimeoutRef.current);
+    pollIntervalRef.current = null;
+    pollTimeoutRef.current  = null;
   };
 
   /* ── Soumission ──────────────────────────────────────────── */
@@ -160,82 +216,91 @@ function ContribModal({ onClose }) {
     setStep(2);
 
     if (payMethod === 'mobile') {
+      // Numéro formaté en international pour MaishaPay
+      const phoneFormatted = formatPhone(form.phone, paysInfo.prefix);
+
+      let res;
       try {
-        let res;
-        try {
-          res = await fetch(`${API}/public/contribute`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              contributor_name: anon ? '' : form.name.trim(),
-              amount:           form.amount,
-              currency,
-              operator:         form.operator,
-              phone_number:     form.phone.replace(/\D/g, ''),
-              message:          form.message.trim(),
-            }),
-          });
-        } catch (networkErr) {
-          console.error('[Nzela] Erreur réseau contribute:', networkErr);
-          setError(`Impossible de joindre le serveur. Vérifiez votre connexion ou réessayez. (${networkErr.message})`);
-          setStep(4);
-          return;
-        }
-
-        let data;
-        try {
-          data = await res.json();
-        } catch {
-          setError(`Le serveur a renvoyé une réponse inattendue (HTTP ${res.status}).`);
-          setStep(4);
-          return;
-        }
-
-        if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
-
-        if (data.pending) {
-          const ref  = data.reference;
-          const poll = setInterval(async () => {
-            try {
-              const r2 = await fetch(`${API}/public/contrib-status?ref=${ref}`);
-              const d2 = await r2.json();
-              if (d2.status === 'completed') {
-                clearInterval(poll);
-                setResult(data);
-                setStep(3);
-              } else if (d2.status === 'failed') {
-                clearInterval(poll);
-                setError('Paiement refusé ou annulé. Vérifiez votre solde et réessayez.');
-                setStep(4);
-              }
-            } catch { /* continuer à poller */ }
-          }, 3000);
-
-          pollRef.current = setTimeout(() => {
-            clearInterval(poll);
-            setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
-            setStep(4);
-          }, 120_000);
-          return;
-        }
-
-        setResult(data);
-        setStep(3);
-      } catch {
-        setError('Service indisponible. Réessayez dans quelques instants.');
+        res = await fetch(`${API}/public/contribute`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            contributor_name: anon ? '' : form.name.trim(),
+            amount:           form.amount,
+            currency,                          // CDF, XAF, XOF, ou USD
+            operator:         form.operator,   // MPESA, ORANGE, AIRTEL, MTN...
+            phone_number:     phoneFormatted,  // +243XXXXXXXXX (format MaishaPay)
+            message:          form.message.trim(),
+          }),
+        });
+      } catch (networkErr) {
+        console.error('[Nzela] Erreur réseau contribute:', networkErr);
+        setError(`Impossible de joindre le serveur. Vérifiez votre connexion. (${networkErr.message})`);
         setStep(4);
+        return;
       }
+
+      let data;
+      try {
+        data = await res.json();
+      } catch {
+        setError(`Le serveur a renvoyé une réponse inattendue (HTTP ${res.status}).`);
+        setStep(4);
+        return;
+      }
+
+      if (!res.ok) { setError(data.error || 'Paiement refusé.'); setStep(4); return; }
+
+      // ── Polling (v2 asynchrone ou v1 pending) ────────────
+      if (data.pending) {
+        const ref = data.reference;
+
+        pollIntervalRef.current = setInterval(async () => {
+          try {
+            const r2 = await fetch(`${API}/public/contrib-status?ref=${ref}`);
+            const d2 = await r2.json();
+            if (d2.status === 'completed') {
+              stopPoll();
+              setResult(data);
+              setStep(3);
+            } else if (d2.status === 'failed') {
+              stopPoll();
+              setError('Paiement refusé ou annulé. Vérifiez votre solde et réessayez.');
+              setStep(4);
+            }
+          } catch { /* réseau instable, on continue à poller */ }
+        }, 3000);
+
+        // Timeout global : 2 min (transactions MaishaPay v2 peuvent prendre du temps)
+        pollTimeoutRef.current = setTimeout(() => {
+          stopPoll();
+          setError('Délai dépassé. Si vous avez confirmé sur votre téléphone, contactez support@nzela.cd');
+          setStep(4);
+        }, 120_000);
+
+        return;
+      }
+
+      // Réponse directe (v1 MPESA synchrone)
+      setResult(data);
+      setStep(3);
       return;
     }
 
-    // ── Carte bancaire ────────────────────────────────────────
+    // ── Carte bancaire (toujours USD) ─────────────────────
     const reference = genRef();
     const nom       = (anon || !form.name.trim()) ? 'Anonyme' : form.name.trim();
     try {
       const res = await fetch(`${API}/public/card-checkout`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount: form.amount, currency, type: 'contribution', reference, nom }),
+        body: JSON.stringify({
+          amount:    form.amount,
+          currency:  'USD',   // MaishaPay Carte = USD/EUR — on fixe USD
+          type:      'contribution',
+          reference,
+          nom,
+        }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error || 'Erreur de paiement.'); setStep(4); return; }
@@ -274,19 +339,19 @@ function ContribModal({ onClose }) {
                 Soutenir Nzela
               </h2>
               <p style={{ fontSize:13, color:'rgba(232,244,237,0.4)', margin:0 }}>
-                100% Mobile Money · Paiement sécurisé · Anonyme possible
+                Mobile Money · Carte bancaire · Paiement sécurisé · Anonyme possible
               </p>
             </div>
 
-            {/* Méthode de paiement */}
+            {/* ── Méthode de paiement ── */}
             <div style={{ marginBottom:20 }}>
               <label style={LBL_STYLE}>Méthode de paiement</label>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
                 {[
                   { id:'mobile', Icon: Smartphone, label:'Mobile Money',  sub:'M-Pesa · Orange · Airtel · Africell' },
-                  { id:'card',   Icon: CreditCard,  label:'Carte bancaire', sub:'Visa · Mastercard · AmEx' },
+                  { id:'card',   Icon: CreditCard,  label:'Carte bancaire', sub:'Visa · Mastercard · AmEx · USD uniquement' },
                 ].map(meth => (
-                  <button key={meth.id} onClick={() => setPayMethod(meth.id)}
+                  <button key={meth.id} onClick={() => { setPayMethod(meth.id); setError(''); }}
                     style={{ padding:'12px 10px', borderRadius:14, cursor:'pointer', transition:'all 0.2s', textAlign:'center',
                       background: payMethod === meth.id ? 'rgba(61,170,106,0.15)' : 'rgba(255,255,255,0.03)',
                       border:    `1px solid ${payMethod === meth.id ? '#3DAA6A' : 'rgba(255,255,255,0.08)'}`,
@@ -301,9 +366,9 @@ function ContribModal({ onClose }) {
               </div>
             </div>
 
-            {/* Sélection du pays (Mobile Money uniquement) */}
+            {/* ── Sélection du pays (Mobile Money uniquement) ── */}
             {payMethod === 'mobile' && (
-              <div style={{ marginBottom:18 }}>
+              <div style={{ marginBottom:16 }}>
                 <label style={LBL_STYLE}>Pays</label>
                 <div style={{ display:'grid', gridTemplateColumns:'repeat(2,1fr)', gap:6 }}>
                   {PAYS.map(p => (
@@ -325,13 +390,40 @@ function ContribModal({ onClose }) {
               </div>
             )}
 
-            <p style={{ fontSize:11, color:'rgba(232,244,237,0.28)', marginBottom:16 }}>
+            {/* ── Toggle devise : Local / USD (Mobile Money uniquement) ── */}
+            {payMethod === 'mobile' && (
+              <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, padding:'10px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
+                <DollarSign size={16} color="#3DAA6A" style={{ flexShrink:0 }} />
+                <label style={{ fontSize:14, color:'rgba(232,244,237,0.75)', cursor:'pointer', userSelect:'none', flex:1 }}>
+                  Payer en <strong style={{ color:'#3DAA6A' }}>USD</strong> (dollars)
+                </label>
+                <div
+                  onClick={() => { setCurrencyUSD(v => !v); set('amount', ''); }}
+                  style={{ width:40, height:22, borderRadius:11, background: currencyUSD ? '#3DAA6A' : 'rgba(255,255,255,0.12)', cursor:'pointer', position:'relative', transition:'background 0.25s', flexShrink:0 }}>
+                  <div style={{ position:'absolute', top:3, left: currencyUSD ? 20 : 3, width:16, height:16, borderRadius:'50%', background:'#fff', transition:'left 0.25s', boxShadow:'0 1px 4px rgba(0,0,0,0.3)' }} />
+                </div>
+              </div>
+            )}
+
+            {/* ── Info devise carte ── */}
+            {payMethod === 'card' && (
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:16, padding:'10px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
+                <DollarSign size={16} color="#3DAA6A" style={{ flexShrink:0 }} />
+                <span style={{ fontSize:13, color:'rgba(232,244,237,0.65)' }}>
+                  Paiement carte en <strong style={{ color:'#E8F4ED' }}>USD</strong> uniquement (MaishaPay)
+                </span>
+              </div>
+            )}
+
+            <p style={{ fontSize:11, color:'rgba(232,244,237,0.28)', marginBottom:12 }}>
               Minimum : {minimum.label}
             </p>
 
-            {/* Montants rapides */}
+            {/* ── Montants rapides ── */}
             <div style={{ marginBottom:16 }}>
-              <label style={LBL_STYLE}>Montant ({currency})</label>
+              <label style={LBL_STYLE}>
+                Montant ({currency})
+              </label>
               <div style={{ display:'grid', gridTemplateColumns:'repeat(4,1fr)', gap:6, marginBottom:8 }}>
                 {rapides.map(v => (
                   <button key={v} onClick={() => set('amount', String(v))}
@@ -352,7 +444,7 @@ function ContribModal({ onClose }) {
               />
             </div>
 
-            {/* Opérateur + Téléphone (Mobile Money uniquement) */}
+            {/* ── Opérateur + Téléphone (Mobile Money uniquement) ── */}
             {payMethod === 'mobile' && (
               <>
                 <div style={{ marginBottom:16 }}>
@@ -373,25 +465,49 @@ function ContribModal({ onClose }) {
                     ))}
                   </div>
                 </div>
+
+                {/* Champ téléphone avec préfixe affiché */}
                 <div style={{ marginBottom:16 }}>
                   <label style={LBL_STYLE}>Numéro de téléphone</label>
-                  <input
-                    value={form.phone}
-                    onChange={e => set('phone', e.target.value)}
-                    placeholder="ex: 0812345678"
-                    style={INP_STYLE} type="tel" inputMode="numeric"
-                  />
+                  <div style={{ display:'flex', gap:8, alignItems:'center' }}>
+                    {/* Préfixe non-éditable */}
+                    <div style={{ ...INP_STYLE, width:'auto', flexShrink:0, color:'#3DAA6A', fontWeight:700, fontSize:14, background:'rgba(61,170,106,0.08)', border:'1px solid rgba(61,170,106,0.3)', padding:'11px 12px', borderRadius:12, whiteSpace:'nowrap' }}>
+                      {paysInfo.prefix}
+                    </div>
+                    <input
+                      value={form.phone}
+                      onChange={e => set('phone', e.target.value.replace(/[^\d]/g, ''))}
+                      placeholder="8XXXXXXXX"
+                      style={{ ...INP_STYLE, flex:1 }}
+                      type="tel" inputMode="numeric"
+                    />
+                  </div>
+                  <p style={{ fontSize:11, color:'rgba(232,244,237,0.3)', marginTop:5 }}>
+                    Entrez le numéro sans le 0 initial ni l'indicatif — ex : <em>812345678</em>
+                  </p>
                 </div>
+
+                {/* Indication v1 (MPESA synchrone) vs v2 (async avec PIN push) */}
+                {selectedOp && (
+                  <div style={{ marginBottom:16, padding:'10px 14px', background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:12 }}>
+                    <p style={{ fontSize:12, color:'rgba(232,244,237,0.55)', margin:0, lineHeight:1.7 }}>
+                      {isV1
+                        ? '📲 M-Pesa : une notification push sera envoyée sur votre téléphone. Saisissez votre code PIN pour valider.'
+                        : '📲 Vous recevrez une notification push sur votre téléphone. Saisissez votre code PIN pour confirmer le paiement.'
+                      }
+                    </p>
+                  </div>
+                )}
               </>
             )}
 
-            {/* Info sécurité (Carte uniquement) */}
+            {/* ── Info sécurité (Carte uniquement) ── */}
             {payMethod === 'card' && (
               <div style={{ marginBottom:16, padding:'14px 16px', background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:14 }}>
                 <div style={{ display:'flex', alignItems:'flex-start', gap:10, marginBottom:10 }}>
                   <ShieldCheck size={18} color="#3DAA6A" style={{ flexShrink:0, marginTop:2 }} />
                   <p style={{ fontSize:13, color:'rgba(232,244,237,0.7)', lineHeight:1.7, margin:0 }}>
-                    Vous serez redirigé vers la page sécurisée MaishaPay pour saisir vos données de carte (3D Secure).
+                    Vous serez redirigé vers la page sécurisée MaishaPay / CyberSource (Visa) pour saisir vos données de carte (3D Secure).
                   </p>
                 </div>
                 <div style={{ display:'flex', gap:8 }}>
@@ -404,7 +520,7 @@ function ContribModal({ onClose }) {
               </div>
             )}
 
-            {/* Toggle anonyme */}
+            {/* ── Toggle anonyme ── */}
             <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:16, padding:'12px 14px', background:'rgba(61,170,106,0.05)', borderRadius:12, border:'1px solid rgba(61,170,106,0.1)' }}>
               <input type="checkbox" id="anon" checked={anon} onChange={e => setAnon(e.target.checked)}
                 style={{ width:17, height:17, accentColor:'#3DAA6A', cursor:'pointer', flexShrink:0 }} />
@@ -413,7 +529,7 @@ function ContribModal({ onClose }) {
               </label>
             </div>
 
-            {/* Nom (si pas anonyme) */}
+            {/* ── Nom (si pas anonyme) ── */}
             {!anon && (
               <div style={{ marginBottom:16 }}>
                 <label style={LBL_STYLE}>Votre nom (optionnel)</label>
@@ -426,7 +542,7 @@ function ContribModal({ onClose }) {
               </div>
             )}
 
-            {/* Message */}
+            {/* ── Message ── */}
             <div style={{ marginBottom:24 }}>
               <label style={LBL_STYLE}>Message d'encouragement (optionnel)</label>
               <input
@@ -437,7 +553,7 @@ function ContribModal({ onClose }) {
               />
             </div>
 
-            {/* Erreur */}
+            {/* ── Erreur ── */}
             {error && (
               <div style={{ display:'flex', alignItems:'flex-start', gap:8, background:'rgba(220,50,50,0.1)', border:'1px solid rgba(220,50,50,0.25)', borderRadius:10, padding:'10px 14px', marginBottom:16, fontSize:13, color:'#ff8080' }}>
                 <AlertTriangle size={16} style={{ flexShrink:0, marginTop:2 }} />
@@ -445,7 +561,7 @@ function ContribModal({ onClose }) {
               </div>
             )}
 
-            {/* Bouton soumettre */}
+            {/* ── Bouton soumettre ── */}
             <button onClick={submit}
               style={{ width:'100%', padding:'14px', borderRadius:14, border:'none', background:'#3DAA6A', color:'#050E17', fontWeight:800, fontSize:16, cursor:'pointer', fontFamily:'Plus Jakarta Sans,sans-serif', transition:'opacity 0.2s', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}
               onMouseEnter={e => { e.currentTarget.style.opacity = '0.88'; }}
@@ -458,8 +574,8 @@ function ContribModal({ onClose }) {
 
             <p style={{ fontSize:11, color:'rgba(232,244,237,0.22)', textAlign:'center', marginTop:10 }}>
               {payMethod === 'card'
-                ? 'Vous serez redirigé vers la page sécurisée MaishaPay'
-                : 'Vous recevrez une confirmation sur votre téléphone'}
+                ? 'Vous serez redirigé vers la page sécurisée MaishaPay (USD)'
+                : `Notification push → code PIN sur votre téléphone (${paysInfo.prefix})`}
             </p>
           </>
         )}
@@ -469,12 +585,15 @@ function ContribModal({ onClose }) {
           <div style={{ textAlign:'center', padding:'52px 0' }}>
             <Loader2 size={52} color="#3DAA6A" style={{ marginBottom:20, animation:'spin 1.2s linear infinite' }} />
             <h3 style={{ color:'#E8F4ED', fontSize:20, fontWeight:700, marginBottom:10, fontFamily:'Plus Jakarta Sans,sans-serif' }}>
-              {payMethod === 'card' ? 'Redirection en cours...' : 'Traitement en cours...'}
+              {payMethod === 'card' ? 'Redirection en cours...' : 'En attente de confirmation…'}
             </h3>
             <p style={{ color:'rgba(232,244,237,0.45)', fontSize:14, lineHeight:1.7 }}>
               {payMethod === 'card'
                 ? 'Vous allez être redirigé vers la page de paiement sécurisée MaishaPay.'
-                : 'Vérifiez votre téléphone et confirmez le paiement Mobile Money.'}
+                : isV1
+                  ? 'Une notification a été envoyée sur votre téléphone M-Pesa. Saisissez votre code PIN pour confirmer.'
+                  : 'Vérifiez votre téléphone et confirmez la notification Mobile Money en saisissant votre code PIN.'
+              }
             </p>
           </div>
         )}
@@ -633,7 +752,7 @@ export default function ComingSoon() {
             Soutenir le projet
           </button>
           <p style={{ fontSize:12, color:'rgba(232,244,237,0.28)', marginTop:12 }}>
-            À partir de 500 FC ou 1 $ · Anonyme possible · Mobile Money
+            À partir de 500 FC ou 1 $ · Anonyme possible · Mobile Money & Carte
           </p>
         </div>
       </section>
