@@ -258,5 +258,82 @@ router.get('/premium-agencies', (req, res) => {
   try { res.json(getDb().prepare('SELECT id,agency_name,logo_url,premium_photo_url,premium_caption,premium_order,phone FROM agencies WHERE is_active=1 AND premium=1 ORDER BY premium_order ASC').all()); }
   catch(e) { res.status(500).json({ error: e.message }); }
 });
+// ── GESTION DES SOUS-COMPTES DEPUIS L'ADMIN ───────────────────
+// L'admin peut gérer les gestionnaires de n'importe quelle agence
 
+router.get('/agencies/:id/users', auth, (req, res) => {
+  try {
+    const users = getDb().prepare(
+      `SELECT id, username, full_name, city, role, is_active, created_at
+       FROM agency_users WHERE agency_id=? ORDER BY created_at ASC`
+    ).all(req.params.id);
+    res.json(users);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/agencies/:id/users', auth, (req, res) => {
+  try {
+    const { username, password, full_name, city, role } = req.body;
+    if (!username || !password)      return res.status(400).json({ error: 'Identifiant et mot de passe requis' });
+    if (password.length < 6)         return res.status(400).json({ error: 'Mot de passe trop court (minimum 6 caractères)' });
+
+    const db = getDb();
+    const existing = db.prepare('SELECT id FROM agency_users WHERE username=?').get(username)
+                  || db.prepare('SELECT id FROM agencies WHERE username=?').get(username);
+    if (existing) return res.status(400).json({ error: 'Ce nom d\'utilisateur est déjà pris' });
+
+    const validRoles = ['manager', 'owner'];
+    const userRole   = validRoles.includes(role) ? role : 'manager';
+    const hash       = bcrypt.hashSync(password, 10);
+
+    const result = db.prepare(
+      `INSERT INTO agency_users (agency_id, username, password, full_name, city, role) VALUES (?,?,?,?,?,?)`
+    ).run(req.params.id, username, hash, full_name||null, city||null, userRole);
+
+    res.status(201).json({ id: result.lastInsertRowid, username, city, role: userRole });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.patch('/agencies/:id/users/:uid', auth, (req, res) => {
+  try {
+    const { full_name, city, role, is_active, password } = req.body;
+    const db   = getDb();
+    const user = db.prepare('SELECT * FROM agency_users WHERE id=? AND agency_id=?').get(req.params.uid, req.params.id);
+    if (!user) return res.status(404).json({ error: 'Gestionnaire introuvable' });
+
+    const validRoles = ['manager', 'owner'];
+    const newRole    = role && validRoles.includes(role) ? role : user.role;
+    const newActive  = is_active !== undefined ? (is_active ? 1 : 0) : user.is_active;
+    const newHash    = password && password.length >= 6 ? bcrypt.hashSync(password, 10) : user.password;
+
+    db.prepare(
+      `UPDATE agency_users SET full_name=COALESCE(?,full_name), city=?, role=?, is_active=?, password=? WHERE id=? AND agency_id=?`
+    ).run(full_name||null, city!==undefined ? (city||null) : user.city, newRole, newActive, newHash, req.params.uid, req.params.id);
+
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/agencies/:id/users/:uid', auth, (req, res) => {
+  try {
+    const db   = getDb();
+    const user = db.prepare('SELECT * FROM agency_users WHERE id=? AND agency_id=?').get(req.params.uid, req.params.id);
+    if (!user) return res.status(404).json({ error: 'Gestionnaire introuvable' });
+    db.prepare('DELETE FROM agency_users WHERE id=? AND agency_id=?').run(req.params.uid, req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/agencies/:id/users/:uid/reset-password', auth, (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password || password.length < 6) return res.status(400).json({ error: 'Mot de passe trop court (minimum 6 caractères)' });
+    const db   = getDb();
+    const user = db.prepare('SELECT * FROM agency_users WHERE id=? AND agency_id=?').get(req.params.uid, req.params.id);
+    if (!user) return res.status(404).json({ error: 'Gestionnaire introuvable' });
+    db.prepare('UPDATE agency_users SET password=? WHERE id=? AND agency_id=?')
+      .run(bcrypt.hashSync(password, 10), req.params.uid, req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 module.exports = router;
