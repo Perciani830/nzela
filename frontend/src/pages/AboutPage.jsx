@@ -1,41 +1,46 @@
 import { useEffect, useRef, useState } from 'react';
+import {
+  Luggage, Bus, Smartphone, Globe,
+  Sparkles, Crosshair, Dot,
+  MapPin, Users, BarChart3, Wifi,
+} from 'lucide-react';
 
 // ── ÉQUIPE — remplace les données ici ─────────────────────────
 const TEAM = [
-  { name: 'Perciani Lukielo',   role: 'CEO & Fondateur', photo:'/photos/perciani_luks.png' },
-  { name: 'Israél Ongala',   role: 'DRH',                photo: '/photos/israel_ongala.png' },
-  { name: 'Prénom Nom',   role: 'Directeur Commercial',  photo: null },
-  { name: 'Prénom Nom',   role: 'Responsable Marketing', photo: null },
-  { name: 'Prénom Nom',   role: 'Développeur Backend',   photo: null },
-  { name: 'Prénom Nom',   role: 'Développeur Frontend',  photo: null },
-  { name: 'Prénom Nom',   role: 'Designer UI/UX',        photo: null },
-  { name: 'Prénom Nom',   role: 'Relations Agences',     photo: null },
-  { name: 'Prénom Nom',   role: 'Responsable Finance',   photo: null },
-  { name: 'Prénom Nom',   role: 'Support Client',        photo: null },
+  { name: 'Perciani Lukielo',  role: 'CEO & Fondateur',                                    photo: '/photos/perciani_luks.png' },
+  { name: 'Israél Ongala',     role: 'DRH',                                                photo: '/photos/israel_ongala.png' },
+  { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat',  photo: null },
+  { name: 'Aaron Butu',        role: 'Responsable Marketing',                              photo: null },
+  { name: 'Arnold Lolo',       role: 'Développeur Backend',                                photo: null },
+  { name: 'Daniella Ongala',   role: 'Développeur Frontend',                               photo: null },
+  { name: 'Kethia',            role: 'Chargée de Marketing',                               photo: null },
+  { name: 'Josué Tambwe',      role: 'Support client',                                     photo: null },
+  { name: 'Gemima Masela',        role: 'Responsable Finance',                                photo: null },
+  { name: 'Mervedy Ibala',        role: 'Support Client',                                     photo: null },
 ];
 
 // ── CIBLES ────────────────────────────────────────────────────
 const CIBLES = [
-  { icon: '🧳', titre: 'Voyageurs RDC', desc: 'Toute personne cherchant à voyager entre Kinshasa et les villes de province de manière simple et sécurisée.' },
-  { icon: '🚌', titre: 'Agences de Bus', desc: 'Compagnies de transport souhaitant digitaliser leur vente de billets et gérer leurs voyages en temps réel.' },
-  { icon: '📱', titre: 'Utilisateurs Mobile', desc: 'Congolais connectés via smartphone, habitués au Mobile Money (M-Pesa, Orange Money, Airtel, Africell).' },
-  { icon: '🌍', titre: 'Diaspora', desc: 'Congolais de l\'extérieur souhaitant réserver un billet pour un proche encore en RDC depuis n\'importe où dans le monde.' },
+  { Icon: Luggage,    titre: 'Voyageurs RDC',     desc: 'Toute personne cherchant à voyager entre Kinshasa et les villes de province de manière simple et sécurisée.' },
+  { Icon: Bus,        titre: 'Agences de Bus',    desc: 'Compagnies de transport souhaitant digitaliser leur vente de billets et gérer leurs voyages en temps réel.' },
+  { Icon: Smartphone, titre: 'Utilisateurs Mobile', desc: 'Congolais connectés via smartphone, habitués au Mobile Money (M-Pesa, Orange Money, Airtel, Africell).' },
+  { Icon: Globe,      titre: 'Diaspora',          desc: "Congolais de l'extérieur souhaitant réserver un billet pour un proche encore en RDC depuis n'importe où dans le monde." },
 ];
 
 // ── OBJECTIFS ─────────────────────────────────────────────────
 const OBJECTIFS = [
-  { num: '01', titre: 'Digitaliser le transport', desc: 'Éliminer les longues files d\'attente et la vente informelle de billets de bus en RDC.' },
-  { num: '02', titre: 'Sécuriser les paiements', desc: 'Intégrer le Mobile Money local pour des transactions fiables, traçables et sans cash.' },
-  { num: '03', titre: 'Valoriser les agences', desc: 'Offrir aux compagnies de bus un tableau de bord professionnel pour gérer leurs opérations.' },
-  { num: '04', titre: 'Relier le pays', desc: 'Couvrir progressivement toutes les routes majeures de la RDC depuis Kinshasa vers les provinces.' },
+  { num: '01', titre: 'Digitaliser le transport', desc: "Éliminer les longues files d'attente et la vente informelle de billets de bus en RDC." },
+  { num: '02', titre: 'Sécuriser les paiements',  desc: 'Intégrer le Mobile Money local pour des transactions fiables, traçables et sans cash.' },
+  { num: '03', titre: 'Valoriser les agences',    desc: 'Offrir aux compagnies de bus un tableau de bord professionnel pour gérer leurs opérations.' },
+  { num: '04', titre: 'Relier le pays',           desc: 'Couvrir progressivement toutes les routes majeures de la RDC depuis Kinshasa vers les provinces.' },
 ];
 
 // ── STATS ─────────────────────────────────────────────────────
 const STATS = [
-  { val: '10 000+', label: 'Voyageurs/mois visés' },
-  { val: '4',       label: 'Agences partenaires' },
-  { val: '3',       label: 'Trajets phares' },
-  { val: '100%',    label: 'Mobile Money' },
+  { val: '10 000+', label: 'Voyageurs/mois visés', Icon: Users },
+  { val: '4',       label: 'Agences partenaires',  Icon: BarChart3 },
+  { val: '3',       label: 'Trajets phares',       Icon: MapPin },
+  { val: '100%',    label: 'Mobile Money',         Icon: Wifi },
 ];
 
 function initials(name) {
@@ -223,7 +228,7 @@ export default function AboutPage() {
             WebkitTextFillColor: 'transparent',
             backgroundClip: 'text',
           }}>
-            Notre Vision,<br />Notre Mission
+            Notre Vision,<br />Notre Mission,
           </h1>
 
           <p style={{ fontSize: 'clamp(16px, 2.5vw, 20px)', color: '#8899AA', lineHeight: 1.7, margin: '0 auto', maxWidth: 600 }}>
@@ -239,7 +244,7 @@ export default function AboutPage() {
             <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 16, flexShrink: 0 }}>
               <span style={{ fontSize: 28, fontWeight: 800, color: '#3DAA6A' }}>{s.val}</span>
               <span style={{ fontSize: 14, color: '#8899AA', letterSpacing: '0.05em' }}>{s.label}</span>
-              <span style={{ color: 'rgba(61,170,106,0.3)', fontSize: 20 }}>✦</span>
+              <s.Icon size={14} color="rgba(61,170,106,0.4)" />
             </div>
           ))}
         </div>
@@ -252,7 +257,9 @@ export default function AboutPage() {
           <RevealSection direction="left">
             <div style={{ background: 'linear-gradient(135deg, rgba(61,170,106,0.1), rgba(5,14,23,0.8))', border: '1px solid rgba(61,170,106,0.2)', borderRadius: 24, padding: '48px 40px', height: '100%', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', top: -30, right: -30, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle, rgba(61,170,106,0.15), transparent)' }} />
-              <div style={{ fontSize: 48, marginBottom: 20 }}>🌟</div>
+              <div style={{ marginBottom: 20 }}>
+                <Sparkles size={44} color="#3DAA6A" />
+              </div>
               <h2 style={{ fontSize: 32, fontWeight: 800, color: '#3DAA6A', margin: '0 0 16px' }}>Notre Vision</h2>
               <p style={{ fontSize: 17, lineHeight: 1.8, color: '#B8C9D9', margin: 0 }}>
                 Devenir la plateforme de référence du transport terrestre en Afrique Centrale, en commençant par la RDC. Nous voulons un pays où chaque Congolais peut planifier, réserver et payer son voyage en quelques secondes depuis son téléphone.
@@ -263,7 +270,9 @@ export default function AboutPage() {
           <RevealSection direction="right" delay={150}>
             <div style={{ background: 'linear-gradient(135deg, rgba(5,14,23,0.9), rgba(61,170,106,0.08))', border: '1px solid rgba(61,170,106,0.15)', borderRadius: 24, padding: '48px 40px', height: '100%', position: 'relative', overflow: 'hidden' }}>
               <div style={{ position: 'absolute', bottom: -30, left: -30, width: 150, height: 150, borderRadius: '50%', background: 'radial-gradient(circle, rgba(61,170,106,0.1), transparent)' }} />
-              <div style={{ fontSize: 48, marginBottom: 20 }}>🎯</div>
+              <div style={{ marginBottom: 20 }}>
+                <Crosshair size={44} color="#F0F4F8" />
+              </div>
               <h2 style={{ fontSize: 32, fontWeight: 800, color: '#F0F4F8', margin: '0 0 16px' }}>Notre Mission</h2>
               <p style={{ fontSize: 17, lineHeight: 1.8, color: '#B8C9D9', margin: 0 }}>
                 Connecter les voyageurs congolais aux agences de bus fiables grâce à une technologie simple, accessible et adaptée à la réalité locale — Mobile Money inclus. Rendre le transport transparent, sécurisé et digne pour tous.
@@ -334,7 +343,9 @@ export default function AboutPage() {
                 onMouseEnter={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(61,170,106,0.12), rgba(5,14,23,0.95))'; e.currentTarget.style.borderColor = 'rgba(61,170,106,0.35)'; }}
                 onMouseLeave={e => { e.currentTarget.style.background = 'linear-gradient(135deg, rgba(61,170,106,0.06), rgba(5,14,23,0.95))'; e.currentTarget.style.borderColor = 'rgba(61,170,106,0.12)'; }}
               >
-                <div style={{ fontSize: 40, marginBottom: 20 }}>{c.icon}</div>
+                <div style={{ marginBottom: 20 }}>
+                  <c.Icon size={36} color="#3DAA6A" strokeWidth={1.5} />
+                </div>
                 <h3 style={{ fontSize: 20, fontWeight: 700, margin: '0 0 12px', color: '#3DAA6A' }}>{c.titre}</h3>
                 <p style={{ fontSize: 15, color: '#8899AA', lineHeight: 1.7, margin: 0 }}>{c.desc}</p>
               </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
+import { Crown, LockKeyhole } from 'lucide-react';
 
 export default function LoginAdmin() {
   const { loginAdmin, loading, user } = useAuth();
@@ -21,7 +22,9 @@ export default function LoginAdmin() {
     <div style={{ minHeight:'100vh', background:'linear-gradient(150deg,#0D1B2A 0%,#0F2942 60%,#1A1A2E 100%)', display:'flex', alignItems:'center', justifyContent:'center', padding:'20px' }}>
       <div style={{ width:'100%', maxWidth:'380px' }}>
         <div style={{ textAlign:'center', marginBottom:'32px' }}>
-          <div style={{ width:'64px', height:'64px', background:'rgba(245,158,11,.15)', borderRadius:'16px', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'30px', margin:'0 auto 12px' }}>👑</div>
+          <div style={{ width:'64px', height:'64px', background:'rgba(245,158,11,.15)', borderRadius:'16px', display:'flex', alignItems:'center', justifyContent:'center', margin:'0 auto 12px' }}>
+            <Crown size={30} color="rgba(245,158,11,0.9)" />
+          </div>
           <h1 style={{ fontWeight:800, color:'#fff', fontSize:'24px' }}>Administration</h1>
           <p style={{ color:'rgba(255,255,255,.4)', fontSize:'13px', marginTop:'4px' }}>Accès restreint — Super Admin</p>
         </div>
@@ -37,8 +40,10 @@ export default function LoginAdmin() {
               <label className="label">Mot de passe</label>
               <input className="input" type="password" value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required />
             </div>
-            <button className="btn btn-primary btn-lg" style={{ width:'100%', justifyContent:'center' }} disabled={loading}>
-              {loading ? <><span className="spinner"/> Vérification...</> : '🔐 Accéder au panneau'}
+            <button className="btn btn-primary btn-lg" style={{ width:'100%', justifyContent:'center', display:'flex', alignItems:'center', gap:8 }} disabled={loading}>
+              {loading
+                ? <><span className="spinner"/> Vérification...</>
+                : <><LockKeyhole size={15} /> Accéder au panneau</>}
             </button>
           </form>
           <div style={{ marginTop:'16px', padding:'10px', background:'#F8FAFC', borderRadius:'var(--radius-sm)', fontSize:'12px', color:'var(--muted)', textAlign:'center' }}>

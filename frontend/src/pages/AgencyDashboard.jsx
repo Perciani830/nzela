@@ -7,6 +7,14 @@ const API = 'https://nzela-production-086a.up.railway.app/api';
 const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
 const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 
+// Drapeaux / couleurs par ville pour les badges
+const CITY_META = {
+  Kinshasa: { color:'#3DAA6A', bg:'rgba(61,170,106,0.12)', icon:'🏙️' },
+  Boma:     { color:'#4A90D9', bg:'rgba(74,144,217,0.12)', icon:'⚓' },
+  Matadi:   { color:'#E8A838', bg:'rgba(232,168,56,0.12)',  icon:'⛰️' },
+  Moanda:   { color:'#9B59B6', bg:'rgba(155,89,182,0.12)', icon:'🌊' },
+};
+
 function getAuth() {
   return {
     user: JSON.parse(localStorage.getItem('user') || '{}'),
@@ -28,6 +36,15 @@ function StatusBadge({ status }) {
   const m = { pending:['En attente','b-o'], confirmed:['Confirmé','b-g'], cancelled:['Annulé','b-r'] };
   const [l,c] = m[status] || [status,'b-b'];
   return <span className={`badge ${c}`}>{l}</span>;
+}
+
+function CityBadge({ city }) {
+  const meta = CITY_META[city] || { color:'var(--muted)', bg:'var(--card)', icon:'📍' };
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:meta.bg, color:meta.color, border:`1px solid ${meta.color}30`, borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700 }}>
+      {meta.icon} {city}
+    </span>
+  );
 }
 
 function AgencyAvatar({ name, logoUrl, size=32, radius=8 }) {
@@ -116,6 +133,139 @@ function buildDates(dateFrom, dateTo, activeDays) {
   return dates;
 }
 
+// ── Composant : Sélecteur de voyage pour le manifeste ─────────────────────────
+function ManifestTripSelector({ trips, selectedId, onChange, userCity, isOwner }) {
+  const relevantTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
+  // Trier : les plus récents en premier
+  const sorted = [...relevantTrips].sort((a,b) => {
+    const da = new Date(`${a.departure_date}T${a.departure_time}`);
+    const db = new Date(`${b.departure_date}T${b.departure_time}`);
+    return db - da;
+  });
+
+  // Grouper par date
+  const grouped = {};
+  sorted.forEach(t => {
+    const key = t.departure_date;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(t);
+  });
+
+  return (
+    <div style={{ marginBottom:16 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>
+        Sélectionner un voyage
+      </div>
+      <select
+        className="input-field"
+        value={selectedId}
+        onChange={e => onChange(e.target.value)}
+        style={{ width:'100%', fontSize:13 }}
+      >
+        <option value="">— Choisir un voyage pour voir son manifeste —</option>
+        {Object.entries(grouped).map(([date, dayTrips]) => (
+          <optgroup key={date} label={new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}>
+            {dayTrips.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.departure_city} → {t.arrival_city} · {t.departure_time} · {t.available_seats}/{t.total_seats} places {t.bus_name ? `· ${t.bus_name}` : ''}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {sorted.length === 0 && (
+        <div style={{ fontSize:12, color:'var(--muted)', marginTop:8, padding:'10px', background:'var(--card)', borderRadius:8, textAlign:'center' }}>
+          Aucun voyage créé. Créez des voyages depuis l'onglet Voyages.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Composant : Stats par ville (vue propriétaire) ─────────────────────────────
+function CityStatsGrid({ trips, bookings }) {
+  const cityData = CITIES.map(city => {
+    const cityTrips    = trips.filter(t => t.departure_city === city);
+    const cityBookings = bookings.filter(b => b.departure_city === city);
+    const confirmed    = cityBookings.filter(b => b.status === 'confirmed').length;
+    const pending      = cityBookings.filter(b => b.status === 'pending').length;
+    const revenue      = cityBookings.filter(b => b.status !== 'cancelled').reduce((s,b) => s + Number(b.total_price||0), 0);
+    const fillRate     = cityTrips.length > 0
+      ? Math.round(cityBookings.filter(b=>b.status!=='cancelled').length / cityTrips.reduce((s,t) => s+(t.total_seats||0), 0) * 100)
+      : 0;
+    return { city, trips: cityTrips.length, bookings: cityBookings.length, confirmed, pending, revenue, fillRate };
+  }).filter(d => d.trips > 0 || d.bookings > 0);
+
+  if (cityData.length === 0) return null;
+
+  return (
+    <div className="glass p-16 fade-in fade-in-4" style={{ marginBottom:14 }}>
+      <div className="section-title" style={{ marginBottom:12 }}>📍 Performance par ville</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px,1fr))', gap:10 }}>
+        {cityData.map(d => {
+          const meta = CITY_META[d.city] || { color:'var(--green-l)', bg:'var(--green-bg)', icon:'📍' };
+          return (
+            <div key={d.city} style={{ background:meta.bg, border:`1px solid ${meta.color}25`, borderRadius:12, padding:'14px 16px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                <span style={{ fontSize:20 }}>{meta.icon}</span>
+                <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:meta.color }}>{d.city}</span>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                {[
+                  ['Voyages',  d.trips,     'var(--text)'],
+                  ['Réservés', d.confirmed, 'var(--ok)'],
+                  ['En attente', d.pending, 'var(--gold)'],
+                  ['Taux remplissage', `${d.fillRate}%`, meta.color],
+                ].map(([l,v,c]) => (
+                  <div key={l} style={{ background:'rgba(0,0,0,0.12)', borderRadius:8, padding:'8px 10px' }}>
+                    <div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div>
+                    <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:10, padding:'7px 10px', background:'rgba(0,0,0,0.12)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>Revenus</span>
+                <span style={{ fontWeight:800, fontSize:13, color:'var(--gold)' }}>{d.revenue.toLocaleString('fr-FR')} FC</span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Composant : Tabs filtre ville (pour propriétaire) ─────────────────────────
+function CityFilterTabs({ value, onChange, trips, bookings }) {
+  const activeCities = CITIES.filter(c =>
+    trips.some(t => t.departure_city === c) || bookings.some(b => b.departure_city === c)
+  );
+  if (activeCities.length < 2) return null;
+  const tabs = [{ id:'all', label:'Toutes', icon:'🌍' }, ...activeCities.map(c => ({ id:c, label:c, icon: CITY_META[c]?.icon||'📍' }))];
+  return (
+    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+      {tabs.map(t => {
+        const meta = CITY_META[t.id];
+        const isActive = value === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            style={{
+              padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', transition:'all 0.18s',
+              background: isActive ? (meta?.color || 'var(--green-d)') : 'var(--card)',
+              border: `1px solid ${isActive ? (meta?.color || 'var(--green-d)') : 'var(--border)'}`,
+              color: isActive ? '#fff' : 'var(--muted)'
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function AgencyDashboard() {
   const navigate = useNavigate();
   const { user, headers } = getAuth();
@@ -125,7 +275,7 @@ export default function AgencyDashboard() {
   const [trips, setTrips]         = useState([]);
   const [bookings, setBookings]   = useState([]);
   const [buses, setBuses]         = useState([]);
-  const [settings, setSettings]   = useState({ cancel_rate:20, phone:'', email:'', address:'', logo_url:'' });
+  const [settings, setSettings]   = useState({ cancel_rate:20, phone:'', email:'', address:'', logo_url:'', home_city:'' });
   const [loading, setLoading]     = useState(true);
   const [toast, setToast]         = useState(null);
   const [savingSettings, setSavingSettings] = useState(false);
@@ -134,19 +284,46 @@ export default function AgencyDashboard() {
   const [bulkModal, setBulkModal] = useState(false);
   const [editBus, setEditBus]     = useState(null);
   const [editTrip, setEditTrip]   = useState(null);
+  const [cityFilter, setCityFilter] = useState('all');         // filtre ville pour propriétaire
+  const [manifestTripId, setManifestTripId] = useState('');   // voyage sélectionné pour manifeste
   const [busForm, setBusForm]     = useState({ bus_name:'', total_seats:50, description:'' });
   const [tripForm, setTripForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' });
   const [bulkForm, setBulkForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
   const [bulkPreview, setBulkPreview] = useState([]);
   const [bulkLoading, setBulkLoading] = useState(false);
 
+  // ── État onglet Gestionnaires ─────────────────────────────────────────────────
+  const [agencyUsers, setAgencyUsers]       = useState([]);
+  const [usersLoading, setUsersLoading]     = useState(false);
+  const [userModal, setUserModal]           = useState(false);
+  const [editUser, setEditUser]             = useState(null);
+  const [resetPassModal, setResetPassModal] = useState(null);
+  const [newPass, setNewPass]               = useState('');
+  const [userForm, setUserForm]             = useState({ username:'', password:'', full_name:'', city:'', role:'manager' });
+
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
   const goTab = (id) => { setTab(id); setSidebarOpen(false); };
-
-  // Wrapper pour ManifestTab — reçoit (msg, type) et appelle setToast
   const showToast = (msg, type='info') => setToast({ msg, type });
+
+  // ── Ville du gestionnaire connecté ───────────────────────────────────────────
+  // user.is_owner → vient du JWT signé par le serveur (infalsifiable)
+  // user.city     → ville filtrée, null si propriétaire
+  const isOwner  = user.is_owner === true;
+  const userCity = isOwner ? null : (user.city || null);
+
+  // ── Filtrage des voyages et réservations ──────────────────────────────────────
+  const filteredByCity = (arr, cityKey) => {
+    if (isOwner) return cityFilter === 'all' ? arr : arr.filter(x => x[cityKey] === cityFilter);
+    return arr.filter(x => x[cityKey] === userCity);
+  };
+
+  const visibleTrips    = filteredByCity(trips,    'departure_city');
+  const visibleBookings = filteredByCity(bookings, 'departure_city');
+
+  // Voyages disponibles pour le sélecteur de manifeste (filtrés par ville du gestionnaire)
+  const manifestTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
 
   const prevPendingRef = useRef(null);
 
@@ -165,7 +342,7 @@ export default function AgencyDashboard() {
       const newBookings = Array.isArray(b.data) ? b.data : [];
       setBookings(newBookings);
       setBuses(Array.isArray(bs.data) ? bs.data : []);
-      setSettings(se.data);
+      setSettings(prev => ({ ...prev, ...se.data }));
       const newPending = newBookings.filter(b => b.status === 'pending').length;
       if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
         const diff = newPending - prevPendingRef.current;
@@ -188,6 +365,14 @@ export default function AgencyDashboard() {
     setBulkPreview(buildDates(bulkForm.date_from, bulkForm.date_to, bulkForm.active_days));
   }, [bulkForm.date_from, bulkForm.date_to, bulkForm.active_days]);
 
+  // Pré-remplir la ville de départ dès que userCity est connu
+  useEffect(() => {
+    if (userCity) {
+      setTripForm(f => ({ ...f, departure_city: userCity }));
+      setBulkForm(f => ({ ...f, departure_city: userCity }));
+    }
+  }, [userCity]);
+
   const doCreateBus = async () => {
     if (!busForm.bus_name) return err('Nom du bus requis');
     try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté 🚌'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
@@ -205,7 +390,8 @@ export default function AgencyDashboard() {
   const doCreateTrip = async () => {
     const { departure_city, arrival_city, departure_date, departure_time, price } = tripForm;
     if (!departure_city||!arrival_city||!departure_date||!departure_time||!price) return err('Champs obligatoires manquants');
-    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé 🎉'); setTripModal(false); setTripForm({ bus_id:'', departure_city:'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
+    if (departure_city === arrival_city) return err('Départ et arrivée doivent être différents');
+    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé 🎉'); setTripModal(false); setTripForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doSaveTrip = async () => {
@@ -230,7 +416,7 @@ export default function AgencyDashboard() {
       const res = await axios.post(`${API}/agency/trips/bulk`, { bus_id: bus_id || null, departure_city, arrival_city, departure_time, price: parseFloat(price), description: description || null, dates: bulkPreview }, { headers });
       ok(`✅ ${res.data.created} voyage${res.data.created > 1 ? 's' : ''} créé${res.data.created > 1 ? 's' : ''} !`);
       setBulkModal(false);
-      setBulkForm({ bus_id:'', departure_city:'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
+      setBulkForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
       load();
     } catch(e) { err(e.response?.data?.error||'Erreur'); }
     finally { setBulkLoading(false); }
@@ -246,17 +432,79 @@ export default function AgencyDashboard() {
   };
   const toggleDay = (day) => setBulkForm(f => ({ ...f, active_days: f.active_days.includes(day) ? f.active_days.filter(d => d !== day) : [...f.active_days, day].sort() }));
 
-  // ── TABS — Manifeste ajouté ────────────────────────────────
+  // ── CRUD Gestionnaires ────────────────────────────────────────────────────────
+  const loadUsers = async () => {
+    if (!isOwner) return;
+    setUsersLoading(true);
+    try {
+      const r = await axios.get(`${API}/agency/users`, { headers });
+      setAgencyUsers(Array.isArray(r.data) ? r.data : []);
+    } catch { err('Erreur chargement gestionnaires'); }
+    finally { setUsersLoading(false); }
+  };
+
+  useEffect(() => { if (tab === 'users') loadUsers(); }, [tab]);
+
+  const doCreateUser = async () => {
+    const { username, password, full_name, city, role } = userForm;
+    if (!username || !password) return err('Identifiant et mot de passe requis');
+    if (password.length < 6)   return err('Mot de passe trop court (min. 6 caractères)');
+    try {
+      await axios.post(`${API}/agency/users`, { username, password, full_name, city: city||null, role }, { headers });
+      ok(`✓ Gestionnaire "${username}" créé`);
+      setUserModal(false);
+      setUserForm({ username:'', password:'', full_name:'', city:'', role:'manager' });
+      loadUsers();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doSaveUser = async () => {
+    try {
+      await axios.patch(`${API}/agency/users/${editUser.id}`, {
+        full_name: editUser.full_name,
+        city:      editUser.city || null,
+        role:      editUser.role,
+        is_active: editUser.is_active,
+      }, { headers });
+      ok('Gestionnaire mis à jour ✓');
+      setEditUser(null);
+      loadUsers();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doDeleteUser = async (id, username) => {
+    if (!confirm(`Supprimer le compte "${username}" ? Cette action est irréversible.`)) return;
+    try {
+      await axios.delete(`${API}/agency/users/${id}`, { headers });
+      inf(`Compte "${username}" supprimé`);
+      loadUsers();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doResetPassword = async () => {
+    if (!newPass || newPass.length < 6) return err('Mot de passe trop court (min. 6 caractères)');
+    try {
+      await axios.post(`${API}/agency/users/${resetPassModal.id}/reset-password`, { password: newPass }, { headers });
+      ok(`Mot de passe de "${resetPassModal.username}" réinitialisé ✓`);
+      setResetPassModal(null);
+      setNewPass('');
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  // ── Villes d'arrivée disponibles (exclut la ville de départ) ─────────────────
+  const arrivalCities = (depCity) => CITIES.filter(c => c !== depCity);
+
   const TABS = [
     { id:'overview',  icon:'📊', label:"Vue d'ensemble" },
     { id:'buses',     icon:'🚌', label:'Mes bus' },
     { id:'trips',     icon:'🗺️', label:'Voyages' },
     { id:'bookings',  icon:'🎟️', label:'Réservations' },
     { id:'manifest',  icon:'📋', label:'Manifeste' },
+    ...(isOwner ? [{ id:'users', icon:'👥', label:'Gestionnaires' }] : []),
     { id:'settings',  icon:'⚙️', label:'Paramètres' },
   ];
 
-  const pending = bookings.filter(b => b.status==='pending').length;
+  const pending = visibleBookings.filter(b => b.status==='pending').length;
   const agencyName = settings.agency_name || user.agency_name || user.username;
 
   return (
@@ -267,15 +515,28 @@ export default function AgencyDashboard() {
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
         <div className="sidebar-logo"><SidebarLogo agencyName={agencyName} logoUrl={settings.logo_url} /></div>
+
+        {/* Indicateur de ville du gestionnaire */}
         <div style={{ padding:'10px', borderBottom:'1px solid var(--border)' }}>
-          <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:10, padding:'10px 12px', display:'flex', alignItems:'center', gap:10 }}>
-            <AgencyAvatar name={agencyName} logoUrl={settings.logo_url} size={38} radius={10} />
-            <div>
-              <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13 }}>{agencyName}</div>
-              <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>Agence partenaire · RDC</div>
+          <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:10, padding:'10px 12px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: userCity ? 8 : 0 }}>
+              <AgencyAvatar name={agencyName} logoUrl={settings.logo_url} size={38} radius={10} />
+              <div>
+                <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13 }}>{agencyName}</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>
+                  {isOwner ? '👑 Propriétaire — toutes villes' : 'Agence partenaire · RDC'}
+                </div>
+              </div>
             </div>
+            {userCity && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>Ville :</span>
+                <CityBadge city={userCity} />
+              </div>
+            )}
           </div>
         </div>
+
         <nav className="sidebar-nav">
           {TABS.map(t => (
             <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
@@ -293,7 +554,11 @@ export default function AgencyDashboard() {
       <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
         <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
           <div>
-            <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</h1>
+            <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</h1>
+              {userCity && <CityBadge city={userCity} />}
+              {isOwner && <span style={{ fontSize:11, background:'rgba(255,200,0,0.12)', color:'var(--gold)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700 }}>👑 Vue globale</span>}
+            </div>
             <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
@@ -302,13 +567,51 @@ export default function AgencyDashboard() {
               <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(true)}>📅 En masse</button>
               <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>
             </>}
+            {tab==='users' && isOwner && <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Gestionnaire</button>}
             <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px' }} onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪</button>
           </div>
         </div>
 
-        {/* Manifeste ne dépend pas du loading global */}
         {tab === 'manifest'
-          ? <ManifestTab agencyName={agencyName} showToast={showToast} />
+          ? (
+            <div>
+              {/* Sélecteur de voyage pour le manifeste */}
+              <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
+                <div className="section-title" style={{ marginBottom:4 }}>📋 Manifeste passagers</div>
+                <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
+                  Choisissez un voyage pour voir la liste des passagers — disponible dès la création du voyage.
+                </div>
+                <ManifestTripSelector
+                  trips={trips}
+                  selectedId={manifestTripId}
+                  onChange={setManifestTripId}
+                  userCity={userCity}
+                  isOwner={isOwner}
+                />
+                {manifestTripId && (() => {
+                  const trip = trips.find(t => String(t.id) === String(manifestTripId));
+                  if (!trip) return null;
+                  return (
+                    <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+                      <CityBadge city={trip.departure_city} />
+                      <span style={{ color:'var(--muted)', fontSize:16 }}>→</span>
+                      <CityBadge city={trip.arrival_city} />
+                      <span style={{ fontSize:13, fontWeight:700 }}>{trip.departure_time}</span>
+                      <span style={{ fontSize:12, color:'var(--muted)' }}>{new Date(trip.departure_date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</span>
+                      <span className={`badge ${trip.available_seats>0?'b-g':'b-r'}`}>{trip.available_seats}/{trip.total_seats} places</span>
+                      {trip.bus_name && <span className="badge b-b">{trip.bus_name}</span>}
+                    </div>
+                  );
+                })()}
+              </div>
+              {/* ManifestTab reçoit le tripId sélectionné */}
+              <ManifestTab
+                agencyName={agencyName}
+                showToast={showToast}
+                tripId={manifestTripId || undefined}
+              />
+            </div>
+          )
           : loading
             ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
             : <>
@@ -319,26 +622,36 @@ export default function AgencyDashboard() {
                 { icon:'💰', label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
                 { icon:'💎', label:`Commission Nzela (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
                 { icon:'🚌', label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
-                { icon:'⏳', label:'En attente', value:stats.pending_bookings||0, cls:'purple' },
+                { icon:'⏳', label:'En attente', value:pending, cls:'purple' },
               ].map((s,i) => (
                 <div key={i} className={`stat-card ${s.cls} fade-in fade-in-${i+1}`}>
                   <div className="stat-icon">{s.icon}</div><div className="stat-value">{s.value}</div><div className="stat-label">{s.label}</div>
                 </div>
               ))}
             </div>
+
+            {/* Stats par ville — visible uniquement pour le propriétaire */}
+            {isOwner && <CityStatsGrid trips={trips} bookings={bookings} />}
+
             <div className="glass p-16 fade-in fade-in-3">
               <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                <div className="section-title" style={{ margin:0 }}>Réservations récentes</div>
+                <div className="section-title" style={{ margin:0 }}>Réservations récentes {userCity && <CityBadge city={userCity} />}</div>
                 <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => setTab('bookings')}>Voir tout →</button>
               </div>
-              {bookings.length===0
-                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>📭 Aucune réservation</div>
+              {visibleBookings.length===0
+                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>📭 Aucune réservation{userCity ? ` pour ${userCity}` : ''}</div>
                 : <div style={{ overflowX:'auto' }}><table className="data-table">
                     <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
-                    <tbody>{bookings.slice(0,5).map(b => (
+                    <tbody>{visibleBookings.slice(0,5).map(b => (
                       <tr key={b.id}>
                         <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
-                        <td>{b.departure_city} → {b.arrival_city}</td>
+                        <td>
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <CityBadge city={b.departure_city} />
+                            <span style={{ color:'var(--muted)' }}>→</span>
+                            <span style={{ fontWeight:600 }}>{b.arrival_city}</span>
+                          </div>
+                        </td>
                         <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
                         <td><StatusBadge status={b.status}/></td>
                       </tr>
@@ -368,26 +681,41 @@ export default function AgencyDashboard() {
           </div>}
 
           {tab==='trips' && <div style={{ display:'grid', gap:10 }}>
-            {trips.length===0
+            {/* Filtre ville pour propriétaire */}
+            {isOwner && <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />}
+
+            {/* Bandeau informatif pour les gestionnaires */}
+            {!isOwner && userCity && (
+              <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+                <span style={{ fontSize:16 }}>📍</span>
+                <span style={{ fontSize:13 }}>Vous gérez les départs depuis <strong>{userCity}</strong> — seuls les voyages partant de votre ville sont affichés.</span>
+              </div>
+            )}
+
+            {visibleTrips.length===0
               ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
-                  <h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:12 }}>Aucun voyage</h3>
+                  <h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:12 }}>
+                    Aucun voyage{userCity ? ` depuis ${userCity}` : ''}
+                  </h3>
                   <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
                     <button className="btn btn-ghost" onClick={() => setBulkModal(true)}>📅 Générer en masse</button>
                     <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Nouveau voyage</button>
                   </div>
                 </div>
-              : trips.map((t,i) => (
+              : visibleTrips.map((t,i) => (
                 <div key={t.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'12px 18px' }}>
                   <div className="trip-card-row">
                     <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                      <div style={{ textAlign:'center', minWidth:58 }}>
-                        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15 }}>{t.departure_city}</div>
-                        <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)' }}>{t.departure_time}</div>
+                      {/* Ville départ */}
+                      <div style={{ textAlign:'center', minWidth:70 }}>
+                        <CityBadge city={t.departure_city} />
+                        <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)', marginTop:4 }}>{t.departure_time}</div>
                       </div>
                       <div style={{ color:'var(--muted)', fontSize:18 }}>→</div>
-                      <div style={{ textAlign:'center', minWidth:58 }}>
-                        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15 }}>{t.arrival_city}</div>
-                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
+                      {/* Ville arrivée */}
+                      <div style={{ textAlign:'center', minWidth:70 }}>
+                        <CityBadge city={t.arrival_city} />
+                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
                       </div>
                       {t.bus_name && <span className="badge b-b" style={{ fontSize:11 }}>🚌 {t.bus_name}</span>}
                       <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:'var(--gold)' }}>{Number(t.price).toLocaleString('fr-FR')} <span style={{ fontSize:11, fontWeight:500 }}>FC</span></div>
@@ -395,6 +723,15 @@ export default function AgencyDashboard() {
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                       <div style={{ textAlign:'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{t.available_seats}/{t.total_seats}</div><div style={{ fontSize:11, color:'var(--muted)' }}>places</div></div>
                       <span className={`badge ${t.available_seats>0?'b-g':'b-r'}`}>{t.available_seats>0?'✓ Actif':'⛔ Complet'}</span>
+                      {/* Bouton manifeste rapide */}
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)' }}
+                        title="Voir le manifeste de ce voyage"
+                        onClick={() => { setManifestTripId(String(t.id)); goTab('manifest'); }}
+                      >
+                        📋
+                      </button>
                       <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditTrip({...t})}>✏️</button>
                       <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteTrip(t.id)}>🗑️</button>
                     </div>
@@ -404,15 +741,28 @@ export default function AgencyDashboard() {
           </div>}
 
           {tab==='bookings' && <div className="glass" style={{ overflow:'hidden' }}>
-            {bookings.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>📭 Aucune réservation</div>
+            {/* Filtre ville pour propriétaire */}
+            {isOwner && (
+              <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
+                <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />
+              </div>
+            )}
+            {visibleBookings.length===0
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>📭 Aucune réservation{userCity ? ` depuis ${userCity}` : ''}</div>
               : <div style={{ overflowX:'auto' }}><table className="data-table">
                   <thead><tr><th>Référence</th><th>Passager</th><th>Trajet</th><th>Bus</th><th>Total</th><th>Commission</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead>
-                  <tbody>{bookings.map(b => (
+                  <tbody>{visibleBookings.map(b => (
                     <tr key={b.id}>
                       <td><code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
                       <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
-                      <td><div>{b.departure_city} → {b.arrival_city}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')} · {b.departure_time}</div></td>
+                      <td>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                          <CityBadge city={b.departure_city} />
+                          <span style={{ color:'var(--muted)', fontSize:12 }}>→</span>
+                          <span style={{ fontSize:12, fontWeight:600 }}>{b.arrival_city}</span>
+                        </div>
+                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')} · {b.departure_time}</div>
+                      </td>
                       <td>{b.bus_name?<span className="badge b-b" style={{ fontSize:11 }}>{b.bus_name}</span>:<span style={{ color:'var(--muted)' }}>—</span>}</td>
                       <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
                       <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount>0?`-${Number(b.commission_amount).toLocaleString('fr-FR')} FC`:'—'}</td>
@@ -440,6 +790,29 @@ export default function AgencyDashboard() {
                 <Inp label="Adresse"><input className="input-field" placeholder="Avenue du Commerce, Kinshasa" value={settings.address||''} onChange={e=>setSettings({...settings,address:e.target.value})} /></Inp>
               </div>
             </div>
+
+            {/* Ville principale du gestionnaire (si pas définie dans le JWT) */}
+            {!user.city && (
+              <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
+                <div className="section-title">📍 Ville principale de départ</div>
+                <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>
+                  Définit les voyages que vous gérez. Vous ne verrez que les départs depuis cette ville.
+                  Laissez vide pour voir toutes les villes (propriétaire).
+                </p>
+                <Inp label="Ville de départ">
+                  <select className="input-field" value={settings.home_city||''} onChange={e=>setSettings({...settings,home_city:e.target.value})}>
+                    <option value="">— Toutes les villes (propriétaire) —</option>
+                    {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon||'📍'} {c}</option>)}
+                  </select>
+                </Inp>
+                {settings.home_city && (
+                  <div style={{ marginTop:8, padding:'8px 12px', background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, fontSize:12, color:'var(--green-l)' }}>
+                    ✓ Vous gérerez uniquement les voyages partant de <strong>{settings.home_city}</strong>.
+                  </div>
+                )}
+              </div>
+            )}
+
             <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:12 }}>
               <div className="section-title">💸 Politique d'annulation</div>
               <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>Pourcentage retenu quand un client annule.</p>
@@ -469,6 +842,97 @@ export default function AgencyDashboard() {
               {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : '💾 Sauvegarder'}
             </button>
           </div>}
+
+          {tab==='users' && isOwner && (
+            <div>
+              {/* Bandeau expliquant le système */}
+              <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
+                <div style={{ display:'flex', alignItems:'flex-start', gap:14 }}>
+                  <div style={{ fontSize:32, flexShrink:0 }}>👥</div>
+                  <div>
+                    <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, marginBottom:6 }}>Gestion des accès par ville</div>
+                    <p style={{ fontSize:13, color:'var(--muted)', lineHeight:1.7, margin:0 }}>
+                      Créez un compte par ville pour chaque chef d'agence.
+                      Chaque gestionnaire se connecte avec ses propres identifiants et ne voit que les voyages partant de <strong>sa ville</strong>.
+                      Un gestionnaire sans ville assignée voit tout (rôle Propriétaire).
+                    </p>
+                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:12 }}>
+                      {CITIES.map(c => {
+                        const meta = CITY_META[c];
+                        const hasManager = agencyUsers.some(u => u.city === c && u.is_active);
+                        return (
+                          <div key={c} style={{ display:'flex', alignItems:'center', gap:6, background: hasManager ? meta.bg : 'var(--card)', border:`1px solid ${hasManager ? meta.color+'40' : 'var(--border)'}`, borderRadius:8, padding:'5px 10px' }}>
+                            <span>{meta.icon}</span>
+                            <span style={{ fontSize:12, fontWeight:700, color: hasManager ? meta.color : 'var(--muted)' }}>{c}</span>
+                            <span style={{ fontSize:10, color: hasManager ? meta.color : 'var(--muted)' }}>{hasManager ? '✓' : '—'}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Liste des gestionnaires */}
+              {usersLoading
+                ? <div style={{ textAlign:'center', padding:40 }}><div className="spinner" style={{ width:32,height:32,margin:'0 auto',borderWidth:2.5 }}/></div>
+                : agencyUsers.length === 0
+                  ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
+                      <div style={{ fontSize:44, marginBottom:12 }}>👤</div>
+                      <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:700, marginBottom:8 }}>Aucun gestionnaire créé</div>
+                      <p style={{ fontSize:13, marginBottom:16 }}>Créez un compte pour chaque chef d'agence de ville.</p>
+                      <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Créer le premier gestionnaire</button>
+                    </div>
+                  : <div style={{ display:'grid', gap:10 }}>
+                      {agencyUsers.map((u, i) => {
+                        const meta = u.city ? (CITY_META[u.city] || { color:'var(--muted)', bg:'var(--card)', icon:'📍' }) : { color:'var(--gold)', bg:'rgba(245,166,35,0.1)', icon:'👑' };
+                        return (
+                          <div key={u.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'14px 18px', borderLeft:`3px solid ${u.is_active ? meta.color : 'var(--border)'}`, opacity: u.is_active ? 1 : 0.55 }}>
+                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
+                                {/* Avatar */}
+                                <div style={{ width:42, height:42, borderRadius:10, background:meta.bg, border:`1px solid ${meta.color}30`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>
+                                  {meta.icon}
+                                </div>
+                                <div>
+                                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                                    <span style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>{u.full_name || u.username}</span>
+                                    {u.full_name && <code style={{ fontSize:11, color:'var(--muted)', background:'var(--card)', padding:'1px 6px', borderRadius:4 }}>{u.username}</code>}
+                                    <span style={{ fontSize:11, background: u.role==='owner' ? 'rgba(245,166,35,0.12)' : 'var(--green-bg)', color: u.role==='owner' ? 'var(--gold)' : 'var(--green-l)', border:`1px solid ${u.role==='owner' ? 'rgba(245,166,35,0.25)' : 'rgba(61,170,106,0.25)'}`, borderRadius:6, padding:'1px 7px', fontWeight:700 }}>
+                                      {u.role === 'owner' ? '👑 Propriétaire' : '🔧 Gestionnaire'}
+                                    </span>
+                                  </div>
+                                  <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:5, flexWrap:'wrap' }}>
+                                    {u.city
+                                      ? <><span style={{ fontSize:11, color:'var(--muted)' }}>Ville :</span><CityBadge city={u.city} /></>
+                                      : <span style={{ fontSize:11, color:'var(--gold)' }}>Accès toutes villes</span>
+                                    }
+                                    <span className={`badge ${u.is_active ? 'b-g' : 'b-r'}`} style={{ fontSize:10 }}>{u.is_active ? 'Actif' : 'Désactivé'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }}
+                                  onClick={() => setResetPassModal({ id: u.id, username: u.full_name || u.username })}>
+                                  🔑 MDP
+                                </button>
+                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }}
+                                  onClick={() => setEditUser({ ...u })}>
+                                  ✏️ Modifier
+                                </button>
+                                <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 10px' }}
+                                  onClick={() => doDeleteUser(u.id, u.full_name || u.username)}>
+                                  🗑️
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+              }
+            </div>
+          )}
         </>}
       </main>
 
@@ -481,6 +945,8 @@ export default function AgencyDashboard() {
           </button>
         ))}
       </nav>
+
+      {/* ── MODALS ─────────────────────────────────────────────────────────────── */}
 
       {busModal && <Modal title="🚌 Ajouter un bus" onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
@@ -515,9 +981,34 @@ export default function AgencyDashboard() {
             </select>
           </Inp>
           <div className="grid-2">
-            <Inp label="Départ *"><select className="input-field" value={tripForm.departure_city} onChange={e=>setTripForm({...tripForm,departure_city:e.target.value})}><option value="">Ville</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
-            <Inp label="Arrivée *"><select className="input-field" value={tripForm.arrival_city} onChange={e=>setTripForm({...tripForm,arrival_city:e.target.value})}><option value="">Ville</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
+            <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
+              <select
+                className="input-field"
+                value={tripForm.departure_city}
+                onChange={e => setTripForm({...tripForm, departure_city:e.target.value, arrival_city:''})}
+                disabled={!isOwner}
+                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+              >
+                <option value="">Ville</option>
+                {CITIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+            <Inp label="Arrivée *">
+              <select
+                className="input-field"
+                value={tripForm.arrival_city}
+                onChange={e=>setTripForm({...tripForm,arrival_city:e.target.value})}
+              >
+                <option value="">Ville</option>
+                {arrivalCities(tripForm.departure_city).map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
           </div>
+          {!isOwner && (
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
+              📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+            </div>
+          )}
           <div className="grid-2">
             <Inp label="Date *"><input className="input-field" type="date" min={new Date().toISOString().split('T')[0]} value={tripForm.departure_date} onChange={e=>setTripForm({...tripForm,departure_date:e.target.value})} /></Inp>
             <Inp label="Heure départ *"><input className="input-field" type="time" value={tripForm.departure_time} onChange={e=>setTripForm({...tripForm,departure_time:e.target.value})} /></Inp>
@@ -530,8 +1021,22 @@ export default function AgencyDashboard() {
       {editTrip && <Modal title="✏️ Modifier le voyage" subtitle={`${editTrip.departure_city} → ${editTrip.arrival_city}`} onClose={() => setEditTrip(null)} onConfirm={doSaveTrip} confirmLabel="💾 Sauvegarder" maxWidth={500}>
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <div className="grid-2">
-            <Inp label="Départ"><select className="input-field" value={editTrip.departure_city} onChange={e=>setEditTrip({...editTrip,departure_city:e.target.value})}>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
-            <Inp label="Arrivée"><select className="input-field" value={editTrip.arrival_city} onChange={e=>setEditTrip({...editTrip,arrival_city:e.target.value})}>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
+            <Inp label="Départ">
+              <select
+                className="input-field"
+                value={editTrip.departure_city}
+                onChange={e=>setEditTrip({...editTrip,departure_city:e.target.value})}
+                disabled={!isOwner}
+                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+              >
+                {CITIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+            <Inp label="Arrivée">
+              <select className="input-field" value={editTrip.arrival_city} onChange={e=>setEditTrip({...editTrip,arrival_city:e.target.value})}>
+                {arrivalCities(editTrip.departure_city).map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
           </div>
           <div className="grid-2">
             <Inp label="Date"><input className="input-field" type="date" value={editTrip.departure_date} onChange={e=>setEditTrip({...editTrip,departure_date:e.target.value})} /></Inp>
@@ -561,9 +1066,34 @@ export default function AgencyDashboard() {
             </div>
             <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:13 }}>
               <div className="grid-2">
-                <Inp label="Départ *"><select className="input-field" value={bulkForm.departure_city} onChange={e=>setBulkForm({...bulkForm,departure_city:e.target.value})}><option value="">Ville</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
-                <Inp label="Arrivée *"><select className="input-field" value={bulkForm.arrival_city} onChange={e=>setBulkForm({...bulkForm,arrival_city:e.target.value})}><option value="">Ville</option>{CITIES.map(c=><option key={c}>{c}</option>)}</select></Inp>
+                <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
+                  <select
+                    className="input-field"
+                    value={bulkForm.departure_city}
+                    onChange={e => setBulkForm({...bulkForm, departure_city:e.target.value, arrival_city:''})}
+                    disabled={!isOwner}
+                    style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+                  >
+                    <option value="">Ville</option>
+                    {CITIES.map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </Inp>
+                <Inp label="Arrivée *">
+                  <select
+                    className="input-field"
+                    value={bulkForm.arrival_city}
+                    onChange={e=>setBulkForm({...bulkForm,arrival_city:e.target.value})}
+                  >
+                    <option value="">Ville</option>
+                    {arrivalCities(bulkForm.departure_city).map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </Inp>
               </div>
+              {!isOwner && (
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:-8, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
+                  📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+                </div>
+              )}
               <Inp label="Bus (optionnel)">
                 <select className="input-field" value={bulkForm.bus_id} onChange={e=>setBulkForm({...bulkForm,bus_id:e.target.value})}>
                   <option value="">Sans bus spécifique</option>
@@ -575,8 +1105,8 @@ export default function AgencyDashboard() {
                 <Inp label="Prix / siège (FC) *"><input className="input-field" type="number" placeholder="45000" value={bulkForm.price} onChange={e=>setBulkForm({...bulkForm,price:e.target.value})} /></Inp>
               </div>
               <div className="grid-2">
-                <Inp label="Du *"><input className="input-field" type="date" min={new Date().toISOString().split('T')[0]} value={bulkForm.date_from} onChange={e=>setBulkForm({...bulkForm,date_from:e.target.value})} /></Inp>
-                <Inp label="Au *"><input className="input-field" type="date" min={bulkForm.date_from||new Date().toISOString().split('T')[0]} value={bulkForm.date_to} onChange={e=>setBulkForm({...bulkForm,date_to:e.target.value})} /></Inp>
+                <Inp label="Du *"><input className="input-field" type="date" value={bulkForm.date_from} onChange={e=>setBulkForm({...bulkForm,date_from:e.target.value})} /></Inp>
+                <Inp label="Au *"><input className="input-field" type="date" min={bulkForm.date_from||''} value={bulkForm.date_to} onChange={e=>setBulkForm({...bulkForm,date_to:e.target.value})} /></Inp>
               </div>
               <div>
                 <div className="input-label" style={{ marginBottom:8 }}>Jours de départ</div>
@@ -616,6 +1146,105 @@ export default function AgencyDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── MODAL Créer gestionnaire ─────────────────────────────────────────────── */}
+      {userModal && (
+        <Modal title="👤 Nouveau gestionnaire" subtitle="Le gestionnaire se connectera avec ces identifiants" onClose={() => setUserModal(false)} onConfirm={doCreateUser} confirmLabel="Créer →" maxWidth={460}>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <div className="grid-2">
+              <Inp label="Identifiant *">
+                <input className="input-field" placeholder="transdavid.boma" value={userForm.username}
+                  onChange={e=>setUserForm({...userForm,username:e.target.value.toLowerCase().replace(/\s/g,'')})} />
+              </Inp>
+              <Inp label="Mot de passe * (min. 6 car.)">
+                <input className="input-field" type="password" placeholder="••••••••" value={userForm.password}
+                  onChange={e=>setUserForm({...userForm,password:e.target.value})} />
+              </Inp>
+            </div>
+            <Inp label="Nom complet (optionnel)">
+              <input className="input-field" placeholder="Jean Mbeki" value={userForm.full_name}
+                onChange={e=>setUserForm({...userForm,full_name:e.target.value})} />
+            </Inp>
+            <div className="grid-2">
+              <Inp label="Ville assignée">
+                <select className="input-field" value={userForm.city} onChange={e=>setUserForm({...userForm,city:e.target.value})}>
+                  <option value="">— Toutes les villes —</option>
+                  {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon} {c}</option>)}
+                </select>
+              </Inp>
+              <Inp label="Rôle">
+                <select className="input-field" value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}>
+                  <option value="manager">🔧 Gestionnaire</option>
+                  <option value="owner">👑 Propriétaire</option>
+                </select>
+              </Inp>
+            </div>
+            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'10px 13px', fontSize:12, lineHeight:1.6 }}>
+              {userForm.city
+                ? <><strong style={{ color:'var(--green-l)' }}>{userForm.city}</strong> → Verra uniquement les voyages et réservations <strong>partant de {userForm.city}</strong>.</>
+                : <>Sans ville → Accès à <strong>toutes les villes</strong> (vue propriétaire).</>
+              }
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── MODAL Modifier gestionnaire ──────────────────────────────────────────── */}
+      {editUser && (
+        <Modal title={`✏️ Modifier — ${editUser.full_name || editUser.username}`} onClose={() => setEditUser(null)} onConfirm={doSaveUser} confirmLabel="💾 Sauvegarder" maxWidth={460}>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <Inp label="Nom complet">
+              <input className="input-field" value={editUser.full_name||''} onChange={e=>setEditUser({...editUser,full_name:e.target.value})} />
+            </Inp>
+            <div className="grid-2">
+              <Inp label="Ville assignée">
+                <select className="input-field" value={editUser.city||''} onChange={e=>setEditUser({...editUser,city:e.target.value})}>
+                  <option value="">— Toutes les villes —</option>
+                  {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon} {c}</option>)}
+                </select>
+              </Inp>
+              <Inp label="Rôle">
+                <select className="input-field" value={editUser.role} onChange={e=>setEditUser({...editUser,role:e.target.value})}>
+                  <option value="manager">🔧 Gestionnaire</option>
+                  <option value="owner">👑 Propriétaire</option>
+                </select>
+              </Inp>
+            </div>
+            <div>
+              <div className="input-label" style={{ marginBottom:8 }}>Statut du compte</div>
+              <div style={{ display:'flex', gap:8 }}>
+                {[['✓ Actif', 1], ['⛔ Désactivé', 0]].map(([l, v]) => (
+                  <button key={v} className={`btn ${editUser.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }}
+                    onClick={() => setEditUser({...editUser,is_active:v})}>
+                    {l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'10px 13px', fontSize:12 }}>
+              <code style={{ color:'var(--green-l)' }}>{editUser.username}</code> →&nbsp;
+              {editUser.city ? <>voyages depuis <strong>{editUser.city}</strong> uniquement</> : <strong>toutes les villes</strong>}
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── MODAL Réinitialiser mot de passe ─────────────────────────────────────── */}
+      {resetPassModal && (
+        <Modal title="🔑 Nouveau mot de passe" subtitle={`Compte : ${resetPassModal.username}`}
+          onClose={() => { setResetPassModal(null); setNewPass(''); }}
+          onConfirm={doResetPassword} confirmLabel="Mettre à jour →" maxWidth={400}>
+          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+            <Inp label="Nouveau mot de passe (min. 6 caractères)">
+              <input className="input-field" type="password" placeholder="••••••••" value={newPass}
+                onChange={e=>setNewPass(e.target.value)} autoFocus />
+            </Inp>
+            <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 12px', background:'var(--card)', borderRadius:8 }}>
+              ⚠️ Le gestionnaire devra utiliser ce nouveau mot de passe dès sa prochaine connexion.
+            </div>
+          </div>
+        </Modal>
       )}
     </div>
   );

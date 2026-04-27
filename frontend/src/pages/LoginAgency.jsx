@@ -1,6 +1,10 @@
 import { useState } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import {
+  Bus, CreditCard, Settings, LockKeyhole,
+  User, Lock, Eye, EyeOff, AlertTriangle,
+} from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 
@@ -24,6 +28,12 @@ export default function LoginAgency() {
     finally { setLoading(false); }
   };
 
+  const FEATURES = [
+    { Icon: Bus,        title: 'Gestion de flotte',     desc: "Nommez vos bus, suivez leur disponibilité" },
+    { Icon: CreditCard, title: 'Paiements Mobile Money', desc: 'M-Pesa, Orange, Airtel intégrés' },
+    { Icon: Settings,   title: 'Paramètres flexibles',  desc: "Taux d'annulation personnalisable" },
+  ];
+
   return (
     <>
       <style>{`
@@ -34,7 +44,6 @@ export default function LoginAgency() {
           position: relative;
           overflow: hidden;
         }
-        /* GAUCHE */
         .login-left {
           flex: 1;
           display: flex;
@@ -45,7 +54,6 @@ export default function LoginAgency() {
           position: relative;
           z-index: 1;
         }
-        /* DROITE */
         .login-right {
           width: 480px;
           flex-shrink: 0;
@@ -59,12 +67,8 @@ export default function LoginAgency() {
           border-left: 1px solid rgba(76,175,118,0.08);
           backdrop-filter: blur(30px);
         }
-        /* MOBILE */
         @media (max-width: 768px) {
-          .login-wrapper {
-            flex-direction: column;
-          }
-          /* Partie gauche réduite au logo + titre seulement */
+          .login-wrapper { flex-direction: column; }
           .login-left {
             padding: 32px 20px 20px;
             align-items: center;
@@ -75,7 +79,6 @@ export default function LoginAgency() {
           .login-left-logo     { margin-bottom: 20px; }
           .login-left-title h1 { font-size: 26px !important; }
           .login-left-title p  { display: none; }
-          /* Partie droite prend toute la largeur */
           .login-right {
             width: 100%;
             border-left: none;
@@ -111,15 +114,13 @@ export default function LoginAgency() {
             </p>
           </div>
 
-          {/* Features — masquées sur mobile */}
+          {/* Features */}
           <div className="login-left-features fade-in fade-in-2" style={{ display:'flex', flexDirection:'column', gap:16 }}>
-            {[
-              ['🚌','Gestion de flotte','Nommez vos bus, suivez leur disponibilité'],
-              ['💳','Paiements Mobile Money','M-Pesa, Orange, Airtel intégrés'],
-              ['⚙️','Paramètres flexibles','Taux d\'annulation personnalisable'],
-            ].map(([icon,title,desc]) => (
+            {FEATURES.map(({ Icon, title, desc }) => (
               <div key={title} style={{ display:'flex', gap:14, alignItems:'flex-start' }}>
-                <div style={{ width:44, height:44, borderRadius:12, background:'rgba(76,175,118,0.08)', border:'1px solid rgba(76,175,118,0.15)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>{icon}</div>
+                <div style={{ width:44, height:44, borderRadius:12, background:'rgba(76,175,118,0.08)', border:'1px solid rgba(76,175,118,0.15)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                  <Icon size={20} color="var(--green-l)" />
+                </div>
                 <div>
                   <div style={{ fontWeight:600, fontSize:15, marginBottom:2 }}>{title}</div>
                   <div style={{ fontSize:13, color:'var(--muted)' }}>{desc}</div>
@@ -128,7 +129,7 @@ export default function LoginAgency() {
             ))}
           </div>
 
-          {/* Citation — masquée sur mobile */}
+          {/* Citation */}
           <div className="login-left-quote" style={{ marginTop:64, fontSize:14, color:'var(--muted)', fontStyle:'italic' }}>
             "Nzela — Ta route commence ici."
           </div>
@@ -138,37 +139,56 @@ export default function LoginAgency() {
         <div className="login-right">
           <div className="fade-in">
             <div style={{ display:'inline-flex', alignItems:'center', gap:8, background:'rgba(76,175,118,0.1)', border:'1px solid rgba(76,175,118,0.2)', borderRadius:99, padding:'5px 14px', fontSize:12, color:'var(--green-l)', fontWeight:600, marginBottom:24, letterSpacing:'0.06em' }}>
-              🔐 ESPACE AGENCE
+              <LockKeyhole size={12} /> ESPACE AGENCE
             </div>
-            <h2 style={{ fontFamily:'var(--font)', fontSize:32, fontWeight:800, marginBottom:8 }}>Bon retour 👋</h2>
+
+            <h2 style={{ fontFamily:'var(--font)', fontSize:32, fontWeight:800, marginBottom:8 }}>Bon retour</h2>
             <p style={{ color:'var(--muted)', fontSize:15, marginBottom:32 }}>Connectez-vous à votre espace de gestion</p>
 
             <form onSubmit={handleLogin} style={{ display:'flex', flexDirection:'column', gap:18 }}>
+              {/* Identifiant */}
               <div>
                 <label className="input-label" style={{ marginBottom:8, display:'block' }}>Identifiant</label>
                 <div style={{ position:'relative' }}>
-                  <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', fontSize:16, pointerEvents:'none', opacity:0.5 }}>👤</span>
-                  <input className="input-field" style={{ paddingLeft:42 }} placeholder="nom_utilisateur" value={form.username} onChange={e=>setForm({...form,username:e.target.value})} />
+                  <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', display:'flex', alignItems:'center', pointerEvents:'none', opacity:0.45 }}>
+                    <User size={16} />
+                  </span>
+                  <input className="input-field" style={{ paddingLeft:42 }} placeholder="nom_utilisateur" value={form.username} onChange={e => setForm({...form, username:e.target.value})} />
                 </div>
               </div>
+
+              {/* Mot de passe */}
               <div>
                 <label className="input-label" style={{ marginBottom:8, display:'block' }}>Mot de passe</label>
                 <div style={{ position:'relative' }}>
-                  <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', fontSize:16, pointerEvents:'none', opacity:0.5 }}>🔒</span>
-                  <input className="input-field" style={{ paddingLeft:42, paddingRight:48 }} type={showPass?'text':'password'} placeholder="••••••••" value={form.password} onChange={e=>setForm({...form,password:e.target.value})} />
-                  <button type="button" onClick={()=>setShowPass(!showPass)} style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', fontSize:16, opacity:0.5 }}>
-                    {showPass?'🙈':'👁️'}
+                  <span style={{ position:'absolute', left:14, top:'50%', transform:'translateY(-50%)', display:'flex', alignItems:'center', pointerEvents:'none', opacity:0.45 }}>
+                    <Lock size={16} />
+                  </span>
+                  <input
+                    className="input-field"
+                    style={{ paddingLeft:42, paddingRight:48 }}
+                    type={showPass ? 'text' : 'password'}
+                    placeholder="••••••••"
+                    value={form.password}
+                    onChange={e => setForm({...form, password:e.target.value})}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPass(!showPass)}
+                    style={{ position:'absolute', right:12, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', cursor:'pointer', display:'flex', alignItems:'center', opacity:0.45, padding:4 }}>
+                    {showPass ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
                 </div>
               </div>
 
+              {/* Erreur */}
               {error && (
                 <div style={{ background:'rgba(255,74,74,0.1)', border:'1px solid rgba(255,74,74,0.25)', borderRadius:10, padding:'10px 14px', fontSize:13, color:'var(--err)', display:'flex', gap:8, alignItems:'center' }}>
-                  ⚠️ {error}
+                  <AlertTriangle size={14} /> {error}
                 </div>
               )}
 
-              <button className="btn btn-primary" type="submit" disabled={loading} style={{ width:'100%', justifyContent:'center', height:52, fontSize:16, marginTop:4 }}>
+              <button className="btn btn-primary" type="submit" disabled={loading} style={{ width:'100%', justifyContent:'center', height:52, fontSize:16, marginTop:4, display:'flex', alignItems:'center', gap:8 }}>
                 {loading ? <><div className="spinner"/>Connexion…</> : <>Se connecter →</>}
               </button>
             </form>

@@ -1,429 +1,987 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import ManifestTab from './ManifestTab';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
+const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
+const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+
+// Drapeaux / couleurs par ville pour les badges
+const CITY_META = {
+  Kinshasa: { color:'#3DAA6A', bg:'rgba(61,170,106,0.12)', icon:'🏙️' },
+  Boma:     { color:'#4A90D9', bg:'rgba(74,144,217,0.12)', icon:'⚓' },
+  Matadi:   { color:'#E8A838', bg:'rgba(232,168,56,0.12)',  icon:'⛰️' },
+  Moanda:   { color:'#9B59B6', bg:'rgba(155,89,182,0.12)', icon:'🌊' },
+};
 
 function getAuth() {
-  return { headers: { Authorization: `Bearer ${localStorage.getItem('token')}` } };
+  return {
+    user: JSON.parse(localStorage.getItem('user') || '{}'),
+    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
+  };
+}
+
+function Toast({ msg, type, onClose }) {
+  useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, []);
+  return (
+    <div className={`toast ${type==='success'?'t-ok':type==='error'?'t-err':'t-inf'}`} style={{ zIndex:300 }}>
+      {type==='success'?'✓':type==='error'?'✕':'·'} {msg}
+      <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'inherit', cursor:'pointer', fontSize:15 }}>×</button>
+    </div>
+  );
+}
+
+function StatusBadge({ status }) {
+  const m = { pending:['En attente','b-o'], confirmed:['Confirmé','b-g'], cancelled:['Annulé','b-r'] };
+  const [l,c] = m[status] || [status,'b-b'];
+  return <span className={`badge ${c}`}>{l}</span>;
+}
+
+function CityBadge({ city }) {
+  const meta = CITY_META[city] || { color:'var(--muted)', bg:'var(--card)', icon:'📍' };
+  return (
+    <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:meta.bg, color:meta.color, border:`1px solid ${meta.color}30`, borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700 }}>
+      {meta.icon} {city}
+    </span>
+  );
+}
+
+function AgencyAvatar({ name, logoUrl, size=32, radius=8 }) {
+  const initials = name ? name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
+  if (logoUrl) return <img src={logoUrl} alt={name} style={{ width:size, height:size, borderRadius:radius, objectFit:'cover', border:'1px solid rgba(61,170,106,0.2)' }} onError={e => { e.target.style.display='none'; }} />;
+  return <div style={{ width:size, height:size, borderRadius:radius, background:'linear-gradient(135deg,var(--green-d),var(--green-l))', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'var(--font)', fontWeight:800, fontSize:size*0.36 }}>{initials}</div>;
+}
+
+function SidebarLogo({ agencyName, logoUrl }) {
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+      <AgencyAvatar name={agencyName} logoUrl={logoUrl} size={30} radius={8} />
+      <div>
+        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{agencyName}</div>
+        <div style={{ fontSize:10, color:'var(--muted)' }}>Espace Agence · nzela</div>
+      </div>
+    </div>
+  );
 }
 
 function Inp({ label, children }) {
   return <div className="input-group"><label className="input-label">{label}</label>{children}</div>;
 }
 
-// ── Génère et télécharge le PDF ────────────────────────────────
-async function exportPDF(trip, bookings, agencyName) {
-  const { default: jsPDF } = await import('jspdf');
-  const { default: autoTable } = await import('jspdf-autotable');
-  const doc = new jsPDF();
-
-  // Entête
-  doc.setFillColor(42, 125, 79);
-  doc.rect(0, 0, 210, 28, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFontSize(18); doc.setFont('helvetica', 'bold');
-  doc.text('NZELA — Manifeste de bord', 14, 12);
-  doc.setFontSize(10); doc.setFont('helvetica', 'normal');
-  doc.text(`${agencyName}`, 14, 20);
-
-  // Infos voyage
-  doc.setTextColor(30, 30, 30);
-  doc.setFontSize(11); doc.setFont('helvetica', 'bold');
-  doc.text('Informations du voyage', 14, 36);
-  doc.setFont('helvetica', 'normal'); doc.setFontSize(10);
-  const info = [
-    [`Trajet`, `${trip.departure_city} → ${trip.arrival_city}`],
-    [`Date`, new Date(trip.departure_date).toLocaleDateString('fr-FR', {weekday:'long',day:'numeric',month:'long',year:'numeric'})],
-    [`Heure départ`, trip.departure_time],
-    [`Bus`, trip.bus_name || '—'],
-    [`Places totales`, `${trip.total_seats}`],
-    [`Réservées`, `${bookings.length}`],
-    [`Présents`, `${bookings.filter(b=>b.boarding_status==='present').length}`],
-    [`Absents`, `${bookings.filter(b=>b.boarding_status==='absent').length}`],
-  ];
-  let y = 42;
-  info.forEach(([k, v]) => {
-    doc.setFont('helvetica', 'bold'); doc.text(k + ' :', 14, y);
-    doc.setFont('helvetica', 'normal'); doc.text(v, 60, y);
-    y += 6;
-  });
-
-  // Tableau passagers
-  autoTable(doc, {
-    startY: y + 6,
-    head: [['#', 'Référence', 'Passager', 'Téléphone', 'Places', 'Montant (FC)', 'Statut']],
-    body: bookings.map((b, i) => [
-      i + 1,
-      b.reference,
-      b.passenger_name,
-      b.passenger_phone,
-      b.passengers,
-      Number(b.total_price).toLocaleString('fr-FR'),
-      b.boarding_status === 'present' ? '✓ Présent' : b.boarding_status === 'absent' ? '✗ Absent' : '⏳ En attente',
-    ]),
-    styles: { fontSize: 9, cellPadding: 3 },
-    headStyles: { fillColor: [42, 125, 79], textColor: 255, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [245, 250, 247] },
-    columnStyles: {
-      0: { cellWidth: 10 },
-      1: { cellWidth: 28 },
-      6: { cellWidth: 24 },
-    },
-  });
-
-  // Pied de page
-  const pageCount = doc.internal.getNumberOfPages();
-  for (let i = 1; i <= pageCount; i++) {
-    doc.setPage(i);
-    doc.setFontSize(8); doc.setTextColor(150);
-    doc.text(`Nzela RDC · Généré le ${new Date().toLocaleDateString('fr-FR')} · Page ${i}/${pageCount}`, 14, 290);
-  }
-
-  doc.save(`manifeste_${trip.departure_city}_${trip.arrival_city}_${trip.departure_date}.pdf`);
-}
-
-// ── Génère et télécharge Excel ─────────────────────────────────
-async function exportExcel(trip, bookings, agencyName) {
-  const XLSX = await import('xlsx');
-  const rows = [
-    [`NZELA — Manifeste de bord`],
-    [`Agence : ${agencyName}`],
-    [],
-    [`Trajet : ${trip.departure_city} → ${trip.arrival_city}`],
-    [`Date : ${trip.departure_date}`],
-    [`Heure : ${trip.departure_time}`],
-    [`Bus : ${trip.bus_name || '—'}`],
-    [`Total réservés : ${bookings.length}`],
-    [`Présents : ${bookings.filter(b=>b.boarding_status==='present').length}`],
-    [`Absents : ${bookings.filter(b=>b.boarding_status==='absent').length}`],
-    [],
-    ['#', 'Référence', 'Passager', 'Téléphone', 'Places', 'Montant (FC)', 'Paiement', 'Statut embarquement'],
-    ...bookings.map((b, i) => [
-      i + 1,
-      b.reference,
-      b.passenger_name,
-      b.passenger_phone,
-      b.passengers,
-      b.total_price,
-      b.payment_method === 'cash' ? 'Espèces' : 'Mobile Money',
-      b.boarding_status === 'present' ? 'Présent' : b.boarding_status === 'absent' ? 'Absent' : 'En attente',
-    ]),
-  ];
-  const ws = XLSX.utils.aoa_to_sheet(rows);
-  ws['!cols'] = [8,20,24,18,8,14,14,18].map(w => ({ wch: w }));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, ws, 'Manifeste');
-  XLSX.writeFile(wb, `manifeste_${trip.departure_city}_${trip.arrival_city}_${trip.departure_date}.xlsx`);
-}
-
-export default function ManifestTab({ agencyName, showToast }) {
-  const { headers } = getAuth();
-  const [trips, setTrips]         = useState([]);
-  const [selectedTrip, setSelectedTrip] = useState(null);
-  const [manifest, setManifest]   = useState(null);
-  const [loading, setLoading]     = useState(false);
-  const [walkinModal, setWalkinModal] = useState(false);
-  const [walkinForm, setWalkinForm]   = useState({ passenger_name:'', passenger_phone:'', passengers:1, payment_method:'cash' });
-  const [savingWalkin, setSavingWalkin] = useState(false);
-  const [exporting, setExporting] = useState('');
-
-  const today = new Date().toLocaleDateString('fr-FR', { weekday:'long', day:'numeric', month:'long', year:'numeric' });
-
-  // Charge les voyages du jour
-  useEffect(() => {
-    axios.get(`${API}/agency/manifest/trips`, { headers })
-      .then(r => setTrips(Array.isArray(r.data) ? r.data : []))
-      .catch(() => showToast('Erreur chargement voyages', 'error'));
-  }, []);
-
-  // Charge le manifeste d'un voyage
-  const loadManifest = async (trip) => {
-    setSelectedTrip(trip);
-    setLoading(true);
-    try {
-      const r = await axios.get(`${API}/agency/manifest/${trip.id}`, { headers });
-      setManifest(r.data);
-    } catch { showToast('Erreur chargement manifeste', 'error'); }
-    finally { setLoading(false); }
-  };
-
-  // Change le statut d'embarquement
-  const updateBoarding = async (bookingId, status) => {
-    try {
-      await axios.patch(`${API}/agency/bookings/${bookingId}/board`, { boarding_status: status }, { headers });
-      setManifest(m => ({
-        ...m,
-        bookings: m.bookings.map(b => b.id === bookingId ? { ...b, boarding_status: status } : b),
-      }));
-    } catch { showToast('Erreur mise à jour', 'error'); }
-  };
-
-  // Enregistrement walk-in
-  const doWalkin = async () => {
-    if (!walkinForm.passenger_name || !walkinForm.passenger_phone)
-      return showToast('Nom et téléphone requis', 'error');
-    setSavingWalkin(true);
-    try {
-      await axios.post(`${API}/agency/bookings/walkin`, {
-        trip_id: selectedTrip.id,
-        ...walkinForm,
-      }, { headers });
-      showToast('Passager enregistré ✓', 'success');
-      setWalkinModal(false);
-      setWalkinForm({ passenger_name:'', passenger_phone:'', passengers:1, payment_method:'cash' });
-      loadManifest(selectedTrip);
-    } catch(e) { showToast(e.response?.data?.error || 'Erreur', 'error'); }
-    finally { setSavingWalkin(false); }
-  };
-
-  const statColor = s => s === 'present' ? 'var(--ok)' : s === 'absent' ? 'var(--err)' : 'var(--gold)';
-  const statLabel = s => s === 'present' ? '✓ Présent' : s === 'absent' ? '✗ Absent' : '⏳ Attente';
-  const statBg    = s => s === 'present' ? 'rgba(82,200,130,0.1)' : s === 'absent' ? 'rgba(240,80,80,0.1)' : 'rgba(245,166,35,0.1)';
-
-  // ── VUE LISTE DES VOYAGES ──────────────────────────────────
-  if (!selectedTrip) return (
-    <div>
-      <div style={{ marginBottom:20 }}>
-        <div style={{ fontFamily:'var(--font)', fontSize:14, fontWeight:700, color:'var(--muted)', marginBottom:4 }}>
-          📅 {today}
+function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder', maxWidth=480, children }) {
+  return (
+    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth }}>
+        <div className="modal-header">
+          <div><h2>{title}</h2>{subtitle && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{subtitle}</div>}</div>
+          <button className="modal-close" onClick={onClose}>×</button>
         </div>
-        <p style={{ fontSize:13, color:'var(--muted)' }}>
-          Sélectionnez un voyage pour ouvrir son manifeste de bord.
-        </p>
+        <div className="modal-body">{children}</div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:'7px 14px' }} onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
+        </div>
       </div>
-
-      {trips.length === 0
-        ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
-            <div style={{ fontSize:44, marginBottom:12 }}>📋</div>
-            <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:700, marginBottom:8 }}>Aucun voyage aujourd'hui</div>
-            <div style={{ fontSize:13 }}>Les voyages programmés pour aujourd'hui apparaîtront ici.</div>
-          </div>
-        : <div style={{ display:'grid', gap:10 }}>
-            {trips.map(t => (
-              <div key={t.id} className="glass" style={{ padding:'16px 20px', cursor:'pointer', transition:'var(--ease)' }}
-                onClick={() => loadManifest(t)}
-                onMouseEnter={e => e.currentTarget.style.borderColor = 'rgba(61,170,106,0.3)'}
-                onMouseLeave={e => e.currentTarget.style.borderColor = 'var(--border)'}>
-                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
-                  <div style={{ display:'flex', alignItems:'center', gap:16 }}>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:18 }}>{t.departure_city}</div>
-                      <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)' }}>{t.departure_time}</div>
-                    </div>
-                    <div style={{ color:'var(--muted)', fontSize:20 }}>→</div>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:18 }}>{t.arrival_city}</div>
-                      {t.bus_name && <div style={{ fontSize:11, color:'var(--muted)' }}>🚌 {t.bus_name}</div>}
-                    </div>
-                  </div>
-                  <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:18, color:'var(--gold)' }}>{t.booked_count || 0}</div>
-                      <div style={{ fontSize:11, color:'var(--muted)' }}>réservés</div>
-                    </div>
-                    <div style={{ textAlign:'center' }}>
-                      <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:18 }}>{t.available_seats}</div>
-                      <div style={{ fontSize:11, color:'var(--muted)' }}>disponibles</div>
-                    </div>
-                    <button className="btn btn-primary" style={{ fontSize:12, padding:'7px 14px' }}>
-                      Ouvrir →
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
-          </div>
-      }
     </div>
   );
+}
 
-  // ── VUE MANIFESTE ──────────────────────────────────────────
-  const bookings = manifest?.bookings || [];
-  const present = bookings.filter(b => b.boarding_status === 'present').length;
-  const absent  = bookings.filter(b => b.boarding_status === 'absent').length;
-  const pending = bookings.filter(b => !b.boarding_status || b.boarding_status === 'pending').length;
+function LogoUploader({ currentLogo, agencyName, onChange }) {
+  const fileRef = useRef(null);
+  const [uploading, setUploading] = useState(false);
+  const handleFile = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { alert('Sélectionnez une image (JPG, PNG, WebP…)'); return; }
+    if (file.size > 500 * 1024) { alert('Image trop lourde — maximum 500 Ko.'); return; }
+    setUploading(true);
+    const reader = new FileReader();
+    reader.onload = (ev) => { onChange(ev.target.result); setUploading(false); };
+    reader.onerror = () => { alert('Erreur de lecture du fichier'); setUploading(false); };
+    reader.readAsDataURL(file);
+  };
+  return (
+    <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
+      <div style={{ position:'relative', flexShrink:0 }}>
+        <AgencyAvatar name={agencyName} logoUrl={currentLogo} size={80} radius={16} />
+        <button onClick={() => fileRef.current?.click()} style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }} title="Changer le logo">📷</button>
+      </div>
+      <div style={{ flex:1 }}>
+        <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
+        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>{currentLogo ? '✓ Logo personnalisé configuré' : 'Aucun logo — initiales affichées par défaut'}</div>
+        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
+        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 12px' }} onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? '⏳ Chargement…' : '📁 Choisir un fichier'}</button>
+          {currentLogo && <button className="btn btn-danger" style={{ fontSize:12, padding:'6px 10px' }} onClick={() => onChange('')}>🗑️ Supprimer</button>}
+        </div>
+        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>JPG, PNG, WebP · Max 500 Ko</div>
+      </div>
+    </div>
+  );
+}
+
+function buildDates(dateFrom, dateTo, activeDays) {
+  if (!dateFrom || !dateTo || activeDays.length === 0) return [];
+  const dates = [];
+  const cur = new Date(dateFrom + 'T12:00:00');
+  const end = new Date(dateTo + 'T12:00:00');
+  while (cur <= end) {
+    if (activeDays.includes(cur.getDay())) dates.push(cur.toISOString().split('T')[0]);
+    cur.setDate(cur.getDate() + 1);
+  }
+  return dates;
+}
+
+// ── Composant : Sélecteur de voyage pour le manifeste ─────────────────────────
+function ManifestTripSelector({ trips, selectedId, onChange, userCity, isOwner }) {
+  const relevantTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
+  // Trier : les plus récents en premier
+  const sorted = [...relevantTrips].sort((a,b) => {
+    const da = new Date(`${a.departure_date}T${a.departure_time}`);
+    const db = new Date(`${b.departure_date}T${b.departure_time}`);
+    return db - da;
+  });
+
+  // Grouper par date
+  const grouped = {};
+  sorted.forEach(t => {
+    const key = t.departure_date;
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(t);
+  });
 
   return (
-    <div>
-      {/* Bouton retour */}
-      <button className="btn btn-ghost" style={{ fontSize:12, marginBottom:16 }}
-        onClick={() => { setSelectedTrip(null); setManifest(null); }}>
-        ← Retour aux voyages
-      </button>
+    <div style={{ marginBottom:16 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>
+        Sélectionner un voyage
+      </div>
+      <select
+        className="input-field"
+        value={selectedId}
+        onChange={e => onChange(e.target.value)}
+        style={{ width:'100%', fontSize:13 }}
+      >
+        <option value="">— Choisir un voyage pour voir son manifeste —</option>
+        {Object.entries(grouped).map(([date, dayTrips]) => (
+          <optgroup key={date} label={new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}>
+            {dayTrips.map(t => (
+              <option key={t.id} value={t.id}>
+                {t.departure_city} → {t.arrival_city} · {t.departure_time} · {t.available_seats}/{t.total_seats} places {t.bus_name ? `· ${t.bus_name}` : ''}
+              </option>
+            ))}
+          </optgroup>
+        ))}
+      </select>
+      {sorted.length === 0 && (
+        <div style={{ fontSize:12, color:'var(--muted)', marginTop:8, padding:'10px', background:'var(--card)', borderRadius:8, textAlign:'center' }}>
+          Aucun voyage créé. Créez des voyages depuis l'onglet Voyages.
+        </div>
+      )}
+    </div>
+  );
+}
 
-      {/* Entête voyage */}
-      <div className="glass p-16" style={{ marginBottom:16 }}>
-        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
-          <div>
-            <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:20 }}>
-              {selectedTrip.departure_city} → {selectedTrip.arrival_city}
+// ── Composant : Stats par ville (vue propriétaire) ─────────────────────────────
+function CityStatsGrid({ trips, bookings }) {
+  const cityData = CITIES.map(city => {
+    const cityTrips    = trips.filter(t => t.departure_city === city);
+    const cityBookings = bookings.filter(b => b.departure_city === city);
+    const confirmed    = cityBookings.filter(b => b.status === 'confirmed').length;
+    const pending      = cityBookings.filter(b => b.status === 'pending').length;
+    const revenue      = cityBookings.filter(b => b.status !== 'cancelled').reduce((s,b) => s + Number(b.total_price||0), 0);
+    const fillRate     = cityTrips.length > 0
+      ? Math.round(cityBookings.filter(b=>b.status!=='cancelled').length / cityTrips.reduce((s,t) => s+(t.total_seats||0), 0) * 100)
+      : 0;
+    return { city, trips: cityTrips.length, bookings: cityBookings.length, confirmed, pending, revenue, fillRate };
+  }).filter(d => d.trips > 0 || d.bookings > 0);
+
+  if (cityData.length === 0) return null;
+
+  return (
+    <div className="glass p-16 fade-in fade-in-4" style={{ marginBottom:14 }}>
+      <div className="section-title" style={{ marginBottom:12 }}>📍 Performance par ville</div>
+      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px,1fr))', gap:10 }}>
+        {cityData.map(d => {
+          const meta = CITY_META[d.city] || { color:'var(--green-l)', bg:'var(--green-bg)', icon:'📍' };
+          return (
+            <div key={d.city} style={{ background:meta.bg, border:`1px solid ${meta.color}25`, borderRadius:12, padding:'14px 16px' }}>
+              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                <span style={{ fontSize:20 }}>{meta.icon}</span>
+                <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:meta.color }}>{d.city}</span>
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
+                {[
+                  ['Voyages',  d.trips,     'var(--text)'],
+                  ['Réservés', d.confirmed, 'var(--ok)'],
+                  ['En attente', d.pending, 'var(--gold)'],
+                  ['Taux remplissage', `${d.fillRate}%`, meta.color],
+                ].map(([l,v,c]) => (
+                  <div key={l} style={{ background:'rgba(0,0,0,0.12)', borderRadius:8, padding:'8px 10px' }}>
+                    <div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div>
+                    <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>{l}</div>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop:10, padding:'7px 10px', background:'rgba(0,0,0,0.12)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>Revenus</span>
+                <span style={{ fontWeight:800, fontSize:13, color:'var(--gold)' }}>{d.revenue.toLocaleString('fr-FR')} FC</span>
+              </div>
             </div>
-            <div style={{ fontSize:13, color:'var(--muted)', marginTop:3 }}>
-              {new Date(selectedTrip.departure_date).toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}
-              &nbsp;·&nbsp;{selectedTrip.departure_time}
-              {selectedTrip.bus_name && <>&nbsp;·&nbsp;🚌 {selectedTrip.bus_name}</>}
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ── Composant : Tabs filtre ville (pour propriétaire) ─────────────────────────
+function CityFilterTabs({ value, onChange, trips, bookings }) {
+  const activeCities = CITIES.filter(c =>
+    trips.some(t => t.departure_city === c) || bookings.some(b => b.departure_city === c)
+  );
+  if (activeCities.length < 2) return null;
+  const tabs = [{ id:'all', label:'Toutes', icon:'🌍' }, ...activeCities.map(c => ({ id:c, label:c, icon: CITY_META[c]?.icon||'📍' }))];
+  return (
+    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
+      {tabs.map(t => {
+        const meta = CITY_META[t.id];
+        const isActive = value === t.id;
+        return (
+          <button
+            key={t.id}
+            onClick={() => onChange(t.id)}
+            style={{
+              padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', transition:'all 0.18s',
+              background: isActive ? (meta?.color || 'var(--green-d)') : 'var(--card)',
+              border: `1px solid ${isActive ? (meta?.color || 'var(--green-d)') : 'var(--border)'}`,
+              color: isActive ? '#fff' : 'var(--muted)'
+            }}
+          >
+            {t.icon} {t.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+export default function AgencyDashboard() {
+  const navigate = useNavigate();
+  const { user, headers } = getAuth();
+  const [tab, setTab]             = useState('overview');
+  const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [stats, setStats]         = useState({});
+  const [trips, setTrips]         = useState([]);
+  const [bookings, setBookings]   = useState([]);
+  const [buses, setBuses]         = useState([]);
+  const [settings, setSettings]   = useState({ cancel_rate:20, phone:'', email:'', address:'', logo_url:'', home_city:'' });
+  const [loading, setLoading]     = useState(true);
+  const [toast, setToast]         = useState(null);
+  const [savingSettings, setSavingSettings] = useState(false);
+  const [busModal, setBusModal]   = useState(false);
+  const [tripModal, setTripModal] = useState(false);
+  const [bulkModal, setBulkModal] = useState(false);
+  const [editBus, setEditBus]     = useState(null);
+  const [editTrip, setEditTrip]   = useState(null);
+  const [cityFilter, setCityFilter] = useState('all');         // filtre ville pour propriétaire
+  const [manifestTripId, setManifestTripId] = useState('');   // voyage sélectionné pour manifeste
+  const [busForm, setBusForm]     = useState({ bus_name:'', total_seats:50, description:'' });
+  const [tripForm, setTripForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' });
+  const [bulkForm, setBulkForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
+  const [bulkPreview, setBulkPreview] = useState([]);
+  const [bulkLoading, setBulkLoading] = useState(false);
+
+  const ok  = msg => setToast({ msg, type:'success' });
+  const err = msg => setToast({ msg, type:'error' });
+  const inf = msg => setToast({ msg, type:'info' });
+  const goTab = (id) => { setTab(id); setSidebarOpen(false); };
+  const showToast = (msg, type='info') => setToast({ msg, type });
+
+  // ── Ville du gestionnaire connecté ───────────────────────────────────────────
+  // user.city = ville assignée dans le JWT par le backend
+  // settings.home_city = fallback configuré dans les paramètres
+  // Si aucun → mode propriétaire (voit tout)
+  const userCity  = user.city || settings.home_city || null;
+  const isOwner   = !userCity; // propriétaire = pas de ville assignée
+
+  // ── Filtrage des voyages et réservations ──────────────────────────────────────
+  const filteredByCity = (arr, cityKey) => {
+    if (isOwner) return cityFilter === 'all' ? arr : arr.filter(x => x[cityKey] === cityFilter);
+    return arr.filter(x => x[cityKey] === userCity);
+  };
+
+  const visibleTrips    = filteredByCity(trips,    'departure_city');
+  const visibleBookings = filteredByCity(bookings, 'departure_city');
+
+  // Voyages disponibles pour le sélecteur de manifeste (filtrés par ville du gestionnaire)
+  const manifestTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
+
+  const prevPendingRef = useRef(null);
+
+  const load = async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const [s,t,b,bs,se] = await Promise.all([
+        axios.get(`${API}/agency/stats`,    { headers }),
+        axios.get(`${API}/agency/trips`,    { headers }),
+        axios.get(`${API}/agency/bookings`, { headers }),
+        axios.get(`${API}/agency/buses`,    { headers }),
+        axios.get(`${API}/agency/settings`, { headers }),
+      ]);
+      setStats(s.data);
+      setTrips(Array.isArray(t.data) ? t.data : []);
+      const newBookings = Array.isArray(b.data) ? b.data : [];
+      setBookings(newBookings);
+      setBuses(Array.isArray(bs.data) ? bs.data : []);
+      setSettings(prev => ({ ...prev, ...se.data }));
+      const newPending = newBookings.filter(b => b.status === 'pending').length;
+      if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
+        const diff = newPending - prevPendingRef.current;
+        inf(`🎟️ ${diff} nouvelle${diff > 1 ? 's' : ''} réservation${diff > 1 ? 's' : ''} en attente !`);
+      }
+      prevPendingRef.current = newPending;
+    } catch(e) {
+      if (e.response?.status===401) { localStorage.clear(); navigate('/login'); }
+      else if (!silent) err('Erreur de chargement');
+    } finally { if (!silent) setLoading(false); }
+  };
+
+  useEffect(() => {
+    load();
+    const interval = setInterval(() => load(true), 10000);
+    return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    setBulkPreview(buildDates(bulkForm.date_from, bulkForm.date_to, bulkForm.active_days));
+  }, [bulkForm.date_from, bulkForm.date_to, bulkForm.active_days]);
+
+  // Pré-remplir la ville de départ dès que userCity est connu
+  useEffect(() => {
+    if (userCity) {
+      setTripForm(f => ({ ...f, departure_city: userCity }));
+      setBulkForm(f => ({ ...f, departure_city: userCity }));
+    }
+  }, [userCity]);
+
+  const doCreateBus = async () => {
+    if (!busForm.bus_name) return err('Nom du bus requis');
+    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté 🚌'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
+    catch(e) { err(e.response?.data?.error||'Erreur'); }
+  };
+  const doSaveBus = async () => {
+    try { await axios.patch(`${API}/agency/buses/${editBus.id}`, editBus, { headers }); ok('Bus mis à jour ✓'); setEditBus(null); load(); }
+    catch(e) { err(e.response?.data?.error||'Erreur'); }
+  };
+  const doDeleteBus = async id => {
+    if (!confirm('Désactiver ce bus ?')) return;
+    try { await axios.delete(`${API}/agency/buses/${id}`, { headers }); inf('Bus désactivé'); load(); }
+    catch(e) { err(e.response?.data?.error||'Erreur'); }
+  };
+  const doCreateTrip = async () => {
+    const { departure_city, arrival_city, departure_date, departure_time, price } = tripForm;
+    if (!departure_city||!arrival_city||!departure_date||!departure_time||!price) return err('Champs obligatoires manquants');
+    if (departure_city === arrival_city) return err('Départ et arrivée doivent être différents');
+    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé 🎉'); setTripModal(false); setTripForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
+    catch(e) { err(e.response?.data?.error||'Erreur'); }
+  };
+  const doSaveTrip = async () => {
+    try { await axios.patch(`${API}/agency/trips/${editTrip.id}`, editTrip, { headers }); ok('Voyage modifié ✓'); setEditTrip(null); load(); }
+    catch(e) { err(e.response?.data?.error||'Erreur'); }
+  };
+  const doDeleteTrip = async id => {
+    if (!confirm('Supprimer ce voyage ?')) return;
+    try { await axios.delete(`${API}/agency/trips/${id}`, { headers }); inf('Voyage supprimé'); load(); }
+    catch(e) { err(e.response?.data?.error||'Impossible : réservations actives sur ce voyage'); }
+  };
+  const doCreateBulk = async () => {
+    const { departure_city, arrival_city, departure_time, price, date_from, date_to, bus_id, description } = bulkForm;
+    if (!departure_city || !arrival_city)   return err('Départ et arrivée requis');
+    if (departure_city === arrival_city)    return err('Départ et arrivée doivent être différents');
+    if (!departure_time || !price)          return err('Heure et prix requis');
+    if (!date_from || !date_to)             return err('Période requise');
+    if (new Date(date_from) > new Date(date_to)) return err('Date début doit être avant date fin');
+    if (bulkPreview.length === 0)           return err('Aucune date générée — vérifiez la période et les jours');
+    setBulkLoading(true);
+    try {
+      const res = await axios.post(`${API}/agency/trips/bulk`, { bus_id: bus_id || null, departure_city, arrival_city, departure_time, price: parseFloat(price), description: description || null, dates: bulkPreview }, { headers });
+      ok(`✅ ${res.data.created} voyage${res.data.created > 1 ? 's' : ''} créé${res.data.created > 1 ? 's' : ''} !`);
+      setBulkModal(false);
+      setBulkForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
+      load();
+    } catch(e) { err(e.response?.data?.error||'Erreur'); }
+    finally { setBulkLoading(false); }
+  };
+  const doConfirm = async id => {
+    try { await axios.patch(`${API}/agency/bookings/${id}/confirm`, {}, { headers }); ok('Confirmée ✓'); load(); }
+    catch { err('Erreur'); }
+  };
+  const doCancel = async (id, amount) => {
+    if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés de vos revenus.`)) return;
+    try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
+    catch { err('Erreur'); }
+  };
+  const toggleDay = (day) => setBulkForm(f => ({ ...f, active_days: f.active_days.includes(day) ? f.active_days.filter(d => d !== day) : [...f.active_days, day].sort() }));
+
+  // ── Villes d'arrivée disponibles (exclut la ville de départ) ─────────────────
+  const arrivalCities = (depCity) => CITIES.filter(c => c !== depCity);
+
+  const TABS = [
+    { id:'overview',  icon:'📊', label:"Vue d'ensemble" },
+    { id:'buses',     icon:'🚌', label:'Mes bus' },
+    { id:'trips',     icon:'🗺️', label:'Voyages' },
+    { id:'bookings',  icon:'🎟️', label:'Réservations' },
+    { id:'manifest',  icon:'📋', label:'Manifeste' },
+    { id:'settings',  icon:'⚙️', label:'Paramètres' },
+  ];
+
+  const pending = visibleBookings.filter(b => b.status==='pending').length;
+  const agencyName = settings.agency_name || user.agency_name || user.username;
+
+  return (
+    <div style={{ display:'flex', minHeight:'100vh', background:'var(--night)' }}>
+      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
+      <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir le menu">☰</button>
+      <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
+
+      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
+        <div className="sidebar-logo"><SidebarLogo agencyName={agencyName} logoUrl={settings.logo_url} /></div>
+
+        {/* Indicateur de ville du gestionnaire */}
+        <div style={{ padding:'10px', borderBottom:'1px solid var(--border)' }}>
+          <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:10, padding:'10px 12px' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: userCity ? 8 : 0 }}>
+              <AgencyAvatar name={agencyName} logoUrl={settings.logo_url} size={38} radius={10} />
+              <div>
+                <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13 }}>{agencyName}</div>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>
+                  {isOwner ? '👑 Propriétaire — toutes villes' : 'Agence partenaire · RDC'}
+                </div>
+              </div>
             </div>
-          </div>
-          {/* Actions */}
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            <button className="btn btn-ghost" style={{ fontSize:12 }}
-              onClick={() => setWalkinModal(true)}>
-              ➕ Sur place
-            </button>
-            <button className="btn btn-ghost" style={{ fontSize:12, color:'var(--green-l)' }}
-              disabled={exporting==='pdf'}
-              onClick={async () => {
-                setExporting('pdf');
-                await exportPDF(selectedTrip, bookings, agencyName);
-                setExporting('');
-              }}>
-              {exporting==='pdf' ? '⏳…' : '📄 PDF'}
-            </button>
-            <button className="btn btn-ghost" style={{ fontSize:12, color:'var(--gold)' }}
-              disabled={exporting==='excel'}
-              onClick={async () => {
-                setExporting('excel');
-                await exportExcel(selectedTrip, bookings, agencyName);
-                setExporting('');
-              }}>
-              {exporting==='excel' ? '⏳…' : '📊 Excel'}
-            </button>
+            {userCity && (
+              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
+                <span style={{ fontSize:11, color:'var(--muted)' }}>Ville :</span>
+                <CityBadge city={userCity} />
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Stats */}
-        <div style={{ display:'flex', gap:10, marginTop:14, flexWrap:'wrap' }}>
-          {[
-            { label:'Total', value:bookings.length, color:'var(--text)' },
-            { label:'✓ Présents', value:present, color:'var(--ok)' },
-            { label:'✗ Absents', value:absent, color:'var(--err)' },
-            { label:'⏳ Attente', value:pending, color:'var(--gold)' },
-          ].map(s => (
-            <div key={s.label} style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 16px', textAlign:'center', minWidth:80 }}>
-              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:20, color:s.color }}>{s.value}</div>
-              <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{s.label}</div>
+        <nav className="sidebar-nav">
+          {TABS.map(t => (
+            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
+              <span className="nav-icon">{t.icon}</span><span>{t.label}</span>
+              {t.id==='bookings' && pending>0 && <span style={{ marginLeft:'auto', background:'var(--gold)', color:'#000', borderRadius:99, padding:'1px 6px', fontSize:10, fontWeight:700 }}>{pending}</span>}
             </div>
           ))}
-          {/* Barre de progression embarquement */}
-          <div style={{ flex:1, minWidth:160, background:'var(--card)', border:'1px solid var(--border)', borderRadius:10, padding:'10px 16px', display:'flex', flexDirection:'column', justifyContent:'center' }}>
-            <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'var(--muted)', marginBottom:6 }}>
-              <span>Embarquement</span>
-              <span style={{ color:'var(--green-l)', fontWeight:700 }}>
-                {bookings.length > 0 ? Math.round((present/bookings.length)*100) : 0}%
-              </span>
+        </nav>
+        <div className="sidebar-footer">
+          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px' }} onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪 Déconnexion</button>
+          <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', marginTop:8 }}>© 2026 Nzela RDC</div>
+        </div>
+      </aside>
+
+      <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
+        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+          <div>
+            <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
+              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</h1>
+              {userCity && <CityBadge city={userCity} />}
+              {isOwner && <span style={{ fontSize:11, background:'rgba(255,200,0,0.12)', color:'var(--gold)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700 }}>👑 Vue globale</span>}
             </div>
-            <div style={{ height:4, background:'rgba(255,255,255,0.06)', borderRadius:99, overflow:'hidden' }}>
-              <div style={{ height:'100%', borderRadius:99, background:'linear-gradient(90deg,var(--green-d),var(--green-l))', width: bookings.length > 0 ? `${(present/bookings.length)*100}%` : '0%', transition:'width .5s ease' }}/>
-            </div>
+            <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+          </div>
+          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
+            {tab==='buses' && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
+            {tab==='trips' && <>
+              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(true)}>📅 En masse</button>
+              <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>
+            </>}
+            <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px' }} onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪</button>
           </div>
         </div>
-      </div>
 
-      {/* Liste passagers */}
-      {loading
-        ? <div style={{ textAlign:'center', padding:40 }}><div className="spinner" style={{ width:32, height:32, margin:'0 auto', borderWidth:2.5 }}/></div>
-        : bookings.length === 0
-          ? <div style={{ textAlign:'center', padding:'40px', color:'var(--muted)' }}>
-              <div style={{ fontSize:36, marginBottom:10 }}>📭</div>
-              <div>Aucune réservation confirmée sur ce voyage.</div>
-              <button className="btn btn-primary" style={{ marginTop:16 }} onClick={() => setWalkinModal(true)}>
-                ➕ Enregistrer un passager sur place
-              </button>
-            </div>
-          : <div style={{ display:'grid', gap:8 }}>
-              {bookings.map((b, i) => (
-                <div key={b.id} className="glass" style={{ padding:'12px 16px', borderLeft:`3px solid ${statColor(b.boarding_status)}` }}>
-                  <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8 }}>
-                    {/* Infos passager */}
-                    <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                      <div style={{ width:32, height:32, borderRadius:8, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font)', fontWeight:800, fontSize:13, color:'var(--green-l)', flexShrink:0 }}>
-                        {i+1}
-                      </div>
-                      <div>
-                        <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>{b.passenger_name}</div>
-                        <div style={{ fontSize:12, color:'var(--muted)', marginTop:1 }}>
-                          {b.passenger_phone} &nbsp;·&nbsp;
-                          <code style={{ background:'var(--green-bg)', padding:'1px 6px', borderRadius:4, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code>
-                          &nbsp;·&nbsp; {b.passengers} place{b.passengers>1?'s':''}
-                        </div>
-                      </div>
+        {tab === 'manifest'
+          ? (
+            <div>
+              {/* Sélecteur de voyage pour le manifeste */}
+              <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
+                <div className="section-title" style={{ marginBottom:4 }}>📋 Manifeste passagers</div>
+                <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
+                  Choisissez un voyage pour voir la liste des passagers — disponible dès la création du voyage.
+                </div>
+                <ManifestTripSelector
+                  trips={trips}
+                  selectedId={manifestTripId}
+                  onChange={setManifestTripId}
+                  userCity={userCity}
+                  isOwner={isOwner}
+                />
+                {manifestTripId && (() => {
+                  const trip = trips.find(t => String(t.id) === String(manifestTripId));
+                  if (!trip) return null;
+                  return (
+                    <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+                      <CityBadge city={trip.departure_city} />
+                      <span style={{ color:'var(--muted)', fontSize:16 }}>→</span>
+                      <CityBadge city={trip.arrival_city} />
+                      <span style={{ fontSize:13, fontWeight:700 }}>{trip.departure_time}</span>
+                      <span style={{ fontSize:12, color:'var(--muted)' }}>{new Date(trip.departure_date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</span>
+                      <span className={`badge ${trip.available_seats>0?'b-g':'b-r'}`}>{trip.available_seats}/{trip.total_seats} places</span>
+                      {trip.bus_name && <span className="badge b-b">{trip.bus_name}</span>}
                     </div>
+                  );
+                })()}
+              </div>
+              {/* ManifestTab reçoit le tripId sélectionné */}
+              <ManifestTab
+                agencyName={agencyName}
+                showToast={showToast}
+                tripId={manifestTripId || undefined}
+              />
+            </div>
+          )
+          : loading
+            ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
+            : <>
 
-                    {/* Boutons statut */}
-                    <div style={{ display:'flex', gap:6, alignItems:'center', flexWrap:'wrap' }}>
-                      <div style={{ fontSize:11, color:'var(--muted)', marginRight:4 }}>
-                        {b.payment_method==='cash'?'💵 Espèces':'📱 Mobile'}
-                      </div>
-                      {['present','pending','absent'].map(s => (
-                        <button key={s} onClick={() => updateBoarding(b.id, s)}
-                          style={{
-                            padding:'5px 12px', borderRadius:8, fontSize:12, fontWeight:600,
-                            cursor:'pointer', transition:'var(--ease)',
-                            background: b.boarding_status===s ? statBg(s) : 'var(--card)',
-                            border: `1px solid ${b.boarding_status===s ? statColor(s) : 'var(--border)'}`,
-                            color: b.boarding_status===s ? statColor(s) : 'var(--muted)',
-                          }}>
-                          {statLabel(s)}
-                        </button>
-                      ))}
+          {tab==='overview' && <>
+            <div className="grid-4" style={{ marginBottom:16 }}>
+              {[
+                { icon:'💰', label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
+                { icon:'💎', label:`Commission Nzela (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
+                { icon:'🚌', label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
+                { icon:'⏳', label:'En attente', value:pending, cls:'purple' },
+              ].map((s,i) => (
+                <div key={i} className={`stat-card ${s.cls} fade-in fade-in-${i+1}`}>
+                  <div className="stat-icon">{s.icon}</div><div className="stat-value">{s.value}</div><div className="stat-label">{s.label}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Stats par ville — visible uniquement pour le propriétaire */}
+            {isOwner && <CityStatsGrid trips={trips} bookings={bookings} />}
+
+            <div className="glass p-16 fade-in fade-in-3">
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+                <div className="section-title" style={{ margin:0 }}>Réservations récentes {userCity && <CityBadge city={userCity} />}</div>
+                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => setTab('bookings')}>Voir tout →</button>
+              </div>
+              {visibleBookings.length===0
+                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>📭 Aucune réservation{userCity ? ` pour ${userCity}` : ''}</div>
+                : <div style={{ overflowX:'auto' }}><table className="data-table">
+                    <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
+                    <tbody>{visibleBookings.slice(0,5).map(b => (
+                      <tr key={b.id}>
+                        <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
+                        <td>
+                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
+                            <CityBadge city={b.departure_city} />
+                            <span style={{ color:'var(--muted)' }}>→</span>
+                            <span style={{ fontWeight:600 }}>{b.arrival_city}</span>
+                          </div>
+                        </td>
+                        <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
+                        <td><StatusBadge status={b.status}/></td>
+                      </tr>
+                    ))}</tbody>
+                  </table></div>}
+            </div>
+          </>}
+
+          {tab==='buses' && <div style={{ display:'grid', gap:10 }}>
+            {buses.length===0
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}><div style={{ fontSize:44, marginBottom:12 }}>🚌</div><h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:8 }}>Aucun bus enregistré</h3><button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Ajouter un bus</button></div>
+              : buses.map((bus,i) => (
+                <div key={bus.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'13px 18px' }}>
+                  <div className="bus-card-row">
+                    <div style={{ display:'flex', alignItems:'center', gap:13 }}>
+                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>🚌</div>
+                      <div><div style={{ fontFamily:'var(--font)', fontSize:15, fontWeight:700 }}>{bus.bus_name}</div><div style={{ fontSize:12, color:'var(--muted)', marginTop:1 }}>{bus.total_seats} sièges{bus.description&&` · ${bus.description}`}</div></div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <span className={`badge ${bus.is_active?'b-g':'b-r'}`}>{bus.is_active?'✓ Actif':'⛔ Inactif'}</span>
+                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditBus({...bus})}>✏️ Modifier</button>
+                      <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteBus(bus.id)}>🗑️</button>
                     </div>
                   </div>
                 </div>
               ))}
-            </div>
-      }
+          </div>}
 
-      {/* Modal walk-in */}
-      {walkinModal && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setWalkinModal(false)}>
-          <div className="modal-box" style={{ maxWidth:440 }}>
+          {tab==='trips' && <div style={{ display:'grid', gap:10 }}>
+            {/* Filtre ville pour propriétaire */}
+            {isOwner && <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />}
+
+            {/* Bandeau informatif pour les gestionnaires */}
+            {!isOwner && userCity && (
+              <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
+                <span style={{ fontSize:16 }}>📍</span>
+                <span style={{ fontSize:13 }}>Vous gérez les départs depuis <strong>{userCity}</strong> — seuls les voyages partant de votre ville sont affichés.</span>
+              </div>
+            )}
+
+            {visibleTrips.length===0
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
+                  <h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:12 }}>
+                    Aucun voyage{userCity ? ` depuis ${userCity}` : ''}
+                  </h3>
+                  <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
+                    <button className="btn btn-ghost" onClick={() => setBulkModal(true)}>📅 Générer en masse</button>
+                    <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Nouveau voyage</button>
+                  </div>
+                </div>
+              : visibleTrips.map((t,i) => (
+                <div key={t.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'12px 18px' }}>
+                  <div className="trip-card-row">
+                    <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
+                      {/* Ville départ */}
+                      <div style={{ textAlign:'center', minWidth:70 }}>
+                        <CityBadge city={t.departure_city} />
+                        <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)', marginTop:4 }}>{t.departure_time}</div>
+                      </div>
+                      <div style={{ color:'var(--muted)', fontSize:18 }}>→</div>
+                      {/* Ville arrivée */}
+                      <div style={{ textAlign:'center', minWidth:70 }}>
+                        <CityBadge city={t.arrival_city} />
+                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
+                      </div>
+                      {t.bus_name && <span className="badge b-b" style={{ fontSize:11 }}>🚌 {t.bus_name}</span>}
+                      <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:'var(--gold)' }}>{Number(t.price).toLocaleString('fr-FR')} <span style={{ fontSize:11, fontWeight:500 }}>FC</span></div>
+                    </div>
+                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                      <div style={{ textAlign:'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{t.available_seats}/{t.total_seats}</div><div style={{ fontSize:11, color:'var(--muted)' }}>places</div></div>
+                      <span className={`badge ${t.available_seats>0?'b-g':'b-r'}`}>{t.available_seats>0?'✓ Actif':'⛔ Complet'}</span>
+                      {/* Bouton manifeste rapide */}
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)' }}
+                        title="Voir le manifeste de ce voyage"
+                        onClick={() => { setManifestTripId(String(t.id)); goTab('manifest'); }}
+                      >
+                        📋
+                      </button>
+                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditTrip({...t})}>✏️</button>
+                      <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteTrip(t.id)}>🗑️</button>
+                    </div>
+                  </div>
+                </div>
+              ))}
+          </div>}
+
+          {tab==='bookings' && <div className="glass" style={{ overflow:'hidden' }}>
+            {/* Filtre ville pour propriétaire */}
+            {isOwner && (
+              <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
+                <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />
+              </div>
+            )}
+            {visibleBookings.length===0
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>📭 Aucune réservation{userCity ? ` depuis ${userCity}` : ''}</div>
+              : <div style={{ overflowX:'auto' }}><table className="data-table">
+                  <thead><tr><th>Référence</th><th>Passager</th><th>Trajet</th><th>Bus</th><th>Total</th><th>Commission</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead>
+                  <tbody>{visibleBookings.map(b => (
+                    <tr key={b.id}>
+                      <td><code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
+                      <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
+                      <td>
+                        <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
+                          <CityBadge city={b.departure_city} />
+                          <span style={{ color:'var(--muted)', fontSize:12 }}>→</span>
+                          <span style={{ fontSize:12, fontWeight:600 }}>{b.arrival_city}</span>
+                        </div>
+                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')} · {b.departure_time}</div>
+                      </td>
+                      <td>{b.bus_name?<span className="badge b-b" style={{ fontSize:11 }}>{b.bus_name}</span>:<span style={{ color:'var(--muted)' }}>—</span>}</td>
+                      <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
+                      <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount>0?`-${Number(b.commission_amount).toLocaleString('fr-FR')} FC`:'—'}</td>
+                      <td><span className="badge b-b" style={{ fontSize:11 }}>{b.payment_method==='cash'?'💵 Espèces':'📱 Mobile'}</span></td>
+                      <td><StatusBadge status={b.status}/></td>
+                      <td><div style={{ display:'flex', gap:5 }}>
+                        {b.status==='pending'&&<button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 9px', color:'var(--ok)', borderColor:'rgba(61,170,106,0.2)' }} onClick={() => doConfirm(b.id)}>✓</button>}
+                        {(b.status==='pending'||b.status==='confirmed')&&<button className="btn btn-danger" style={{ fontSize:11, padding:'5px 9px' }} onClick={() => doCancel(b.id,b.total_price)}>✕</button>}
+                      </div></td>
+                    </tr>
+                  ))}</tbody>
+                </table></div>}
+          </div>}
+
+          {tab==='settings' && <div style={{ maxWidth:540 }}>
+            <div className="glass p-16 fade-in" style={{ marginBottom:12 }}>
+              <div className="section-title">🖼️ Logo de l'agence</div>
+              <LogoUploader currentLogo={settings.logo_url} agencyName={agencyName} onChange={val => setSettings({...settings, logo_url: val})} />
+            </div>
+            <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
+              <div className="section-title">🏢 Informations</div>
+              <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+                <Inp label="Email"><input className="input-field" placeholder="contact@agence.cd" value={settings.email||''} onChange={e=>setSettings({...settings,email:e.target.value})} /></Inp>
+                <Inp label="Téléphone"><input className="input-field" placeholder="+243 81 000 0000" value={settings.phone||''} onChange={e=>setSettings({...settings,phone:e.target.value})} /></Inp>
+                <Inp label="Adresse"><input className="input-field" placeholder="Avenue du Commerce, Kinshasa" value={settings.address||''} onChange={e=>setSettings({...settings,address:e.target.value})} /></Inp>
+              </div>
+            </div>
+
+            {/* Ville principale du gestionnaire (si pas définie dans le JWT) */}
+            {!user.city && (
+              <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
+                <div className="section-title">📍 Ville principale de départ</div>
+                <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>
+                  Définit les voyages que vous gérez. Vous ne verrez que les départs depuis cette ville.
+                  Laissez vide pour voir toutes les villes (propriétaire).
+                </p>
+                <Inp label="Ville de départ">
+                  <select className="input-field" value={settings.home_city||''} onChange={e=>setSettings({...settings,home_city:e.target.value})}>
+                    <option value="">— Toutes les villes (propriétaire) —</option>
+                    {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon||'📍'} {c}</option>)}
+                  </select>
+                </Inp>
+                {settings.home_city && (
+                  <div style={{ marginTop:8, padding:'8px 12px', background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, fontSize:12, color:'var(--green-l)' }}>
+                    ✓ Vous gérerez uniquement les voyages partant de <strong>{settings.home_city}</strong>.
+                  </div>
+                )}
+              </div>
+            )}
+
+            <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:12 }}>
+              <div className="section-title">💸 Politique d'annulation</div>
+              <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>Pourcentage retenu quand un client annule.</p>
+              <div style={{ marginBottom:12 }}>
+                <Inp label="Taux de rétention (%)"><input className="input-field" type="number" min="0" max="100" step="5" value={settings.cancel_rate||20} onChange={e=>setSettings({...settings,cancel_rate:Number(e.target.value)})} /></Inp>
+              </div>
+              <div style={{ background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:9, padding:'11px 13px' }}>
+                <div style={{ fontSize:10, color:'var(--muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Simulation sur 45 000 FC</div>
+                {[
+                  ['Commission Nzela ('+(settings.commission_rate||10)+'%)', (45000*(settings.commission_rate||10)/100).toLocaleString('fr-FR'), 'var(--err)'],
+                  ['Rétention agence ('+(settings.cancel_rate||20)+'%)', (45000*(settings.cancel_rate||20)/100).toLocaleString('fr-FR'), 'var(--gold)'],
+                  ['Remboursement client', Math.max(0,45000*(1-(settings.commission_rate||10)/100-(settings.cancel_rate||20)/100)).toLocaleString('fr-FR'), 'var(--ok)'],
+                ].map(([l,v,c]) => (
+                  <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
+                    <span style={{ color:'var(--muted)' }}>{l}</span><span style={{ fontWeight:700, color:c }}>{v} FC</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13 }} disabled={savingSettings}
+              onClick={async () => {
+                setSavingSettings(true);
+                try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés ✓'); }
+                catch(e) { err(e.response?.data?.error||'Erreur'); }
+                finally { setSavingSettings(false); }
+              }}>
+              {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : '💾 Sauvegarder'}
+            </button>
+          </div>}
+        </>}
+      </main>
+
+      <nav className="mobile-bottom-nav">
+        {TABS.map(t => (
+          <button key={t.id} className={`mobile-tab-btn ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
+            <span className="mobile-tab-icon">{t.icon}</span>
+            <span className="mobile-tab-label">{t.label}</span>
+            {t.id==='bookings' && pending>0 && <span className="mobile-tab-badge">{pending}</span>}
+          </button>
+        ))}
+      </nav>
+
+      {/* ── MODALS ─────────────────────────────────────────────────────────────── */}
+
+      {busModal && <Modal title="🚌 Ajouter un bus" onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
+        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+          <Inp label="Nom du bus *"><input className="input-field" placeholder="Bus 1, Minibus A…" value={busForm.bus_name} onChange={e=>setBusForm({...busForm,bus_name:e.target.value})} /></Inp>
+          <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={busForm.total_seats} onChange={e=>setBusForm({...busForm,total_seats:parseInt(e.target.value)})} /></Inp>
+          <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={busForm.description} onChange={e=>setBusForm({...busForm,description:e.target.value})} /></Inp>
+        </div>
+      </Modal>}
+
+      {editBus && <Modal title={`✏️ Modifier — ${editBus.bus_name}`} onClose={() => setEditBus(null)} onConfirm={doSaveBus} confirmLabel="💾 Sauvegarder">
+        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+          <Inp label="Nom"><input className="input-field" value={editBus.bus_name} onChange={e=>setEditBus({...editBus,bus_name:e.target.value})} /></Inp>
+          <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={editBus.total_seats} onChange={e=>setEditBus({...editBus,total_seats:parseInt(e.target.value)})} /></Inp>
+          <Inp label="Description"><input className="input-field" value={editBus.description||''} onChange={e=>setEditBus({...editBus,description:e.target.value})} /></Inp>
+          <div>
+            <label className="input-label" style={{ display:'block', marginBottom:6 }}>Statut</label>
+            <div style={{ display:'flex', gap:8 }}>
+              {[['✓ Actif',1],['⛔ Inactif',0]].map(([l,v]) => (
+                <button key={v} className={`btn ${editBus.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }} onClick={() => setEditBus({...editBus,is_active:v})}>{l}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+      </Modal>}
+
+      {tripModal && <Modal title="🗺️ Nouveau voyage" onClose={() => setTripModal(false)} onConfirm={doCreateTrip} confirmLabel="Créer →" maxWidth={500}>
+        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+          <Inp label="Bus (optionnel)">
+            <select className="input-field" value={tripForm.bus_id} onChange={e=>setTripForm({...tripForm,bus_id:e.target.value})}>
+              <option value="">Sans bus spécifique</option>
+              {buses.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.bus_name} — {b.total_seats} sièges</option>)}
+            </select>
+          </Inp>
+          <div className="grid-2">
+            <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
+              <select
+                className="input-field"
+                value={tripForm.departure_city}
+                onChange={e => setTripForm({...tripForm, departure_city:e.target.value, arrival_city:''})}
+                disabled={!isOwner}
+                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+              >
+                <option value="">Ville</option>
+                {CITIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+            <Inp label="Arrivée *">
+              <select
+                className="input-field"
+                value={tripForm.arrival_city}
+                onChange={e=>setTripForm({...tripForm,arrival_city:e.target.value})}
+              >
+                <option value="">Ville</option>
+                {arrivalCities(tripForm.departure_city).map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+          </div>
+          {!isOwner && (
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
+              📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+            </div>
+          )}
+          <div className="grid-2">
+            <Inp label="Date *"><input className="input-field" type="date" min={new Date().toISOString().split('T')[0]} value={tripForm.departure_date} onChange={e=>setTripForm({...tripForm,departure_date:e.target.value})} /></Inp>
+            <Inp label="Heure départ *"><input className="input-field" type="time" value={tripForm.departure_time} onChange={e=>setTripForm({...tripForm,departure_time:e.target.value})} /></Inp>
+          </div>
+          <Inp label="Prix par siège (FC) *"><input className="input-field" type="number" placeholder="45000" value={tripForm.price} onChange={e=>setTripForm({...tripForm,price:e.target.value})} /></Inp>
+          <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={tripForm.description} onChange={e=>setTripForm({...tripForm,description:e.target.value})} /></Inp>
+        </div>
+      </Modal>}
+
+      {editTrip && <Modal title="✏️ Modifier le voyage" subtitle={`${editTrip.departure_city} → ${editTrip.arrival_city}`} onClose={() => setEditTrip(null)} onConfirm={doSaveTrip} confirmLabel="💾 Sauvegarder" maxWidth={500}>
+        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+          <div className="grid-2">
+            <Inp label="Départ">
+              <select
+                className="input-field"
+                value={editTrip.departure_city}
+                onChange={e=>setEditTrip({...editTrip,departure_city:e.target.value})}
+                disabled={!isOwner}
+                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+              >
+                {CITIES.map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+            <Inp label="Arrivée">
+              <select className="input-field" value={editTrip.arrival_city} onChange={e=>setEditTrip({...editTrip,arrival_city:e.target.value})}>
+                {arrivalCities(editTrip.departure_city).map(c=><option key={c}>{c}</option>)}
+              </select>
+            </Inp>
+          </div>
+          <div className="grid-2">
+            <Inp label="Date"><input className="input-field" type="date" value={editTrip.departure_date} onChange={e=>setEditTrip({...editTrip,departure_date:e.target.value})} /></Inp>
+            <Inp label="Heure"><input className="input-field" type="time" value={editTrip.departure_time} onChange={e=>setEditTrip({...editTrip,departure_time:e.target.value})} /></Inp>
+          </div>
+          <Inp label="Prix (FC)"><input className="input-field" type="number" value={editTrip.price} onChange={e=>setEditTrip({...editTrip,price:e.target.value})} /></Inp>
+          <div className="grid-2">
+            <Inp label="Places totales"><input className="input-field" type="number" min="1" value={editTrip.total_seats} onChange={e=>setEditTrip({...editTrip,total_seats:parseInt(e.target.value)})} /></Inp>
+            <div>
+              <Inp label="Places disponibles"><input className="input-field" type="number" min="0" max={editTrip.total_seats} value={editTrip.available_seats} onChange={e=>setEditTrip({...editTrip,available_seats:parseInt(e.target.value)})} /></Inp>
+              <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Réduction manuelle possible</div>
+            </div>
+          </div>
+          <Inp label="Description"><input className="input-field" value={editTrip.description||''} onChange={e=>setEditTrip({...editTrip,description:e.target.value})} /></Inp>
+        </div>
+      </Modal>}
+
+      {bulkModal && (
+        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setBulkModal(false)}>
+          <div className="modal-box" style={{ maxWidth:540 }}>
             <div className="modal-header">
               <div>
-                <h2>➕ Passager sur place</h2>
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                  {selectedTrip.departure_city} → {selectedTrip.arrival_city} · {selectedTrip.departure_time}
-                </div>
+                <h2>📅 Générer des voyages en masse</h2>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Configure une liaison + une période → tous les voyages créés en un clic</div>
               </div>
-              <button className="modal-close" onClick={() => setWalkinModal(false)}>×</button>
+              <button className="modal-close" onClick={() => setBulkModal(false)}>×</button>
             </div>
-            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:11 }}>
-              <Inp label="Nom complet *">
-                <input className="input-field" placeholder="Jean Mukendi" value={walkinForm.passenger_name}
-                  onChange={e=>setWalkinForm({...walkinForm,passenger_name:e.target.value})} />
-              </Inp>
-              <Inp label="Téléphone *">
-                <input className="input-field" placeholder="+243 81 234 5678" value={walkinForm.passenger_phone}
-                  onChange={e=>setWalkinForm({...walkinForm,passenger_phone:e.target.value})} />
+            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:13 }}>
+              <div className="grid-2">
+                <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
+                  <select
+                    className="input-field"
+                    value={bulkForm.departure_city}
+                    onChange={e => setBulkForm({...bulkForm, departure_city:e.target.value, arrival_city:''})}
+                    disabled={!isOwner}
+                    style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
+                  >
+                    <option value="">Ville</option>
+                    {CITIES.map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </Inp>
+                <Inp label="Arrivée *">
+                  <select
+                    className="input-field"
+                    value={bulkForm.arrival_city}
+                    onChange={e=>setBulkForm({...bulkForm,arrival_city:e.target.value})}
+                  >
+                    <option value="">Ville</option>
+                    {arrivalCities(bulkForm.departure_city).map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </Inp>
+              </div>
+              {!isOwner && (
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:-8, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
+                  📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+                </div>
+              )}
+              <Inp label="Bus (optionnel)">
+                <select className="input-field" value={bulkForm.bus_id} onChange={e=>setBulkForm({...bulkForm,bus_id:e.target.value})}>
+                  <option value="">Sans bus spécifique</option>
+                  {buses.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.bus_name} — {b.total_seats} sièges</option>)}
+                </select>
               </Inp>
               <div className="grid-2">
-                <Inp label="Places">
-                  <select className="input-field" value={walkinForm.passengers}
-                    onChange={e=>setWalkinForm({...walkinForm,passengers:parseInt(e.target.value)})}>
-                    {[1,2,3,4,5].map(n=><option key={n} value={n}>{n} place{n>1?'s':''}</option>)}
-                  </select>
-                </Inp>
-                <Inp label="Paiement">
-                  <select className="input-field" value={walkinForm.payment_method}
-                    onChange={e=>setWalkinForm({...walkinForm,payment_method:e.target.value})}>
-                    <option value="cash">💵 Espèces</option>
-                    <option value="mobilemoney">📱 Mobile Money</option>
-                  </select>
-                </Inp>
+                <Inp label="Heure de départ *"><input className="input-field" type="time" value={bulkForm.departure_time} onChange={e=>setBulkForm({...bulkForm,departure_time:e.target.value})} /></Inp>
+                <Inp label="Prix / siège (FC) *"><input className="input-field" type="number" placeholder="45000" value={bulkForm.price} onChange={e=>setBulkForm({...bulkForm,price:e.target.value})} /></Inp>
               </div>
-              {/* Aperçu montant */}
-              <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'10px 13px' }}>
-                <div style={{ display:'flex', justifyContent:'space-between', fontSize:13 }}>
-                  <span style={{ color:'var(--muted)' }}>Montant à encaisser</span>
-                  <span style={{ fontFamily:'var(--font)', fontWeight:800, color:'var(--gold)', fontSize:16 }}>
-                    {Number(selectedTrip.price * walkinForm.passengers).toLocaleString('fr-FR')} FC
-                  </span>
+              <div className="grid-2">
+                <Inp label="Du *"><input className="input-field" type="date" value={bulkForm.date_from} onChange={e=>setBulkForm({...bulkForm,date_from:e.target.value})} /></Inp>
+                <Inp label="Au *"><input className="input-field" type="date" min={bulkForm.date_from||''} value={bulkForm.date_to} onChange={e=>setBulkForm({...bulkForm,date_to:e.target.value})} /></Inp>
+              </div>
+              <div>
+                <div className="input-label" style={{ marginBottom:8 }}>Jours de départ</div>
+                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                  {DAYS_FR.map((day, idx) => (
+                    <button key={idx} onClick={() => toggleDay(idx)} style={{ padding:'6px 12px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', transition:'var(--ease)', background:bulkForm.active_days.includes(idx)?'var(--green-d)':'var(--card)', border:`1px solid ${bulkForm.active_days.includes(idx)?'var(--green)':'var(--border)'}`, color:bulkForm.active_days.includes(idx)?'#fff':'var(--muted)' }}>
+                      {day}
+                    </button>
+                  ))}
                 </div>
               </div>
+              <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={bulkForm.description} onChange={e=>setBulkForm({...bulkForm,description:e.target.value})} /></Inp>
+              {bulkPreview.length > 0 && (
+                <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'11px 13px' }}>
+                  <div style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', marginBottom:8 }}>✅ {bulkPreview.length} voyage{bulkPreview.length > 1 ? 's' : ''} seront créés</div>
+                  <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
+                    {bulkPreview.slice(0,14).map(d => (
+                      <span key={d} style={{ background:'rgba(61,170,106,.1)', border:'1px solid rgba(61,170,106,.2)', borderRadius:6, padding:'2px 8px', fontSize:11, color:'var(--text)' }}>
+                        {new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
+                      </span>
+                    ))}
+                    {bulkPreview.length > 14 && <span style={{ fontSize:11, color:'var(--muted)', alignSelf:'center' }}>+{bulkPreview.length - 14} autres</span>}
+                  </div>
+                </div>
+              )}
+              {bulkForm.date_from && bulkForm.date_to && bulkPreview.length === 0 && (
+                <div style={{ background:'rgba(240,80,80,0.08)', border:'1px solid rgba(240,80,80,0.2)', borderRadius:10, padding:'10px 13px', fontSize:12, color:'var(--err)' }}>
+                  ⚠️ Aucune date générée — vérifiez les jours cochés et la période.
+                </div>
+              )}
             </div>
             <div className="modal-footer">
-              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setWalkinModal(false)}>Annuler</button>
-              <button className="btn btn-primary" onClick={doWalkin} disabled={savingWalkin}>
-                {savingWalkin ? <><div className="spinner"/>Enregistrement…</> : '✓ Enregistrer & Embarquer'}
+              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(false)}>Annuler</button>
+              <button className="btn btn-primary" onClick={doCreateBulk} disabled={bulkLoading || bulkPreview.length === 0}>
+                {bulkLoading ? <><div className="spinner"/>Création…</> : `🚀 Créer ${bulkPreview.length > 0 ? bulkPreview.length + ' voyage' + (bulkPreview.length > 1 ? 's' : '') : ''}`}
               </button>
             </div>
           </div>

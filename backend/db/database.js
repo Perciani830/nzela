@@ -26,20 +26,20 @@ function runTransaction(db, fn) {
 function exportDatabase() {
   const db = getDb();
   const data = {};
-  const tables = ['admins','agencies','buses','trips','bookings','gallery','settings','contributions'];
+  const tables = ['admins','agencies','agency_users','buses','trips','bookings','gallery','settings','contributions'];
   for (const t of tables) {
     try { data[t] = db.prepare(`SELECT * FROM ${t}`).all(); }
     catch(e) { data[t] = []; }
   }
   data._exported_at = new Date().toISOString();
-  data._version = '2.0';
+  data._version = '2.1';
   return data;
 }
 
 function importDatabase(data) {
   const db = getDb();
   runTransaction(db, () => {
-    const order = ['admins','settings','agencies','buses','trips','bookings','gallery','contributions'];
+    const order = ['admins','settings','agencies','agency_users','buses','trips','bookings','gallery','contributions'];
     for (const table of order) {
       if (!data[table] || !data[table].length) continue;
       db.exec(`DELETE FROM ${table}`);
@@ -60,22 +60,41 @@ function initDatabase() {
       id TEXT PRIMARY KEY, username TEXT UNIQUE NOT NULL, password TEXT NOT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
     CREATE TABLE IF NOT EXISTS agencies (
       id TEXT PRIMARY KEY, agency_name TEXT NOT NULL, username TEXT UNIQUE NOT NULL,
       password TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, logo_url TEXT,
       commission_rate REAL DEFAULT 10, cancel_rate REAL DEFAULT 20,
+      home_city TEXT,
       is_active INTEGER DEFAULT 1,
       premium INTEGER DEFAULT 0, premium_order INTEGER DEFAULT 999,
       premium_photo_url TEXT, premium_caption TEXT,
       note INTEGER DEFAULT 3,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Sous-comptes gestionnaires par ville
+    -- city = NULL  → propriétaire : voit toutes les villes
+    -- city = TEXT  → gestionnaire : ne voit que les départs de sa ville
+    CREATE TABLE IF NOT EXISTS agency_users (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      agency_id   TEXT NOT NULL REFERENCES agencies(id) ON DELETE CASCADE,
+      username    TEXT NOT NULL UNIQUE,
+      password    TEXT NOT NULL,
+      full_name   TEXT,
+      city        TEXT,
+      role        TEXT NOT NULL DEFAULT 'manager',
+      is_active   INTEGER DEFAULT 1,
+      created_at  TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE TABLE IF NOT EXISTS buses (
       id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
       total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (agency_id) REFERENCES agencies(id)
     );
+
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_id TEXT, bus_name TEXT,
       departure_city TEXT NOT NULL, arrival_city TEXT NOT NULL,
@@ -85,6 +104,7 @@ function initDatabase() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (agency_id) REFERENCES agencies(id)
     );
+
     CREATE TABLE IF NOT EXISTS bookings (
       id TEXT PRIMARY KEY, reference TEXT UNIQUE NOT NULL,
       trip_id TEXT NOT NULL, agency_id TEXT NOT NULL,
@@ -93,39 +113,42 @@ function initDatabase() {
       total_price REAL NOT NULL, commission_rate REAL DEFAULT 10,
       commission_amount REAL DEFAULT 0, status TEXT DEFAULT 'pending',
       payment_status TEXT DEFAULT 'pending', payment_method TEXT,
-      transaction_id TEXT, created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      transaction_id TEXT, boarding_status TEXT DEFAULT NULL,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       FOREIGN KEY (trip_id) REFERENCES trips(id),
       FOREIGN KEY (agency_id) REFERENCES agencies(id)
     );
+
     CREATE TABLE IF NOT EXISTS gallery (
       id TEXT PRIMARY KEY, title TEXT, description TEXT,
       image_url TEXT NOT NULL, category TEXT DEFAULT 'general',
       sort_order INTEGER DEFAULT 0, is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY, value TEXT NOT NULL
     );
+
     CREATE TABLE IF NOT EXISTS contributions (
       id TEXT PRIMARY KEY,
       reference TEXT UNIQUE NOT NULL,
       contributor_name TEXT DEFAULT 'Anonyme',
-      phone TEXT,
-      operator TEXT,
-      amount REAL NOT NULL,
-      currency TEXT DEFAULT 'CDF',
-      transaction_id TEXT,
-      message TEXT,
+      phone TEXT, operator TEXT, amount REAL NOT NULL,
+      currency TEXT DEFAULT 'CDF', transaction_id TEXT, message TEXT,
       status TEXT DEFAULT 'completed',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
   `);
 
+  // Migrations pour les bases existantes (ignorées si la colonne existe déjà)
   [
     "ALTER TABLE bookings ADD COLUMN commission_rate REAL DEFAULT 10",
     "ALTER TABLE bookings ADD COLUMN commission_amount REAL DEFAULT 0",
+    "ALTER TABLE bookings ADD COLUMN boarding_status TEXT DEFAULT NULL",
     "ALTER TABLE agencies ADD COLUMN cancel_rate REAL DEFAULT 20",
     "ALTER TABLE agencies ADD COLUMN logo_url TEXT",
+    "ALTER TABLE agencies ADD COLUMN home_city TEXT",
     "ALTER TABLE agencies ADD COLUMN premium INTEGER DEFAULT 0",
     "ALTER TABLE agencies ADD COLUMN premium_order INTEGER DEFAULT 999",
     "ALTER TABLE agencies ADD COLUMN premium_photo_url TEXT",
@@ -133,6 +156,7 @@ function initDatabase() {
     "ALTER TABLE agencies ADD COLUMN note INTEGER DEFAULT 3",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+  // Super admin par défaut
   if (!db.prepare('SELECT id FROM admins WHERE username=?').get('superadmin')) {
     db.prepare('INSERT INTO admins (id,username,password) VALUES (?,?,?)')
       .run(uuidv4(), 'superadmin', bcrypt.hashSync('Admin@2024!', 10));
