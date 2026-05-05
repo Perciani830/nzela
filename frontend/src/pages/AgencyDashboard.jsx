@@ -2,17 +2,27 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ManifestTab from './ManifestTab';
+import {
+  Check, X, Info, Crown, LogOut, Globe, Menu,
+  BarChart2, Bus, Map, Ticket, ClipboardList, Users, Settings,
+  Building2, Anchor, Mountain, Waves, MapPin,
+  Camera, FolderOpen, Trash2, Loader,
+  Calendar, Wallet, Gem, Clock,
+  Inbox, ImageIcon, Building, Percent, Save,
+  Banknote, Smartphone, Pencil, Ban, KeyRound, Wrench,
+  AlertTriangle, Rocket, User, CheckCircle,
+} from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
 const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
 const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
 
-// Drapeaux / couleurs par ville pour les badges
+// Icônes / couleurs par ville pour les badges
 const CITY_META = {
-  Kinshasa: { color:'#3DAA6A', bg:'rgba(61,170,106,0.12)', icon:'🏙️' },
-  Boma:     { color:'#4A90D9', bg:'rgba(74,144,217,0.12)', icon:'⚓' },
-  Matadi:   { color:'#E8A838', bg:'rgba(232,168,56,0.12)',  icon:'⛰️' },
-  Moanda:   { color:'#9B59B6', bg:'rgba(155,89,182,0.12)', icon:'🌊' },
+  Kinshasa: { color:'#3DAA6A', bg:'rgba(61,170,106,0.12)', Icon: Building2 },
+  Boma:     { color:'#4A90D9', bg:'rgba(74,144,217,0.12)', Icon: Anchor },
+  Matadi:   { color:'#E8A838', bg:'rgba(232,168,56,0.12)',  Icon: Mountain },
+  Moanda:   { color:'#9B59B6', bg:'rgba(155,89,182,0.12)', Icon: Waves },
 };
 
 function getAuth() {
@@ -24,10 +34,12 @@ function getAuth() {
 
 function Toast({ msg, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, []);
+  const Icon = type === 'success' ? Check : type === 'error' ? X : Info;
   return (
-    <div className={`toast ${type==='success'?'t-ok':type==='error'?'t-err':'t-inf'}`} style={{ zIndex:300 }}>
-      {type==='success'?'✓':type==='error'?'✕':'·'} {msg}
-      <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'inherit', cursor:'pointer', fontSize:15 }}>×</button>
+    <div className={`toast ${type==='success'?'t-ok':type==='error'?'t-err':'t-inf'}`} style={{ zIndex:300, display:'flex', alignItems:'center', gap:7 }}>
+      <Icon size={13} />
+      <span style={{ flex:1 }}>{msg}</span>
+      <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'inherit', cursor:'pointer', display:'flex', alignItems:'center' }}><X size={14} /></button>
     </div>
   );
 }
@@ -39,10 +51,10 @@ function StatusBadge({ status }) {
 }
 
 function CityBadge({ city }) {
-  const meta = CITY_META[city] || { color:'var(--muted)', bg:'var(--card)', icon:'📍' };
+  const meta = CITY_META[city] || { color:'var(--muted)', bg:'var(--card)', Icon: MapPin };
   return (
     <span style={{ display:'inline-flex', alignItems:'center', gap:4, background:meta.bg, color:meta.color, border:`1px solid ${meta.color}30`, borderRadius:6, padding:'2px 8px', fontSize:11, fontWeight:700 }}>
-      {meta.icon} {city}
+      <meta.Icon size={10} /> {city}
     </span>
   );
 }
@@ -105,15 +117,15 @@ function LogoUploader({ currentLogo, agencyName, onChange }) {
     <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
       <div style={{ position:'relative', flexShrink:0 }}>
         <AgencyAvatar name={agencyName} logoUrl={currentLogo} size={80} radius={16} />
-        <button onClick={() => fileRef.current?.click()} style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', fontSize:11 }} title="Changer le logo">📷</button>
+        <button onClick={() => fileRef.current?.click()} style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }} title="Changer le logo"><Camera size={11} color="#fff" /></button>
       </div>
       <div style={{ flex:1 }}>
         <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
-        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8 }}>{currentLogo ? '✓ Logo personnalisé configuré' : 'Aucun logo — initiales affichées par défaut'}</div>
+        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>{currentLogo ? <><Check size={11} /> Logo personnalisé configuré</> : 'Aucun logo — initiales affichées par défaut'}</div>
         <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
         <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 12px' }} onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? '⏳ Chargement…' : '📁 Choisir un fichier'}</button>
-          {currentLogo && <button className="btn btn-danger" style={{ fontSize:12, padding:'6px 10px' }} onClick={() => onChange('')}>🗑️ Supprimer</button>}
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 12px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? <><Loader size={11} /> Chargement…</> : <><FolderOpen size={11} /> Choisir un fichier</>}</button>
+          {currentLogo && <button className="btn btn-danger" style={{ fontSize:12, padding:'6px 10px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => onChange('')}><Trash2 size={11} /> Supprimer</button>}
         </div>
         <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>JPG, PNG, WebP · Max 500 Ko</div>
       </div>
@@ -200,14 +212,14 @@ function CityStatsGrid({ trips, bookings }) {
 
   return (
     <div className="glass p-16 fade-in fade-in-4" style={{ marginBottom:14 }}>
-      <div className="section-title" style={{ marginBottom:12 }}>📍 Performance par ville</div>
+      <div className="section-title" style={{ marginBottom:12, display:'flex', alignItems:'center', gap:7 }}><MapPin size={14} /> Performance par ville</div>
       <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px,1fr))', gap:10 }}>
         {cityData.map(d => {
-          const meta = CITY_META[d.city] || { color:'var(--green-l)', bg:'var(--green-bg)', icon:'📍' };
+          const meta = CITY_META[d.city] || { color:'var(--green-l)', bg:'var(--green-bg)', Icon: MapPin };
           return (
             <div key={d.city} style={{ background:meta.bg, border:`1px solid ${meta.color}25`, borderRadius:12, padding:'14px 16px' }}>
               <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-                <span style={{ fontSize:20 }}>{meta.icon}</span>
+                <meta.Icon size={20} color={meta.color} />
                 <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:meta.color }}>{d.city}</span>
               </div>
               <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
@@ -241,7 +253,7 @@ function CityFilterTabs({ value, onChange, trips, bookings }) {
     trips.some(t => t.departure_city === c) || bookings.some(b => b.departure_city === c)
   );
   if (activeCities.length < 2) return null;
-  const tabs = [{ id:'all', label:'Toutes', icon:'🌍' }, ...activeCities.map(c => ({ id:c, label:c, icon: CITY_META[c]?.icon||'📍' }))];
+  const tabs = [{ id:'all', label:'Toutes', Icon: Globe }, ...activeCities.map(c => ({ id:c, label:c, Icon: CITY_META[c]?.Icon || MapPin }))];
   return (
     <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
       {tabs.map(t => {
@@ -255,10 +267,11 @@ function CityFilterTabs({ value, onChange, trips, bookings }) {
               padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', transition:'all 0.18s',
               background: isActive ? (meta?.color || 'var(--green-d)') : 'var(--card)',
               border: `1px solid ${isActive ? (meta?.color || 'var(--green-d)') : 'var(--border)'}`,
-              color: isActive ? '#fff' : 'var(--muted)'
+              color: isActive ? '#fff' : 'var(--muted)',
+              display:'inline-flex', alignItems:'center', gap:5,
             }}
           >
-            {t.icon} {t.label}
+            <t.Icon size={11} /> {t.label}
           </button>
         );
       })}
@@ -346,7 +359,7 @@ export default function AgencyDashboard() {
       const newPending = newBookings.filter(b => b.status === 'pending').length;
       if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
         const diff = newPending - prevPendingRef.current;
-        inf(`🎟️ ${diff} nouvelle${diff > 1 ? 's' : ''} réservation${diff > 1 ? 's' : ''} en attente !`);
+        inf(`${diff} nouvelle${diff > 1 ? 's' : ''} réservation${diff > 1 ? 's' : ''} en attente !`);
       }
       prevPendingRef.current = newPending;
     } catch(e) {
@@ -375,11 +388,11 @@ export default function AgencyDashboard() {
 
   const doCreateBus = async () => {
     if (!busForm.bus_name) return err('Nom du bus requis');
-    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté 🚌'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
+    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doSaveBus = async () => {
-    try { await axios.patch(`${API}/agency/buses/${editBus.id}`, editBus, { headers }); ok('Bus mis à jour ✓'); setEditBus(null); load(); }
+    try { await axios.patch(`${API}/agency/buses/${editBus.id}`, editBus, { headers }); ok('Bus mis à jour'); setEditBus(null); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doDeleteBus = async id => {
@@ -391,11 +404,11 @@ export default function AgencyDashboard() {
     const { departure_city, arrival_city, departure_date, departure_time, price } = tripForm;
     if (!departure_city||!arrival_city||!departure_date||!departure_time||!price) return err('Champs obligatoires manquants');
     if (departure_city === arrival_city) return err('Départ et arrivée doivent être différents');
-    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé 🎉'); setTripModal(false); setTripForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
+    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé'); setTripModal(false); setTripForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doSaveTrip = async () => {
-    try { await axios.patch(`${API}/agency/trips/${editTrip.id}`, editTrip, { headers }); ok('Voyage modifié ✓'); setEditTrip(null); load(); }
+    try { await axios.patch(`${API}/agency/trips/${editTrip.id}`, editTrip, { headers }); ok('Voyage modifié'); setEditTrip(null); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doDeleteTrip = async id => {
@@ -414,7 +427,7 @@ export default function AgencyDashboard() {
     setBulkLoading(true);
     try {
       const res = await axios.post(`${API}/agency/trips/bulk`, { bus_id: bus_id || null, departure_city, arrival_city, departure_time, price: parseFloat(price), description: description || null, dates: bulkPreview }, { headers });
-      ok(`✅ ${res.data.created} voyage${res.data.created > 1 ? 's' : ''} créé${res.data.created > 1 ? 's' : ''} !`);
+      ok(`${res.data.created} voyage${res.data.created > 1 ? 's' : ''} créé${res.data.created > 1 ? 's' : ''} !`);
       setBulkModal(false);
       setBulkForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
       load();
@@ -422,7 +435,7 @@ export default function AgencyDashboard() {
     finally { setBulkLoading(false); }
   };
   const doConfirm = async id => {
-    try { await axios.patch(`${API}/agency/bookings/${id}/confirm`, {}, { headers }); ok('Confirmée ✓'); load(); }
+    try { await axios.patch(`${API}/agency/bookings/${id}/confirm`, {}, { headers }); ok('Confirmée'); load(); }
     catch { err('Erreur'); }
   };
   const doCancel = async (id, amount) => {
@@ -451,7 +464,7 @@ export default function AgencyDashboard() {
     if (password.length < 6)   return err('Mot de passe trop court (min. 6 caractères)');
     try {
       await axios.post(`${API}/agency/users`, { username, password, full_name, city: city||null, role }, { headers });
-      ok(`✓ Gestionnaire "${username}" créé`);
+      ok(`Gestionnaire "${username}" créé`);
       setUserModal(false);
       setUserForm({ username:'', password:'', full_name:'', city:'', role:'manager' });
       loadUsers();
@@ -466,7 +479,7 @@ export default function AgencyDashboard() {
         role:      editUser.role,
         is_active: editUser.is_active,
       }, { headers });
-      ok('Gestionnaire mis à jour ✓');
+      ok('Gestionnaire mis à jour');
       setEditUser(null);
       loadUsers();
     } catch(e) { err(e.response?.data?.error || 'Erreur'); }
@@ -485,7 +498,7 @@ export default function AgencyDashboard() {
     if (!newPass || newPass.length < 6) return err('Mot de passe trop court (min. 6 caractères)');
     try {
       await axios.post(`${API}/agency/users/${resetPassModal.id}/reset-password`, { password: newPass }, { headers });
-      ok(`Mot de passe de "${resetPassModal.username}" réinitialisé ✓`);
+      ok(`Mot de passe de "${resetPassModal.username}" réinitialisé`);
       setResetPassModal(null);
       setNewPass('');
     } catch(e) { err(e.response?.data?.error || 'Erreur'); }
@@ -495,13 +508,13 @@ export default function AgencyDashboard() {
   const arrivalCities = (depCity) => CITIES.filter(c => c !== depCity);
 
   const TABS = [
-    { id:'overview',  icon:'📊', label:"Vue d'ensemble" },
-    { id:'buses',     icon:'🚌', label:'Mes bus' },
-    { id:'trips',     icon:'🗺️', label:'Voyages' },
-    { id:'bookings',  icon:'🎟️', label:'Réservations' },
-    { id:'manifest',  icon:'📋', label:'Manifeste' },
-    ...(isOwner ? [{ id:'users', icon:'👥', label:'Gestionnaires' }] : []),
-    { id:'settings',  icon:'⚙️', label:'Paramètres' },
+    { id:'overview',  Icon: BarChart2,     label:"Vue d'ensemble" },
+    { id:'buses',     Icon: Bus,           label:'Mes bus' },
+    { id:'trips',     Icon: Map,           label:'Voyages' },
+    { id:'bookings',  Icon: Ticket,        label:'Réservations' },
+    { id:'manifest',  Icon: ClipboardList, label:'Manifeste' },
+    ...(isOwner ? [{ id:'users', Icon: Users, label:'Gestionnaires' }] : []),
+    { id:'settings',  Icon: Settings,      label:'Paramètres' },
   ];
 
   const pending = visibleBookings.filter(b => b.status==='pending').length;
@@ -510,7 +523,7 @@ export default function AgencyDashboard() {
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'var(--night)' }}>
       {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir le menu">☰</button>
+      <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir le menu"><Menu size={20} /></button>
       <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
 
       <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
@@ -524,7 +537,7 @@ export default function AgencyDashboard() {
               <div>
                 <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13 }}>{agencyName}</div>
                 <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>
-                  {isOwner ? '👑 Propriétaire — toutes villes' : 'Agence partenaire · RDC'}
+                  {isOwner ? <><Crown size={11} /> Propriétaire — toutes villes</> : 'Agence partenaire · RDC'}
                 </div>
               </div>
             </div>
@@ -540,13 +553,13 @@ export default function AgencyDashboard() {
         <nav className="sidebar-nav">
           {TABS.map(t => (
             <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
-              <span className="nav-icon">{t.icon}</span><span>{t.label}</span>
+              <span className="nav-icon"><t.Icon size={15} /></span><span>{t.label}</span>
               {t.id==='bookings' && pending>0 && <span style={{ marginLeft:'auto', background:'var(--gold)', color:'#000', borderRadius:99, padding:'1px 6px', fontSize:10, fontWeight:700 }}>{pending}</span>}
             </div>
           ))}
         </nav>
         <div className="sidebar-footer">
-          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px' }} onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪 Déconnexion</button>
+          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px', display:'inline-flex', alignItems:'center', gap:7 }} onClick={() => { localStorage.clear(); navigate('/login'); }}><LogOut size={13} /> Déconnexion</button>
           <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', marginTop:8 }}>© 2026 Nzela RDC</div>
         </div>
       </aside>
@@ -555,20 +568,20 @@ export default function AgencyDashboard() {
         <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
           <div>
             <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800 }}>{TABS.find(t=>t.id===tab)?.icon} {TABS.find(t=>t.id===tab)?.label}</h1>
+              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800, display:'flex', alignItems:'center', gap:8 }}>{(() => { const T = TABS.find(t=>t.id===tab); return T ? <T.Icon size={20} /> : null; })()} {TABS.find(t=>t.id===tab)?.label}</h1>
               {userCity && <CityBadge city={userCity} />}
-              {isOwner && <span style={{ fontSize:11, background:'rgba(255,200,0,0.12)', color:'var(--gold)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700 }}>👑 Vue globale</span>}
+              {isOwner && <span style={{ fontSize:11, background:'rgba(255,200,0,0.12)', color:'var(--gold)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}><Crown size={10} /> Vue globale</span>}
             </div>
             <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
           </div>
           <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
             {tab==='buses' && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
             {tab==='trips' && <>
-              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(true)}>📅 En masse</button>
+              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(true)}><Calendar size={12} style={{ marginRight:5 }} />En masse</button>
               <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>
             </>}
             {tab==='users' && isOwner && <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Gestionnaire</button>}
-            <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px' }} onClick={() => { localStorage.clear(); navigate('/login'); }}>🚪</button>
+            <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px', display:'inline-flex', alignItems:'center' }} onClick={() => { localStorage.clear(); navigate('/login'); }}><LogOut size={14} /></button>
           </div>
         </div>
 
@@ -577,7 +590,7 @@ export default function AgencyDashboard() {
             <div>
               {/* Sélecteur de voyage pour le manifeste */}
               <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
-                <div className="section-title" style={{ marginBottom:4 }}>📋 Manifeste passagers</div>
+                <div className="section-title" style={{ marginBottom:4, display:'flex', alignItems:'center', gap:7 }}><ClipboardList size={14} /> Manifeste passagers</div>
                 <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
                   Choisissez un voyage pour voir la liste des passagers — disponible dès la création du voyage.
                 </div>
@@ -619,13 +632,13 @@ export default function AgencyDashboard() {
           {tab==='overview' && <>
             <div className="grid-4" style={{ marginBottom:16 }}>
               {[
-                { icon:'💰', label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
-                { icon:'💎', label:`Commission Nzela (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
-                { icon:'🚌', label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
-                { icon:'⏳', label:'En attente', value:pending, cls:'purple' },
+                { Icon: Wallet,  label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
+                { Icon: Gem,     label:`Commission Nzela (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
+                { Icon: Bus,     label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
+                { Icon: Clock,   label:'En attente', value:pending, cls:'purple' },
               ].map((s,i) => (
                 <div key={i} className={`stat-card ${s.cls} fade-in fade-in-${i+1}`}>
-                  <div className="stat-icon">{s.icon}</div><div className="stat-value">{s.value}</div><div className="stat-label">{s.label}</div>
+                  <div className="stat-icon"><s.Icon size={22} /></div><div className="stat-value">{s.value}</div><div className="stat-label">{s.label}</div>
                 </div>
               ))}
             </div>
@@ -639,7 +652,7 @@ export default function AgencyDashboard() {
                 <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => setTab('bookings')}>Voir tout →</button>
               </div>
               {visibleBookings.length===0
-                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>📭 Aucune réservation{userCity ? ` pour ${userCity}` : ''}</div>
+                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}><Inbox size={15} /> Aucune réservation{userCity ? ` pour ${userCity}` : ''}</div>
                 : <div style={{ overflowX:'auto' }}><table className="data-table">
                     <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
                     <tbody>{visibleBookings.slice(0,5).map(b => (
@@ -662,18 +675,18 @@ export default function AgencyDashboard() {
 
           {tab==='buses' && <div style={{ display:'grid', gap:10 }}>
             {buses.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}><div style={{ fontSize:44, marginBottom:12 }}>🚌</div><h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:8 }}>Aucun bus enregistré</h3><button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Ajouter un bus</button></div>
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}><div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><Bus size={44} style={{ opacity:.2 }} /></div><h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:8 }}>Aucun bus enregistré</h3><button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Ajouter un bus</button></div>
               : buses.map((bus,i) => (
                 <div key={bus.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'13px 18px' }}>
                   <div className="bus-card-row">
                     <div style={{ display:'flex', alignItems:'center', gap:13 }}>
-                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>🚌</div>
+                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Bus size={20} color="var(--green-l)" /></div>
                       <div><div style={{ fontFamily:'var(--font)', fontSize:15, fontWeight:700 }}>{bus.bus_name}</div><div style={{ fontSize:12, color:'var(--muted)', marginTop:1 }}>{bus.total_seats} sièges{bus.description&&` · ${bus.description}`}</div></div>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                      <span className={`badge ${bus.is_active?'b-g':'b-r'}`}>{bus.is_active?'✓ Actif':'⛔ Inactif'}</span>
-                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditBus({...bus})}>✏️ Modifier</button>
-                      <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteBus(bus.id)}>🗑️</button>
+                      <span className={`badge ${bus.is_active?'b-g':'b-r'}`} style={{ display:'inline-flex', alignItems:'center', gap:4 }}>{bus.is_active?<><Check size={10}/> Actif</>:<><Ban size={10}/> Inactif</>}</span>
+                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => setEditBus({...bus})}><Pencil size={11} /> Modifier</button>
+                      <button className="btn btn-danger" style={{ padding:'6px 10px', display:'inline-flex', alignItems:'center' }} onClick={() => doDeleteBus(bus.id)}><Trash2 size={11} /></button>
                     </div>
                   </div>
                 </div>
@@ -687,7 +700,7 @@ export default function AgencyDashboard() {
             {/* Bandeau informatif pour les gestionnaires */}
             {!isOwner && userCity && (
               <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-                <span style={{ fontSize:16 }}>📍</span>
+                <MapPin size={14} color="var(--green-l)" />
                 <span style={{ fontSize:13 }}>Vous gérez les départs depuis <strong>{userCity}</strong> — seuls les voyages partant de votre ville sont affichés.</span>
               </div>
             )}
@@ -698,7 +711,7 @@ export default function AgencyDashboard() {
                     Aucun voyage{userCity ? ` depuis ${userCity}` : ''}
                   </h3>
                   <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
-                    <button className="btn btn-ghost" onClick={() => setBulkModal(true)}>📅 Générer en masse</button>
+                    <button className="btn btn-ghost" onClick={() => setBulkModal(true)} style={{ display:'inline-flex', alignItems:'center', gap:5 }}><Calendar size={12} /> Générer en masse</button>
                     <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Nouveau voyage</button>
                   </div>
                 </div>
@@ -717,23 +730,23 @@ export default function AgencyDashboard() {
                         <CityBadge city={t.arrival_city} />
                         <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
                       </div>
-                      {t.bus_name && <span className="badge b-b" style={{ fontSize:11 }}>🚌 {t.bus_name}</span>}
+                      {t.bus_name && <span className="badge b-b" style={{ fontSize:11, display:'inline-flex', alignItems:'center', gap:4 }}><Bus size={10} /> {t.bus_name}</span>}
                       <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:'var(--gold)' }}>{Number(t.price).toLocaleString('fr-FR')} <span style={{ fontSize:11, fontWeight:500 }}>FC</span></div>
                     </div>
                     <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                       <div style={{ textAlign:'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{t.available_seats}/{t.total_seats}</div><div style={{ fontSize:11, color:'var(--muted)' }}>places</div></div>
-                      <span className={`badge ${t.available_seats>0?'b-g':'b-r'}`}>{t.available_seats>0?'✓ Actif':'⛔ Complet'}</span>
+                      <span className={`badge ${t.available_seats>0?'b-g':'b-r'}`} style={{ display:'inline-flex', alignItems:'center', gap:4 }}>{t.available_seats>0?<><Check size={10}/> Actif</>:<><Ban size={10}/> Complet</>}</span>
                       {/* Bouton manifeste rapide */}
                       <button
                         className="btn btn-ghost"
-                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)' }}
+                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)', display:'inline-flex', alignItems:'center' }}
                         title="Voir le manifeste de ce voyage"
                         onClick={() => { setManifestTripId(String(t.id)); goTab('manifest'); }}
                       >
-                        📋
+                        <ClipboardList size={11} />
                       </button>
-                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px' }} onClick={() => setEditTrip({...t})}>✏️</button>
-                      <button className="btn btn-danger" style={{ padding:'6px 10px' }} onClick={() => doDeleteTrip(t.id)}>🗑️</button>
+                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px', display:'inline-flex', alignItems:'center' }} onClick={() => setEditTrip({...t})}><Pencil size={11} /></button>
+                      <button className="btn btn-danger" style={{ padding:'6px 10px', display:'inline-flex', alignItems:'center' }} onClick={() => doDeleteTrip(t.id)}><Trash2 size={11} /></button>
                     </div>
                   </div>
                 </div>
@@ -748,7 +761,7 @@ export default function AgencyDashboard() {
               </div>
             )}
             {visibleBookings.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>📭 Aucune réservation{userCity ? ` depuis ${userCity}` : ''}</div>
+              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}><Inbox size={16} /> Aucune réservation{userCity ? ` depuis ${userCity}` : ''}</div>
               : <div style={{ overflowX:'auto' }}><table className="data-table">
                   <thead><tr><th>Référence</th><th>Passager</th><th>Trajet</th><th>Bus</th><th>Total</th><th>Commission</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead>
                   <tbody>{visibleBookings.map(b => (
@@ -766,11 +779,11 @@ export default function AgencyDashboard() {
                       <td>{b.bus_name?<span className="badge b-b" style={{ fontSize:11 }}>{b.bus_name}</span>:<span style={{ color:'var(--muted)' }}>—</span>}</td>
                       <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
                       <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount>0?`-${Number(b.commission_amount).toLocaleString('fr-FR')} FC`:'—'}</td>
-                      <td><span className="badge b-b" style={{ fontSize:11 }}>{b.payment_method==='cash'?'💵 Espèces':'📱 Mobile'}</span></td>
+                      <td><span className="badge b-b" style={{ fontSize:11, display:'inline-flex', alignItems:'center', gap:4 }}>{b.payment_method==='cash'?<><Banknote size={10}/> Espèces</>:<><Smartphone size={10}/> Mobile</>}</span></td>
                       <td><StatusBadge status={b.status}/></td>
                       <td><div style={{ display:'flex', gap:5 }}>
-                        {b.status==='pending'&&<button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 9px', color:'var(--ok)', borderColor:'rgba(61,170,106,0.2)' }} onClick={() => doConfirm(b.id)}>✓</button>}
-                        {(b.status==='pending'||b.status==='confirmed')&&<button className="btn btn-danger" style={{ fontSize:11, padding:'5px 9px' }} onClick={() => doCancel(b.id,b.total_price)}>✕</button>}
+                        {b.status==='pending'&&<button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 9px', color:'var(--ok)', borderColor:'rgba(61,170,106,0.2)', display:'inline-flex', alignItems:'center' }} onClick={() => doConfirm(b.id)}><Check size={11} /></button>}
+                        {(b.status==='pending'||b.status==='confirmed')&&<button className="btn btn-danger" style={{ fontSize:11, padding:'5px 9px', display:'inline-flex', alignItems:'center' }} onClick={() => doCancel(b.id,b.total_price)}><X size={11} /></button>}
                       </div></td>
                     </tr>
                   ))}</tbody>
@@ -779,11 +792,11 @@ export default function AgencyDashboard() {
 
           {tab==='settings' && <div style={{ maxWidth:540 }}>
             <div className="glass p-16 fade-in" style={{ marginBottom:12 }}>
-              <div className="section-title">🖼️ Logo de l'agence</div>
+              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><ImageIcon size={14} /> Logo de l'agence</div>
               <LogoUploader currentLogo={settings.logo_url} agencyName={agencyName} onChange={val => setSettings({...settings, logo_url: val})} />
             </div>
             <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
-              <div className="section-title">🏢 Informations</div>
+              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><Building size={14} /> Informations</div>
               <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
                 <Inp label="Email"><input className="input-field" placeholder="contact@agence.cd" value={settings.email||''} onChange={e=>setSettings({...settings,email:e.target.value})} /></Inp>
                 <Inp label="Téléphone"><input className="input-field" placeholder="+243 81 000 0000" value={settings.phone||''} onChange={e=>setSettings({...settings,phone:e.target.value})} /></Inp>
@@ -794,7 +807,7 @@ export default function AgencyDashboard() {
             {/* Ville principale du gestionnaire (si pas définie dans le JWT) */}
             {!user.city && (
               <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
-                <div className="section-title">📍 Ville principale de départ</div>
+              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><MapPin size={14} /> Ville principale de départ</div>
                 <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>
                   Définit les voyages que vous gérez. Vous ne verrez que les départs depuis cette ville.
                   Laissez vide pour voir toutes les villes (propriétaire).
@@ -802,19 +815,19 @@ export default function AgencyDashboard() {
                 <Inp label="Ville de départ">
                   <select className="input-field" value={settings.home_city||''} onChange={e=>setSettings({...settings,home_city:e.target.value})}>
                     <option value="">— Toutes les villes (propriétaire) —</option>
-                    {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon||'📍'} {c}</option>)}
+                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </Inp>
                 {settings.home_city && (
-                  <div style={{ marginTop:8, padding:'8px 12px', background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, fontSize:12, color:'var(--green-l)' }}>
-                    ✓ Vous gérerez uniquement les voyages partant de <strong>{settings.home_city}</strong>.
+                  <div style={{ marginTop:8, padding:'8px 12px', background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, fontSize:12, color:'var(--green-l)', display:'flex', alignItems:'center', gap:6 }}>
+                    <Check size={12} /> Vous gérerez uniquement les voyages partant de <strong>{settings.home_city}</strong>.
                   </div>
                 )}
               </div>
             )}
 
             <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:12 }}>
-              <div className="section-title">💸 Politique d'annulation</div>
+              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><Percent size={14} /> Politique d'annulation</div>
               <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>Pourcentage retenu quand un client annule.</p>
               <div style={{ marginBottom:12 }}>
                 <Inp label="Taux de rétention (%)"><input className="input-field" type="number" min="0" max="100" step="5" value={settings.cancel_rate||20} onChange={e=>setSettings({...settings,cancel_rate:Number(e.target.value)})} /></Inp>
@@ -835,11 +848,11 @@ export default function AgencyDashboard() {
             <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13 }} disabled={savingSettings}
               onClick={async () => {
                 setSavingSettings(true);
-                try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés ✓'); }
+                try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés'); }
                 catch(e) { err(e.response?.data?.error||'Erreur'); }
                 finally { setSavingSettings(false); }
               }}>
-              {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : '💾 Sauvegarder'}
+              {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : <><Save size={13} style={{ marginRight:5 }} />Sauvegarder</>}
             </button>
           </div>}
 
@@ -848,7 +861,7 @@ export default function AgencyDashboard() {
               {/* Bandeau expliquant le système */}
               <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
                 <div style={{ display:'flex', alignItems:'flex-start', gap:14 }}>
-                  <div style={{ fontSize:32, flexShrink:0 }}>👥</div>
+                  <div style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', width:48, height:48, background:'var(--green-bg)', borderRadius:12, border:'1px solid rgba(61,170,106,0.2)' }}><Users size={26} color="var(--green-l)" /></div>
                   <div>
                     <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, marginBottom:6 }}>Gestion des accès par ville</div>
                     <p style={{ fontSize:13, color:'var(--muted)', lineHeight:1.7, margin:0 }}>
@@ -862,9 +875,9 @@ export default function AgencyDashboard() {
                         const hasManager = agencyUsers.some(u => u.city === c && u.is_active);
                         return (
                           <div key={c} style={{ display:'flex', alignItems:'center', gap:6, background: hasManager ? meta.bg : 'var(--card)', border:`1px solid ${hasManager ? meta.color+'40' : 'var(--border)'}`, borderRadius:8, padding:'5px 10px' }}>
-                            <span>{meta.icon}</span>
+                            <meta.Icon size={13} color={hasManager ? meta.color : 'var(--muted)'} />
                             <span style={{ fontSize:12, fontWeight:700, color: hasManager ? meta.color : 'var(--muted)' }}>{c}</span>
-                            <span style={{ fontSize:10, color: hasManager ? meta.color : 'var(--muted)' }}>{hasManager ? '✓' : '—'}</span>
+                            <span style={{ fontSize:10, color: hasManager ? meta.color : 'var(--muted)' }}>{hasManager ? <Check size={10} /> : '—'}</span>
                           </div>
                         );
                       })}
@@ -878,28 +891,28 @@ export default function AgencyDashboard() {
                 ? <div style={{ textAlign:'center', padding:40 }}><div className="spinner" style={{ width:32,height:32,margin:'0 auto',borderWidth:2.5 }}/></div>
                 : agencyUsers.length === 0
                   ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
-                      <div style={{ fontSize:44, marginBottom:12 }}>👤</div>
+                      <div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><User size={44} style={{ opacity:.2 }} /></div>
                       <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:700, marginBottom:8 }}>Aucun gestionnaire créé</div>
                       <p style={{ fontSize:13, marginBottom:16 }}>Créez un compte pour chaque chef d'agence de ville.</p>
                       <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Créer le premier gestionnaire</button>
                     </div>
                   : <div style={{ display:'grid', gap:10 }}>
                       {agencyUsers.map((u, i) => {
-                        const meta = u.city ? (CITY_META[u.city] || { color:'var(--muted)', bg:'var(--card)', icon:'📍' }) : { color:'var(--gold)', bg:'rgba(245,166,35,0.1)', icon:'👑' };
+                        const meta = u.city ? (CITY_META[u.city] || { color:'var(--muted)', bg:'var(--card)', Icon: MapPin }) : { color:'var(--gold)', bg:'rgba(245,166,35,0.1)', Icon: Crown };
                         return (
                           <div key={u.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'14px 18px', borderLeft:`3px solid ${u.is_active ? meta.color : 'var(--border)'}`, opacity: u.is_active ? 1 : 0.55 }}>
                             <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
                               <div style={{ display:'flex', alignItems:'center', gap:12 }}>
                                 {/* Avatar */}
-                                <div style={{ width:42, height:42, borderRadius:10, background:meta.bg, border:`1px solid ${meta.color}30`, display:'flex', alignItems:'center', justifyContent:'center', fontSize:20, flexShrink:0 }}>
-                                  {meta.icon}
+                                <div style={{ width:42, height:42, borderRadius:10, background:meta.bg, border:`1px solid ${meta.color}30`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                                  <meta.Icon size={20} color={meta.color} />
                                 </div>
                                 <div>
                                   <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
                                     <span style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>{u.full_name || u.username}</span>
                                     {u.full_name && <code style={{ fontSize:11, color:'var(--muted)', background:'var(--card)', padding:'1px 6px', borderRadius:4 }}>{u.username}</code>}
                                     <span style={{ fontSize:11, background: u.role==='owner' ? 'rgba(245,166,35,0.12)' : 'var(--green-bg)', color: u.role==='owner' ? 'var(--gold)' : 'var(--green-l)', border:`1px solid ${u.role==='owner' ? 'rgba(245,166,35,0.25)' : 'rgba(61,170,106,0.25)'}`, borderRadius:6, padding:'1px 7px', fontWeight:700 }}>
-                                      {u.role === 'owner' ? '👑 Propriétaire' : '🔧 Gestionnaire'}
+                                    {u.role === 'owner' ? <><Crown size={9} /> Propriétaire</> : <><Wrench size={9} /> Gestionnaire</>}
                                     </span>
                                   </div>
                                   <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:5, flexWrap:'wrap' }}>
@@ -912,17 +925,17 @@ export default function AgencyDashboard() {
                                 </div>
                               </div>
                               <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }}
+                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center', gap:4 }}
                                   onClick={() => setResetPassModal({ id: u.id, username: u.full_name || u.username })}>
-                                  🔑 MDP
+                                  <KeyRound size={11} /> MDP
                                 </button>
-                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }}
+                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center', gap:4 }}
                                   onClick={() => setEditUser({ ...u })}>
-                                  ✏️ Modifier
+                                  <Pencil size={11} /> Modifier
                                 </button>
-                                <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 10px' }}
+                                <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center' }}
                                   onClick={() => doDeleteUser(u.id, u.full_name || u.username)}>
-                                  🗑️
+                                  <Trash2 size={11} />
                                 </button>
                               </div>
                             </div>
@@ -939,7 +952,7 @@ export default function AgencyDashboard() {
       <nav className="mobile-bottom-nav">
         {TABS.map(t => (
           <button key={t.id} className={`mobile-tab-btn ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
-            <span className="mobile-tab-icon">{t.icon}</span>
+          <span className="mobile-tab-icon"><t.Icon size={20} /></span>
             <span className="mobile-tab-label">{t.label}</span>
             {t.id==='bookings' && pending>0 && <span className="mobile-tab-badge">{pending}</span>}
           </button>
@@ -948,7 +961,7 @@ export default function AgencyDashboard() {
 
       {/* ── MODALS ─────────────────────────────────────────────────────────────── */}
 
-      {busModal && <Modal title="🚌 Ajouter un bus" onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
+      {busModal && <Modal title={<><Bus size={14} style={{ marginRight:6 }} />Ajouter un bus</>} onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Nom du bus *"><input className="input-field" placeholder="Bus 1, Minibus A…" value={busForm.bus_name} onChange={e=>setBusForm({...busForm,bus_name:e.target.value})} /></Inp>
           <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={busForm.total_seats} onChange={e=>setBusForm({...busForm,total_seats:parseInt(e.target.value)})} /></Inp>
@@ -956,7 +969,7 @@ export default function AgencyDashboard() {
         </div>
       </Modal>}
 
-      {editBus && <Modal title={`✏️ Modifier — ${editBus.bus_name}`} onClose={() => setEditBus(null)} onConfirm={doSaveBus} confirmLabel="💾 Sauvegarder">
+      {editBus && <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier — {editBus.bus_name}</>} onClose={() => setEditBus(null)} onConfirm={doSaveBus} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>}>
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Nom"><input className="input-field" value={editBus.bus_name} onChange={e=>setEditBus({...editBus,bus_name:e.target.value})} /></Inp>
           <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={editBus.total_seats} onChange={e=>setEditBus({...editBus,total_seats:parseInt(e.target.value)})} /></Inp>
@@ -964,15 +977,17 @@ export default function AgencyDashboard() {
           <div>
             <label className="input-label" style={{ display:'block', marginBottom:6 }}>Statut</label>
             <div style={{ display:'flex', gap:8 }}>
-              {[['✓ Actif',1],['⛔ Inactif',0]].map(([l,v]) => (
-                <button key={v} className={`btn ${editBus.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }} onClick={() => setEditBus({...editBus,is_active:v})}>{l}</button>
+              {[['Actif',1],['Inactif',0]].map(([l,v]) => (
+                <button key={v} className={`btn ${editBus.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => setEditBus({...editBus,is_active:v})}>
+                  {v===1 ? <Check size={11} /> : <Ban size={11} />} {l}
+                </button>
               ))}
             </div>
           </div>
         </div>
       </Modal>}
 
-      {tripModal && <Modal title="🗺️ Nouveau voyage" onClose={() => setTripModal(false)} onConfirm={doCreateTrip} confirmLabel="Créer →" maxWidth={500}>
+      {tripModal && <Modal title={<><Map size={14} style={{ marginRight:6 }} />Nouveau voyage</>} onClose={() => setTripModal(false)} onConfirm={doCreateTrip} confirmLabel="Créer →" maxWidth={500}>
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Bus (optionnel)">
             <select className="input-field" value={tripForm.bus_id} onChange={e=>setTripForm({...tripForm,bus_id:e.target.value})}>
@@ -1005,8 +1020,8 @@ export default function AgencyDashboard() {
             </Inp>
           </div>
           {!isOwner && (
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
-              📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, padding:'6px 10px', background:'var(--card)', borderRadius:7, display:'flex', alignItems:'center', gap:5 }}>
+              <MapPin size={11} /> Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
             </div>
           )}
           <div className="grid-2">
@@ -1018,7 +1033,7 @@ export default function AgencyDashboard() {
         </div>
       </Modal>}
 
-      {editTrip && <Modal title="✏️ Modifier le voyage" subtitle={`${editTrip.departure_city} → ${editTrip.arrival_city}`} onClose={() => setEditTrip(null)} onConfirm={doSaveTrip} confirmLabel="💾 Sauvegarder" maxWidth={500}>
+      {editTrip && <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier le voyage</>} subtitle={`${editTrip.departure_city} → ${editTrip.arrival_city}`} onClose={() => setEditTrip(null)} onConfirm={doSaveTrip} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>} maxWidth={500}>
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <div className="grid-2">
             <Inp label="Départ">
@@ -1059,7 +1074,7 @@ export default function AgencyDashboard() {
           <div className="modal-box" style={{ maxWidth:540 }}>
             <div className="modal-header">
               <div>
-                <h2>📅 Générer des voyages en masse</h2>
+                <h2 style={{ display:'flex', alignItems:'center', gap:7 }}><Calendar size={16} /> Générer des voyages en masse</h2>
                 <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Configure une liaison + une période → tous les voyages créés en un clic</div>
               </div>
               <button className="modal-close" onClick={() => setBulkModal(false)}>×</button>
@@ -1090,8 +1105,8 @@ export default function AgencyDashboard() {
                 </Inp>
               </div>
               {!isOwner && (
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:-8, padding:'6px 10px', background:'var(--card)', borderRadius:7 }}>
-                  📍 Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
+                <div style={{ fontSize:11, color:'var(--muted)', marginTop:-8, padding:'6px 10px', background:'var(--card)', borderRadius:7, display:'flex', alignItems:'center', gap:5 }}>
+                  <MapPin size={11} /> Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
                 </div>
               )}
               <Inp label="Bus (optionnel)">
@@ -1121,7 +1136,7 @@ export default function AgencyDashboard() {
               <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={bulkForm.description} onChange={e=>setBulkForm({...bulkForm,description:e.target.value})} /></Inp>
               {bulkPreview.length > 0 && (
                 <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'11px 13px' }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', marginBottom:8 }}>✅ {bulkPreview.length} voyage{bulkPreview.length > 1 ? 's' : ''} seront créés</div>
+                  <div style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}><CheckCircle size={13} /> {bulkPreview.length} voyage{bulkPreview.length > 1 ? 's' : ''} seront créés</div>
                   <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
                     {bulkPreview.slice(0,14).map(d => (
                       <span key={d} style={{ background:'rgba(61,170,106,.1)', border:'1px solid rgba(61,170,106,.2)', borderRadius:6, padding:'2px 8px', fontSize:11, color:'var(--text)' }}>
@@ -1133,15 +1148,15 @@ export default function AgencyDashboard() {
                 </div>
               )}
               {bulkForm.date_from && bulkForm.date_to && bulkPreview.length === 0 && (
-                <div style={{ background:'rgba(240,80,80,0.08)', border:'1px solid rgba(240,80,80,0.2)', borderRadius:10, padding:'10px 13px', fontSize:12, color:'var(--err)' }}>
-                  ⚠️ Aucune date générée — vérifiez les jours cochés et la période.
+                <div style={{ background:'rgba(240,80,80,0.08)', border:'1px solid rgba(240,80,80,0.2)', borderRadius:10, padding:'10px 13px', fontSize:12, color:'var(--err)', display:'flex', alignItems:'center', gap:6 }}>
+                  <AlertTriangle size={12} /> Aucune date générée — vérifiez les jours cochés et la période.
                 </div>
               )}
             </div>
             <div className="modal-footer">
               <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(false)}>Annuler</button>
               <button className="btn btn-primary" onClick={doCreateBulk} disabled={bulkLoading || bulkPreview.length === 0}>
-                {bulkLoading ? <><div className="spinner"/>Création…</> : `🚀 Créer ${bulkPreview.length > 0 ? bulkPreview.length + ' voyage' + (bulkPreview.length > 1 ? 's' : '') : ''}`}
+                {bulkLoading ? <><div className="spinner"/>Création…</> : <><Rocket size={12} style={{ marginRight:5 }} />Créer {bulkPreview.length > 0 ? bulkPreview.length + ' voyage' + (bulkPreview.length > 1 ? 's' : '') : ''}</>}
               </button>
             </div>
           </div>
@@ -1150,7 +1165,7 @@ export default function AgencyDashboard() {
 
       {/* ── MODAL Créer gestionnaire ─────────────────────────────────────────────── */}
       {userModal && (
-        <Modal title="👤 Nouveau gestionnaire" subtitle="Le gestionnaire se connectera avec ces identifiants" onClose={() => setUserModal(false)} onConfirm={doCreateUser} confirmLabel="Créer →" maxWidth={460}>
+        <Modal title={<><User size={14} style={{ marginRight:6 }} />Nouveau gestionnaire</>} subtitle="Le gestionnaire se connectera avec ces identifiants" onClose={() => setUserModal(false)} onConfirm={doCreateUser} confirmLabel="Créer →" maxWidth={460}>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <div className="grid-2">
               <Inp label="Identifiant *">
@@ -1170,13 +1185,13 @@ export default function AgencyDashboard() {
               <Inp label="Ville assignée">
                 <select className="input-field" value={userForm.city} onChange={e=>setUserForm({...userForm,city:e.target.value})}>
                   <option value="">— Toutes les villes —</option>
-                  {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon} {c}</option>)}
+                  {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Inp>
               <Inp label="Rôle">
                 <select className="input-field" value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}>
-                  <option value="manager">🔧 Gestionnaire</option>
-                  <option value="owner">👑 Propriétaire</option>
+                  <option value="manager">Gestionnaire</option>
+                  <option value="owner">Propriétaire</option>
                 </select>
               </Inp>
             </div>
@@ -1192,7 +1207,7 @@ export default function AgencyDashboard() {
 
       {/* ── MODAL Modifier gestionnaire ──────────────────────────────────────────── */}
       {editUser && (
-        <Modal title={`✏️ Modifier — ${editUser.full_name || editUser.username}`} onClose={() => setEditUser(null)} onConfirm={doSaveUser} confirmLabel="💾 Sauvegarder" maxWidth={460}>
+        <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier — {editUser.full_name || editUser.username}</>} onClose={() => setEditUser(null)} onConfirm={doSaveUser} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>} maxWidth={460}>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
             <Inp label="Nom complet">
               <input className="input-field" value={editUser.full_name||''} onChange={e=>setEditUser({...editUser,full_name:e.target.value})} />
@@ -1201,23 +1216,23 @@ export default function AgencyDashboard() {
               <Inp label="Ville assignée">
                 <select className="input-field" value={editUser.city||''} onChange={e=>setEditUser({...editUser,city:e.target.value})}>
                   <option value="">— Toutes les villes —</option>
-                  {CITIES.map(c => <option key={c} value={c}>{CITY_META[c]?.icon} {c}</option>)}
+                  {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Inp>
               <Inp label="Rôle">
                 <select className="input-field" value={editUser.role} onChange={e=>setEditUser({...editUser,role:e.target.value})}>
-                  <option value="manager">🔧 Gestionnaire</option>
-                  <option value="owner">👑 Propriétaire</option>
+                  <option value="manager">Gestionnaire</option>
+                  <option value="owner">Propriétaire</option>
                 </select>
               </Inp>
             </div>
             <div>
               <div className="input-label" style={{ marginBottom:8 }}>Statut du compte</div>
               <div style={{ display:'flex', gap:8 }}>
-                {[['✓ Actif', 1], ['⛔ Désactivé', 0]].map(([l, v]) => (
-                  <button key={v} className={`btn ${editUser.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }}
+                {[['Actif', 1], ['Désactivé', 0]].map(([l, v]) => (
+                  <button key={v} className={`btn ${editUser.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px', display:'inline-flex', alignItems:'center', gap:5 }}
                     onClick={() => setEditUser({...editUser,is_active:v})}>
-                    {l}
+                    {v===1 ? <Check size={11} /> : <Ban size={11} />} {l}
                   </button>
                 ))}
               </div>
@@ -1232,7 +1247,7 @@ export default function AgencyDashboard() {
 
       {/* ── MODAL Réinitialiser mot de passe ─────────────────────────────────────── */}
       {resetPassModal && (
-        <Modal title="🔑 Nouveau mot de passe" subtitle={`Compte : ${resetPassModal.username}`}
+        <Modal title={<><KeyRound size={14} style={{ marginRight:6 }} />Nouveau mot de passe</>} subtitle={`Compte : ${resetPassModal.username}`}
           onClose={() => { setResetPassModal(null); setNewPass(''); }}
           onConfirm={doResetPassword} confirmLabel="Mettre à jour →" maxWidth={400}>
           <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
@@ -1240,8 +1255,8 @@ export default function AgencyDashboard() {
               <input className="input-field" type="password" placeholder="••••••••" value={newPass}
                 onChange={e=>setNewPass(e.target.value)} autoFocus />
             </Inp>
-            <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 12px', background:'var(--card)', borderRadius:8 }}>
-              ⚠️ Le gestionnaire devra utiliser ce nouveau mot de passe dès sa prochaine connexion.
+            <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 12px', background:'var(--card)', borderRadius:8, display:'flex', alignItems:'center', gap:7 }}>
+              <AlertTriangle size={12} color="var(--gold)" /> Le gestionnaire devra utiliser ce nouveau mot de passe dès sa prochaine connexion.
             </div>
           </div>
         </Modal>
