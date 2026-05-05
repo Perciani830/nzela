@@ -1,6 +1,9 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
+import * as XLSX from 'xlsx';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   Check, X, Info, Crown, LogOut, Globe, Menu,
   LayoutDashboard, Building2, ImageIcon, HeartHandshake, Settings,
@@ -8,6 +11,7 @@ import {
   Pencil, Trash2, Ban, KeyRound, Star, User, Mail, Phone,
   AlertTriangle, Download, Upload, Database, Wrench,
   Anchor, Mountain, Waves, ChevronUp, ChevronDown,
+  ShieldAlert, FileSpreadsheet, FileText, RotateCcw, Flame,
 } from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
@@ -292,6 +296,13 @@ export default function AdminDashboard() {
   const [editGallery, setEditGallery]   = useState(null);
   const [galleryForm, setGalleryForm]   = useState({ title:'', description:'', image_url:'', category:'general', sort_order:0 });
 
+  // ── Reset Dashboard ──────────────────────────────────────────
+  const [resetModal,       setResetModal]       = useState(false);
+  const [backupXlsxDone,   setBackupXlsxDone]   = useState(false);
+  const [backupPdfDone,    setBackupPdfDone]     = useState(false);
+  const [resetConfirmText, setResetConfirmText]  = useState('');
+  const [resetting,        setResetting]         = useState(false);
+
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
@@ -385,6 +396,184 @@ export default function AdminDashboard() {
       await axios.post(`${API}/admin/import`, data, { headers }); ok('Import réussi — données restaurées'); load();
     } catch { err('Erreur import — fichier invalide ?'); }
     e.target.value = '';
+  };
+
+  /* ── Export Excel ──────────────────────────────────────────── */
+  const doExportExcel = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const date = new Date().toLocaleDateString('fr-FR');
+
+      // Feuille 1 — Résumé global
+      const resumeData = [
+        ['NZELA RDC — Rapport de sauvegarde', '', date],
+        [],
+        ['Indicateur', 'Valeur'],
+        ['Nombre d\'agences', agencies.length],
+        ['Agences actives', agencies.filter(a => a.is_active).length],
+        ['Agences premium', agencies.filter(a => a.premium).length],
+        ['Revenus totaux (FC)', agencies.reduce((s, a) => s + Number(a.total_revenue || 0), 0)],
+        ['Commissions totales (FC)', agencies.reduce((s, a) => s + Number(a.total_commission || 0), 0)],
+        ['Total réservations', agencies.reduce((s, a) => s + Number(a.total_bookings || 0), 0)],
+        ['Total contributions', contributions.length],
+        ['Montant contributions CDF', contributions.filter(c => c.currency === 'CDF').reduce((s, c) => s + Number(c.amount || 0), 0)],
+        ['Montant contributions USD', contributions.filter(c => c.currency === 'USD').reduce((s, c) => s + Number(c.amount || 0), 0)],
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumeData), 'Résumé');
+
+      // Feuille 2 — Agences
+      const agHeaders = ['ID', 'Nom', 'Identifiant', 'Email', 'Téléphone', 'Ville', 'Commission %', 'Premium', 'Actif', 'Note', 'Revenus (FC)', 'Commissions (FC)', 'Réservations', 'Date création'];
+      const agRows = agencies.map(a => [
+        a.id, a.agency_name, a.username, a.email || '', a.phone || '',
+        a.home_city || '', a.commission_rate || 10,
+        a.premium ? 'Oui' : 'Non', a.is_active ? 'Oui' : 'Non',
+        a.note || 3,
+        Number(a.total_revenue || 0), Number(a.total_commission || 0),
+        Number(a.total_bookings || 0),
+        a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '',
+      ]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([agHeaders, ...agRows]), 'Agences');
+
+      // Feuille 3 — Contributions
+      const coHeaders = ['Référence', 'Contributeur', 'Téléphone', 'Opérateur', 'Montant', 'Devise', 'ID Transaction', 'Message', 'Date'];
+      const coRows = contributions.map(c => [
+        c.reference, c.contributor_name || 'Anonyme', c.phone || '',
+        c.operator || '', Number(c.amount || 0), c.currency || 'CDF',
+        c.transaction_id || '', c.message || '',
+        c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : '',
+      ]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([coHeaders, ...coRows]), 'Contributions');
+
+      XLSX.writeFile(wb, `nzela_backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+      setBackupXlsxDone(true);
+      ok('Export Excel téléchargé');
+    } catch (e) { err('Erreur export Excel'); console.error(e); }
+  };
+
+  /* ── Export PDF ────────────────────────────────────────────── */
+  const doExportPdf = () => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const dateStr = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
+      const totalRevenue    = agencies.reduce((s, a) => s + Number(a.total_revenue || 0), 0);
+      const totalCommission = agencies.reduce((s, a) => s + Number(a.total_commission || 0), 0);
+
+      // ── En-tête
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 40, 'F');
+      doc.setTextColor(61, 170, 106);
+      doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+      doc.text('NZELA RDC', 14, 16);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+      doc.text('Rapport de sauvegarde — Super Admin', 14, 25);
+      doc.setFontSize(9); doc.setTextColor(150, 160, 180);
+      doc.text(`Généré le ${dateStr}`, 14, 33);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${agencies.length} agences · ${contributions.length} contributions`, 140, 33);
+
+      // ── Résumé stats
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('Vue globale', 14, 52);
+
+      autoTable(doc, {
+        startY: 56,
+        head: [['Indicateur', 'Valeur']],
+        body: [
+          ['Agences enregistrées', `${agencies.length} (${agencies.filter(a=>a.is_active).length} actives)`],
+          ['Agences premium', agencies.filter(a=>a.premium).length.toString()],
+          ['Revenus totaux', `${totalRevenue.toLocaleString('fr-FR')} FC`],
+          ['Commissions totales', `${totalCommission.toLocaleString('fr-FR')} FC`],
+          ['Total réservations', agencies.reduce((s,a)=>s+Number(a.total_bookings||0),0).toLocaleString('fr-FR')],
+          ['Contributions CDF', `${contributions.filter(c=>c.currency==='CDF').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')} FC`],
+          ['Contributions USD', `$${contributions.filter(c=>c.currency==='USD').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')}`],
+        ],
+        styles: { fontSize: 10 },
+        headStyles: { fillColor: [61, 170, 106], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [245, 250, 247] },
+        margin: { left: 14, right: 14 },
+      });
+
+      // ── Tableau agences
+      const afterStats = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('Liste des agences', 14, afterStats);
+
+      autoTable(doc, {
+        startY: afterStats + 4,
+        head: [['Agence', 'Ville', 'Comm.', 'Statut', 'Revenus (FC)', 'Réservations']],
+        body: agencies.map(a => [
+          a.agency_name,
+          a.home_city || '—',
+          `${a.commission_rate || 10}%`,
+          a.is_active ? 'Actif' : 'Inactif',
+          Number(a.total_revenue || 0).toLocaleString('fr-FR'),
+          Number(a.total_bookings || 0).toString(),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: { 4: { halign: 'right' }, 5: { halign: 'center' } },
+        margin: { left: 14, right: 14 },
+      });
+
+      // ── Tableau contributions (nouvelle page si nécessaire)
+      if (contributions.length > 0) {
+        const afterAgencies = doc.lastAutoTable.finalY + 10;
+        const remainingSpace = 297 - afterAgencies - 20;
+        if (remainingSpace < 40) doc.addPage();
+        const yContrib = remainingSpace < 40 ? 20 : afterAgencies;
+
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 30, 30);
+        doc.text('Contributions', 14, yContrib);
+
+        autoTable(doc, {
+          startY: yContrib + 4,
+          head: [['Référence', 'Contributeur', 'Opérateur', 'Montant', 'Devise', 'Date']],
+          body: contributions.map(c => [
+            c.reference,
+            c.contributor_name || 'Anonyme',
+            c.operator || '—',
+            Number(c.amount || 0).toLocaleString('fr-FR'),
+            c.currency || 'CDF',
+            c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : '—',
+          ]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [245, 158, 11], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [255, 252, 245] },
+          margin: { left: 14, right: 14 },
+        });
+      }
+
+      // ── Pied de page sur chaque page
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8); doc.setTextColor(150, 160, 180);
+        doc.text(`Nzela RDC · Document confidentiel · Page ${i}/${pageCount}`, 14, 290);
+      }
+
+      doc.save(`nzela_backup_${new Date().toISOString().split('T')[0]}.pdf`);
+      setBackupPdfDone(true);
+      ok('Export PDF téléchargé');
+    } catch (e) { err('Erreur export PDF'); console.error(e); }
+  };
+
+  /* ── Reset complet ─────────────────────────────────────────── */
+  const doResetAll = async () => {
+    if (!backupXlsxDone || !backupPdfDone) return err('Veuillez d\'abord télécharger les deux sauvegardes');
+    if (resetConfirmText !== 'SUPPRIMER') return err('Saisissez exactement "SUPPRIMER"');
+    setResetting(true);
+    try {
+      await axios.delete(`${API}/admin/reset`, { headers });
+      ok('Dashboard réinitialisé — toutes les agences supprimées');
+      setResetModal(false);
+      setBackupXlsxDone(false); setBackupPdfDone(false); setResetConfirmText('');
+      load();
+    } catch (e) { err(e.response?.data?.error || 'Erreur lors de la réinitialisation'); }
+    finally { setResetting(false); }
   };
 
   const TABS = [
@@ -716,16 +905,22 @@ export default function AdminDashboard() {
                 <p style={{ fontSize:13, color:'var(--muted)', marginBottom:14, lineHeight:1.7 }}>
                   Exportez toutes les données en JSON. Importez pour restaurer une sauvegarde.
                 </p>
-                <div style={{ display:'flex', gap:10, flexWrap:'wrap' }}>
+                <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:12 }}>
                   <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExport}>
-                    <Download size={13} /> Exporter la base
+                    <Download size={13} /> Exporter JSON
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExportExcel}>
+                    <FileSpreadsheet size={13} /> Exporter Excel
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExportPdf}>
+                    <FileText size={13} /> Exporter PDF
                   </button>
                   <label className="btn btn-ghost" style={{ fontSize:13, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:7 }}>
-                    <Upload size={13} /> Importer une sauvegarde
+                    <Upload size={13} /> Importer JSON
                     <input type="file" accept=".json" style={{ display:'none' }} onChange={doImport} />
                   </label>
                 </div>
-                <div style={{ marginTop:12, padding:'10px 13px', background:'rgba(240,80,80,0.06)', border:'1px solid rgba(240,80,80,0.15)', borderRadius:8, fontSize:12, color:'var(--err)', display:'flex', alignItems:'center', gap:7 }}>
+                <div style={{ padding:'10px 13px', background:'rgba(240,80,80,0.06)', border:'1px solid rgba(240,80,80,0.15)', borderRadius:8, fontSize:12, color:'var(--err)', display:'flex', alignItems:'center', gap:7 }}>
                   <AlertTriangle size={13} /> L'import remplace <strong>toutes</strong> les données existantes. Faites d'abord un export.
                 </div>
               </div>
@@ -745,6 +940,32 @@ export default function AdminDashboard() {
               <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13, display:'flex', alignItems:'center', gap:8 }} onClick={doSaveSettings}>
                 <Settings size={14} /> Sauvegarder les paramètres
               </button>
+
+              {/* ── Zone Danger ───────────────────────────────── */}
+              <div style={{ marginTop:8, border:'1.5px solid rgba(220,50,50,0.35)', borderRadius:14, overflow:'hidden' }}>
+                <div style={{ background:'rgba(220,50,50,0.08)', padding:'14px 18px', borderBottom:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', gap:9 }}>
+                  <ShieldAlert size={16} color="var(--err)" />
+                  <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:'var(--err)' }}>Zone Danger</span>
+                </div>
+                <div style={{ padding:'16px 18px', display:'flex', flexDirection:'column', gap:12 }}>
+                  <p style={{ fontSize:13, color:'var(--muted)', lineHeight:1.7, margin:0 }}>
+                    La réinitialisation supprime <strong style={{ color:'var(--text)' }}>toutes les agences</strong>, leurs bus, voyages, réservations et gestionnaires.
+                    Les contributions et paramètres sont conservés.
+                    <br/>Cette action est <strong style={{ color:'var(--err)' }}>irréversible</strong>.
+                  </p>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'rgba(220,50,50,0.06)', border:'1px solid rgba(220,50,50,0.15)', borderRadius:10, fontSize:12, color:'var(--muted)' }}>
+                    <Flame size={13} color="var(--err)" style={{ flexShrink:0 }} />
+                    <span>Avant toute réinitialisation, un export <strong>Excel</strong> ET <strong>PDF</strong> sera obligatoire pour garder une trace de toutes vos données.</span>
+                  </div>
+                  <button
+                    className="btn"
+                    style={{ background:'rgba(220,50,50,0.1)', border:'1.5px solid rgba(220,50,50,0.4)', color:'var(--err)', fontSize:13, display:'inline-flex', alignItems:'center', gap:8, padding:'10px 18px', borderRadius:10, cursor:'pointer', fontWeight:700, width:'fit-content' }}
+                    onClick={() => { setResetModal(true); setBackupXlsxDone(false); setBackupPdfDone(false); setResetConfirmText(''); }}
+                  >
+                    <RotateCcw size={14} /> Réinitialiser le dashboard
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </>}
@@ -851,6 +1072,127 @@ export default function AdminDashboard() {
           <Inp label="Description"><input className="input-field" placeholder="Description courte…" value={galleryForm.description} onChange={e=>setGalleryForm({...galleryForm,description:e.target.value})} /></Inp>
           <Inp label="Ordre d'affichage"><input className="input-field" type="number" min="0" value={galleryForm.sort_order} onChange={e=>setGalleryForm({...galleryForm,sort_order:Number(e.target.value)})} /></Inp>
         </Modal>
+      )}
+
+      {/* ── MODAL Réinitialisation Dashboard ────────────────── */}
+      {resetModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', backdropFilter:'blur(6px)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--night)', border:'1.5px solid rgba(220,50,50,0.4)', borderRadius:18, width:'100%', maxWidth:500, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 32px 80px rgba(200,0,0,0.25)' }}>
+
+            {/* Header */}
+            <div style={{ background:'rgba(220,50,50,0.1)', padding:'18px 22px', borderBottom:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:1 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:34, height:34, borderRadius:9, background:'rgba(220,50,50,0.15)', border:'1px solid rgba(220,50,50,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <ShieldAlert size={17} color="var(--err)" />
+                </div>
+                <div>
+                  <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:16 }}>Réinitialisation du dashboard</div>
+                  <div style={{ fontSize:11, color:'var(--err)', marginTop:1 }}>Action irréversible · Toutes les agences seront supprimées</div>
+                </div>
+              </div>
+              <button onClick={()=>setResetModal(false)} style={{ width:30, height:30, borderRadius:8, background:'var(--card)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--muted)' }}><X size={14} /></button>
+            </div>
+
+            <div style={{ padding:'20px 22px', display:'flex', flexDirection:'column', gap:16 }}>
+
+              {/* Warning */}
+              <div style={{ background:'rgba(220,50,50,0.07)', border:'1px solid rgba(220,50,50,0.2)', borderRadius:10, padding:'12px 15px', fontSize:13, lineHeight:1.7 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7, fontWeight:700, color:'var(--err)', marginBottom:6 }}><AlertTriangle size={14} /> Avant de continuer, lisez attentivement</div>
+                Ceci supprimera définitivement <strong>toutes les agences</strong> ({agencies.length}), leurs bus, voyages, réservations et gestionnaires.<br/>
+                Les <strong>contributions</strong> et <strong>paramètres</strong> seront conservés.<br/>
+                <span style={{ color:'var(--err)', fontWeight:700 }}>Cette action est irréversible.</span>
+              </div>
+
+              {/* Étape 1 — Excel */}
+              <div style={{ border:`1.5px solid ${backupXlsxDone ? 'rgba(61,170,106,0.5)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background: backupXlsxDone ? 'rgba(61,170,106,0.06)' : 'var(--card)', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:28, height:28, borderRadius:7, background: backupXlsxDone ? 'rgba(61,170,106,0.15)' : 'rgba(61,170,106,0.08)', border:`1px solid ${backupXlsxDone ? 'rgba(61,170,106,0.4)' : 'rgba(61,170,106,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {backupXlsxDone ? <Check size={14} color="var(--green-l)" /> : <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'var(--green-l)' }}>1</span>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                        <FileSpreadsheet size={13} color="var(--green-l)" /> Export Excel obligatoire
+                      </div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Agences, stats, contributions — toutes les données</div>
+                    </div>
+                  </div>
+                  {backupXlsxDone
+                    ? <span style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', display:'flex', alignItems:'center', gap:5 }}><Check size={13} /> Téléchargé</span>
+                    : <button className="btn btn-ghost" style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, borderColor:'rgba(61,170,106,0.3)', color:'var(--green-l)' }} onClick={doExportExcel}>
+                        <Download size={12} /> Télécharger Excel
+                      </button>
+                  }
+                </div>
+              </div>
+
+              {/* Étape 2 — PDF */}
+              <div style={{ border:`1.5px solid ${backupPdfDone ? 'rgba(61,170,106,0.5)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background: backupPdfDone ? 'rgba(61,170,106,0.06)' : 'var(--card)', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:28, height:28, borderRadius:7, background: backupPdfDone ? 'rgba(61,170,106,0.15)' : 'rgba(74,144,217,0.08)', border:`1px solid ${backupPdfDone ? 'rgba(61,170,106,0.4)' : 'rgba(74,144,217,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {backupPdfDone ? <Check size={14} color="var(--green-l)" /> : <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'#4A90D9' }}>2</span>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                        <FileText size={13} color="#4A90D9" /> Export PDF obligatoire
+                      </div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Rapport complet avec tableaux imprimables</div>
+                    </div>
+                  </div>
+                  {backupPdfDone
+                    ? <span style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', display:'flex', alignItems:'center', gap:5 }}><Check size={13} /> Téléchargé</span>
+                    : <button className="btn btn-ghost" style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, borderColor:'rgba(74,144,217,0.3)', color:'#4A90D9' }} onClick={doExportPdf}>
+                        <Download size={12} /> Télécharger PDF
+                      </button>
+                  }
+                </div>
+              </div>
+
+              {/* Étape 3 — Confirmation textuelle */}
+              <div style={{ border:`1.5px solid ${(backupXlsxDone && backupPdfDone) ? 'rgba(220,50,50,0.3)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background:'var(--card)', opacity: (backupXlsxDone && backupPdfDone) ? 1 : 0.45, pointerEvents: (backupXlsxDone && backupPdfDone) ? 'auto' : 'none', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                  <div style={{ width:28, height:28, borderRadius:7, background:'rgba(220,50,50,0.1)', border:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'var(--err)' }}>3</span>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--err)' }}>Confirmation finale</div>
+                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Saisissez <strong style={{ color:'var(--text)', letterSpacing:'0.05em' }}>SUPPRIMER</strong> pour confirmer</div>
+                  </div>
+                </div>
+                <input
+                  className="input-field"
+                  placeholder='Tapez "SUPPRIMER"'
+                  value={resetConfirmText}
+                  onChange={e => setResetConfirmText(e.target.value)}
+                  style={{ borderColor: resetConfirmText === 'SUPPRIMER' ? 'rgba(220,50,50,0.5)' : undefined, fontFamily:'monospace', letterSpacing:'0.08em' }}
+                />
+              </div>
+
+              {/* Bouton final */}
+              <button
+                onClick={doResetAll}
+                disabled={!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting}
+                style={{
+                  width:'100%', height:44, borderRadius:10, border:'none', cursor: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'not-allowed' : 'pointer',
+                  background: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'rgba(220,50,50,0.15)' : 'rgba(220,50,50,0.85)',
+                  color: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'rgba(220,50,50,0.4)' : '#fff',
+                  fontSize:14, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                  transition:'all 0.2s',
+                }}
+              >
+                {resetting
+                  ? <><div className="spinner" style={{ borderTopColor:'currentColor' }} /> Réinitialisation en cours…</>
+                  : <><Trash2 size={15} /> Tout supprimer et réinitialiser ({agencies.length} agences)</>
+                }
+              </button>
+
+              <div style={{ textAlign:'center', fontSize:11, color:'var(--muted)' }}>
+                Les deux sauvegardes doivent être téléchargées avant de pouvoir confirmer.
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

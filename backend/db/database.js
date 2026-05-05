@@ -92,7 +92,7 @@ function initDatabase() {
       id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
       total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (agency_id) REFERENCES agencies(id)
+      FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS trips (
@@ -102,7 +102,7 @@ function initDatabase() {
       price REAL NOT NULL, total_seats INTEGER DEFAULT 50, available_seats INTEGER DEFAULT 50,
       description TEXT, is_active INTEGER DEFAULT 1,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (agency_id) REFERENCES agencies(id)
+      FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS bookings (
@@ -115,8 +115,8 @@ function initDatabase() {
       payment_status TEXT DEFAULT 'pending', payment_method TEXT,
       transaction_id TEXT, boarding_status TEXT DEFAULT NULL,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (trip_id) REFERENCES trips(id),
-      FOREIGN KEY (agency_id) REFERENCES agencies(id)
+      FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+      FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
     );
 
     CREATE TABLE IF NOT EXISTS gallery (
@@ -156,6 +156,65 @@ function initDatabase() {
     "ALTER TABLE agencies ADD COLUMN note INTEGER DEFAULT 3",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
+  // ── Migration : ajouter ON DELETE CASCADE sur les tables existantes ──────────
+  // SQLite ne supporte pas ALTER TABLE … DROP/ADD CONSTRAINT, donc on recrée
+  // les tables si elles n'ont pas encore CASCADE dans leur définition.
+  const needsCascade = (table) => {
+    const row = db.prepare(`SELECT sql FROM sqlite_master WHERE type='table' AND name=?`).get(table);
+    return row && !row.sql.toUpperCase().includes('ON DELETE CASCADE');
+  };
+
+  if (needsCascade('buses') || needsCascade('trips') || needsCascade('bookings')) {
+    runTransaction(db, () => {
+      // bookings dépend de trips → supprimer bookings en premier
+      db.exec(`
+        -- Recréer bookings avec CASCADE
+        CREATE TABLE IF NOT EXISTS bookings_new (
+          id TEXT PRIMARY KEY, reference TEXT UNIQUE NOT NULL,
+          trip_id TEXT NOT NULL, agency_id TEXT NOT NULL,
+          passenger_name TEXT NOT NULL, passenger_phone TEXT NOT NULL,
+          passenger_email TEXT, passengers INTEGER DEFAULT 1,
+          total_price REAL NOT NULL, commission_rate REAL DEFAULT 10,
+          commission_amount REAL DEFAULT 0, status TEXT DEFAULT 'pending',
+          payment_status TEXT DEFAULT 'pending', payment_method TEXT,
+          transaction_id TEXT, boarding_status TEXT DEFAULT NULL,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
+          FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
+        );
+        INSERT INTO bookings_new SELECT * FROM bookings;
+        DROP TABLE bookings;
+        ALTER TABLE bookings_new RENAME TO bookings;
+
+        -- Recréer trips avec CASCADE
+        CREATE TABLE IF NOT EXISTS trips_new (
+          id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_id TEXT, bus_name TEXT,
+          departure_city TEXT NOT NULL, arrival_city TEXT NOT NULL,
+          departure_date TEXT NOT NULL, departure_time TEXT NOT NULL,
+          price REAL NOT NULL, total_seats INTEGER DEFAULT 50, available_seats INTEGER DEFAULT 50,
+          description TEXT, is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
+        );
+        INSERT INTO trips_new SELECT * FROM trips;
+        DROP TABLE trips;
+        ALTER TABLE trips_new RENAME TO trips;
+
+        -- Recréer buses avec CASCADE
+        CREATE TABLE IF NOT EXISTS buses_new (
+          id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
+          total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
+        );
+        INSERT INTO buses_new SELECT * FROM buses;
+        DROP TABLE buses;
+        ALTER TABLE buses_new RENAME TO buses;
+      `);
+    });
+    console.log('✅ Migration CASCADE appliquée sur buses / trips / bookings');
+  }
+
   // Super admin par défaut
   if (!db.prepare('SELECT id FROM admins WHERE username=?').get('superadmin')) {
     db.prepare('INSERT INTO admins (id,username,password) VALUES (?,?,?)')
@@ -169,4 +228,34 @@ function initDatabase() {
   console.log('✅ Base de données Nzela prête');
 }
 
-module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase };
+/**
+ * Supprime une agence et toutes ses données liées.
+ * Grâce au CASCADE sur les FK, un simple DELETE suffit —
+ * mais on garde l'ordre explicite pour les DBs sans CASCADE.
+ */
+function deleteAgency(agencyId) {
+  const db = getDb();
+  runTransaction(db, () => {
+    // Récupérer les IDs des voyages avant suppression
+    const tripIds = db.prepare('SELECT id FROM trips WHERE agency_id = ?')
+      .all(agencyId).map(r => r.id);
+
+    // 1. Réservations liées aux voyages (si CASCADE non encore actif)
+    if (tripIds.length) {
+      const placeholders = tripIds.map(() => '?').join(',');
+      db.prepare(`DELETE FROM bookings WHERE trip_id IN (${placeholders})`).run(...tripIds);
+    }
+    // 2. Réservations liées directement à l'agence
+    db.prepare('DELETE FROM bookings WHERE agency_id = ?').run(agencyId);
+    // 3. Voyages
+    db.prepare('DELETE FROM trips WHERE agency_id = ?').run(agencyId);
+    // 4. Bus
+    db.prepare('DELETE FROM buses WHERE agency_id = ?').run(agencyId);
+    // 5. Sous-comptes gestionnaires
+    db.prepare('DELETE FROM agency_users WHERE agency_id = ?').run(agencyId);
+    // 6. Agence elle-même
+    db.prepare('DELETE FROM agencies WHERE id = ?').run(agencyId);
+  });
+}
+
+module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase, deleteAgency };
