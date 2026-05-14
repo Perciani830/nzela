@@ -27,7 +27,7 @@ const FEATURES = [
 
 /* Partenaires — remplace les URL par tes vrais logos */
 const PARTNERS = [
-  { name: 'M-Pesa',      logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/1/15/M-PESA_LOGO-01.svg/1200px-M-PESA_LOGO-01.svg.png' },
+  { name: 'Tonga-Ekolo', photo: 'frontend/public/tonga_ekolo.png' },
   { name: 'Orange Money', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Orange_logo.svg/1200px-Orange_logo.svg.png' },
   { name: 'Airtel Money', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Airtel_logo_2010.svg/1280px-Airtel_logo_2010.svg.png' },
   { name: 'Rawbank',      logo: 'https://upload.wikimedia.org/wikipedia/fr/thumb/b/b5/Rawbank_logo.svg/1200px-Rawbank_logo.svg.png' },

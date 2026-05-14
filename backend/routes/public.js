@@ -708,4 +708,101 @@ router.get('/callback/card-contrib', (req, res) => {
   }
 });
 
+/* ══════════════════════════════════════════════════════════
+   SIÈGES — Plan, réservation temporaire, assignation
+══════════════════════════════════════════════════════════ */
+
+// GET /public/trips/:id/seats — Plan des sièges d'un voyage
+router.get('/trips/:id/seats', (req, res) => {
+  const trip = db.prepare(`
+    SELECT t.id, t.total_seats, b.layout
+    FROM trips t
+    LEFT JOIN buses b ON b.id = t.bus_id
+    WHERE t.id = ? AND t.is_active = 1
+  `).get(req.params.id);
+
+  if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+  const seats = db.prepare(`
+    SELECT seat_number, status, booking_id
+    FROM bus_seats
+    WHERE trip_id = ?
+  `).all(req.params.id);
+
+  res.json({
+    trip_id:     trip.id,
+    total_seats: trip.total_seats,
+    layout:      trip.layout || '2+2',
+    seats,
+  });
+});
+
+// POST /public/trips/:id/seats/reserve — Réservation temporaire (lock optimiste)
+router.post('/trips/:id/seats/reserve', (req, res) => {
+  const { seat_numbers, session_token } = req.body;
+  if (!seat_numbers?.length || !session_token)
+    return res.status(400).json({ error: 'seat_numbers et session_token requis' });
+
+  const trip = db.prepare('SELECT id, total_seats FROM trips WHERE id=? AND is_active=1').get(req.params.id);
+  if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+  // Vérifier si des sièges sont déjà pris (reserved/confirmed)
+  const placeholders = seat_numbers.map(() => '?').join(',');
+  const taken = db.prepare(`
+    SELECT seat_number FROM bus_seats
+    WHERE trip_id=? AND seat_number IN (${placeholders})
+    AND status IN ('reserved','confirmed')
+  `).all(req.params.id, ...seat_numbers).map(r => r.seat_number);
+
+  if (taken.length > 0)
+    return res.status(409).json({ error: 'Sièges indisponibles', unavailable: taken });
+
+  // Upsert en statut "pending" avec le session_token
+  const upsert = db.prepare(`
+    INSERT INTO bus_seats (trip_id, seat_number, status, session_token)
+    VALUES (?, ?, 'pending', ?)
+    ON CONFLICT(trip_id, seat_number)
+    DO UPDATE SET status='pending', session_token=excluded.session_token
+  `);
+  const runAll = db.transaction(() => {
+    for (const sn of seat_numbers) upsert.run(req.params.id, sn, session_token);
+  });
+  runAll();
+
+  res.json({ ok: true, reserved: seat_numbers });
+});
+
+// DELETE /public/trips/:id/seats/reserve — Libérer les sièges d'une session
+router.delete('/trips/:id/seats/reserve', (req, res) => {
+  const { session_token } = req.body;
+  if (!session_token) return res.status(400).json({ error: 'session_token requis' });
+
+  db.prepare(`
+    DELETE FROM bus_seats
+    WHERE trip_id=? AND session_token=? AND status='pending'
+  `).run(req.params.id, session_token);
+
+  res.json({ ok: true });
+});
+
+// POST /public/trips/:id/seats/assign — Assigner les sièges à une réservation confirmée
+router.post('/trips/:id/seats/assign', (req, res) => {
+  const { seat_numbers, booking_id, status } = req.body;
+  if (!seat_numbers?.length || !booking_id)
+    return res.status(400).json({ error: 'seat_numbers et booking_id requis' });
+
+  const finalStatus = status || 'reserved';
+  const upsert = db.prepare(`
+    INSERT INTO bus_seats (trip_id, seat_number, status, booking_id)
+    VALUES (?, ?, ?, ?)
+    ON CONFLICT(trip_id, seat_number)
+    DO UPDATE SET status=excluded.status, booking_id=excluded.booking_id, session_token=NULL
+  `);
+  const runAll = db.transaction(() => {
+    for (const sn of seat_numbers) upsert.run(req.params.id, sn, finalStatus, booking_id);
+  });
+  runAll();
+
+  res.json({ ok: true });
+});
 module.exports = router;

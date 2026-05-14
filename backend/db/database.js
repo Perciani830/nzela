@@ -88,12 +88,13 @@ function initDatabase() {
       created_at  TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE IF NOT EXISTS buses (
-      id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
-      total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
-      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-      FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
-    );
+  CREATE TABLE IF NOT EXISTS buses (
+  id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
+  total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
+  layout TEXT DEFAULT '2+3',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
+);
 
     CREATE TABLE IF NOT EXISTS trips (
       id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_id TEXT, bus_name TEXT,
@@ -139,6 +140,16 @@ function initDatabase() {
       status TEXT DEFAULT 'completed',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+CREATE TABLE IF NOT EXISTS seats (
+  id           TEXT PRIMARY KEY,
+  trip_id      TEXT NOT NULL,
+  seat_number  TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'available',
+  booking_id   TEXT,
+  expires_at   TEXT,
+  UNIQUE(trip_id, seat_number)
+);
   `);
 
   // Migrations pour les bases existantes (ignorées si la colonne existe déjà)
@@ -178,6 +189,7 @@ function initDatabase() {
           commission_amount REAL DEFAULT 0, status TEXT DEFAULT 'pending',
           payment_status TEXT DEFAULT 'pending', payment_method TEXT,
           transaction_id TEXT, boarding_status TEXT DEFAULT NULL,
+          seat_numbers TEXT DEFAULT NULL,
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
           FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
@@ -204,6 +216,7 @@ function initDatabase() {
         CREATE TABLE IF NOT EXISTS buses_new (
           id TEXT PRIMARY KEY, agency_id TEXT NOT NULL, bus_name TEXT NOT NULL,
           total_seats INTEGER DEFAULT 50, description TEXT, is_active INTEGER DEFAULT 1,
+          layout TEXT DEFAULT '2+3',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
         );
@@ -258,4 +271,64 @@ function deleteAgency(agencyId) {
   });
 }
 
-module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase, deleteAgency };
+/**
+ * Libère les sièges "pending" dont l'expiration est dépassée.
+ */
+function releaseExpiredSeats(db) {
+  const now = new Date().toISOString().replace('T', ' ').split('.')[0];
+  db.prepare(`
+    UPDATE seats
+    SET status = 'available', booking_id = NULL, expires_at = NULL
+    WHERE status = 'pending' AND expires_at IS NOT NULL AND expires_at <= ?
+  `).run(now);
+}
+
+/**
+ * Initialise les lignes de sièges pour un voyage si elles n'existent pas encore.
+ * Le numérotage est simplement 1, 2, 3 … total_seats.
+ */
+function ensureSeatsExist(db, tripId) {
+  const existing = db.prepare('SELECT COUNT(*) AS n FROM seats WHERE trip_id = ?').get(tripId);
+  if (existing.n > 0) return;
+
+  const trip = db.prepare('SELECT total_seats FROM trips WHERE id = ?').get(tripId);
+  if (!trip) return;
+
+  const bus = db.prepare('SELECT layout FROM buses WHERE id = (SELECT bus_id FROM trips WHERE id = ?)').get(tripId);
+  const layout = bus?.layout || '2+3';
+
+  const configs = {
+    '2+2': { left: ['A','B'], right: ['C','D'] },
+    '2+3': { left: ['A','B'], right: ['C','D','E'] },
+    '2':   { left: ['A'],     right: ['B'] },
+  };
+  const cfg = configs[layout] || configs['2+3'];
+  const seatsPerRow = cfg.left.length + cfg.right.length;
+  const lastRowLetters = ['A','B','C','D','E'];
+
+  const regularSeats = trip.total_seats - 5;
+  const regularRows  = Math.ceil(regularSeats / seatsPerRow);
+
+  const seatIds = [];
+  for (let r = 1; r <= regularRows; r++) {
+    for (const col of [...cfg.left, ...cfg.right]) {
+      seatIds.push(`${r}${col}`);
+    }
+  }
+  // Dernière rangée banquette
+  const lastRow = regularRows + 1;
+  for (const col of lastRowLetters) {
+    seatIds.push(`${lastRow}${col}`);
+  }
+
+  const stmt = db.prepare(`
+    INSERT OR IGNORE INTO seats (id, trip_id, seat_number, status)
+    VALUES (?, ?, ?, 'available')
+  `);
+  runTransaction(db, () => {
+    for (const seatId of seatIds) {
+      stmt.run(uuidv4(), tripId, seatId);
+    }
+  });
+}
+module.exports = { getDb, initDatabase, runTransaction, exportDatabase, importDatabase, deleteAgency, ensureSeatsExist, releaseExpiredSeats, };

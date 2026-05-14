@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import SeatMapModal from './SeatMapModal';
 import {
   Check, X, Info, Crown, LogOut, Globe, Menu,
   LayoutDashboard, Building2, ImageIcon, HeartHandshake, Settings,
@@ -106,6 +107,57 @@ function CityBadge({ city }) {
 }
 
 /* ── AgencyUsersPanel ───────────────────────────────────────── */
+/* ── Panel voyages d'une agence (admin) ─────────────────────── */
+function AgencyTripsPanel({ agency, headers, onViewSeats }) {
+  const [trips,   setTrips]   = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    setLoading(true);
+    axios.get(`${API}/admin/agencies/${agency.id}/trips`, { headers })
+      .then(r => setTrips(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setTrips([]))
+      .finally(() => setLoading(false));
+  }, [agency.id]);
+
+  if (loading) return (
+    <div style={{ padding:'14px 0', color:'var(--muted)', fontSize:12 }}>Chargement des voyages…</div>
+  );
+  if (trips.length === 0) return (
+    <div style={{ padding:'14px 0', color:'var(--muted)', fontSize:12 }}>Aucun voyage enregistré pour cette agence.</div>
+  );
+
+  return (
+    <div style={{ marginTop:14, borderTop:'1px solid var(--border)', paddingTop:14 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+        Voyages ({trips.length})
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {trips.map(t => (
+          <div key={t.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, padding:'8px 12px', background:'var(--card)', border:'1px solid var(--border)', borderRadius:8 }}>
+            <div style={{ fontSize:12 }}>
+              <span style={{ fontWeight:700 }}>{t.departure_city} → {t.arrival_city}</span>
+              <span style={{ color:'var(--muted)', marginLeft:8 }}>{t.departure_date} · {t.departure_time}</span>
+              {t.bus_name && <span style={{ marginLeft:8, color:'var(--muted)' }}>· {t.bus_name}</span>}
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:11, color:'var(--muted)' }}>{t.available_seats}/{t.total_seats} places</span>
+              <span className={`badge ${t.is_active ? 'b-g' : 'b-r'}`} style={{ fontSize:10 }}>{t.is_active ? 'Actif' : 'Inactif'}</span>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
+                onClick={() => onViewSeats(t)}
+              >
+                <Bus size={11} /> Sièges
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function AgencyUsersPanel({ agency, headers, showToast }) {
   const [users, setUsers]         = useState([]);
   const [loading, setLoading]     = useState(true);
@@ -290,6 +342,8 @@ export default function AdminDashboard() {
   const [agencyModal, setAgencyModal]   = useState(false);
   const [editAgency, setEditAgency]     = useState(null);
   const [expandedAgency, setExpandedAgency] = useState(null);
+  const [expandedTrips,  setExpandedTrips]  = useState(null); // agence dont on voit les voyages
+  const [seatModal,      setSeatModal]      = useState(null); // trip à afficher dans SeatMapModal
   const [agencyForm, setAgencyForm]     = useState({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10 });
 
   const [galleryModal, setGalleryModal] = useState(false);
@@ -788,6 +842,10 @@ export default function AdminDashboard() {
                             {expandedAgency===ag.id ? <><ChevronUp size={12} /> Fermer</> : <><Users size={12} /> Gestionnaires</>}
                           </button>
                           <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }}
+                            onClick={()=>setExpandedTrips(expandedTrips===ag.id ? null : ag.id)}>
+                            {expandedTrips===ag.id ? <><ChevronUp size={12} /> Fermer</> : <><Bus size={12} /> Voyages</>}
+                          </button>
+                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }}
                             onClick={()=>setEditAgency({...ag})}><Pencil size={12} /> Modifier</button>
                           <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', color: ag.is_active ? 'var(--gold)':'var(--ok)', display:'inline-flex', alignItems:'center', gap:5 }}
                             onClick={()=>doToggleAgency(ag)}>
@@ -800,6 +858,9 @@ export default function AdminDashboard() {
 
                       {expandedAgency===ag.id && (
                         <AgencyUsersPanel agency={ag} headers={headers} showToast={showToast} />
+                      )}
+                      {expandedTrips===ag.id && (
+                        <AgencyTripsPanel agency={ag} headers={headers} onViewSeats={t => setSeatModal(t)} />
                       )}
                     </div>
                   ))
@@ -1193,6 +1254,17 @@ export default function AdminDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── MODAL Plan des sièges ──────────────────────────────── */}
+      {seatModal && (
+        <SeatMapModal
+          mode="view"
+          trip={seatModal}
+          onClose={() => setSeatModal(null)}
+          headers={headers}
+          API={API}
+        />
       )}
     </div>
   );

@@ -37,6 +37,7 @@ app.use('/api/auth',   require('./routes/auth'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/agency', require('./routes/agency'));
 app.use('/api/admin',  require('./routes/admin'));
+app.use('/api',        require('./routes/seats.routes')); // ← sièges
 
 app.get('/api/health', (_, res) => res.json({
   ok: true,
@@ -54,9 +55,9 @@ app.get('/api/health', (_, res) => res.json({
 app.use((req, res) => res.status(404).json({ error: 'Route inconnue', path: req.path }));
 app.use((err, req, res, next) => {
   console.error('Erreur:', err.message);
+  console.error(err.stack);          // ← ajoute cette ligne
   res.status(500).json({ error: 'Erreur serveur' });
 });
-
 // ── AUTO-DÉSACTIVATION VOYAGES PASSÉS ─────────────────────────
 function desactiverVoyagesPassés() {
   try {

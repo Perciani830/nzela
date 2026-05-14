@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ManifestTab from './ManifestTab';
+import SeatMapModal from './SeatMapModal';
 import {
   Check, X, Info, Crown, LogOut, Globe, Menu,
   BarChart2, Bus, Map, Ticket, ClipboardList, Users, Settings,
@@ -297,9 +298,10 @@ export default function AgencyDashboard() {
   const [bulkModal, setBulkModal] = useState(false);
   const [editBus, setEditBus]     = useState(null);
   const [editTrip, setEditTrip]   = useState(null);
-  const [cityFilter, setCityFilter] = useState('all');         // filtre ville pour propriétaire
-  const [manifestTripId, setManifestTripId] = useState('');   // voyage sélectionné pour manifeste
-  const [busForm, setBusForm]     = useState({ bus_name:'', total_seats:50, description:'' });
+  const [seatModal, setSeatModal] = useState(null); // { trip } — vue occupation sièges
+  const [cityFilter, setCityFilter] = useState('all');
+  const [manifestTripId, setManifestTripId] = useState('');
+  const [busForm, setBusForm]     = useState({ bus_name:'', total_seats:50, layout:'2+3', description:'' });
   const [tripForm, setTripForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' });
   const [bulkForm, setBulkForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
   const [bulkPreview, setBulkPreview] = useState([]);
@@ -388,7 +390,7 @@ export default function AgencyDashboard() {
 
   const doCreateBus = async () => {
     if (!busForm.bus_name) return err('Nom du bus requis');
-    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, description:'' }); load(); }
+    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, layout:'2+3', description:'' }); load(); }
     catch(e) { err(e.response?.data?.error||'Erreur'); }
   };
   const doSaveBus = async () => {
@@ -740,6 +742,14 @@ export default function AgencyDashboard() {
                       <button
                         className="btn btn-ghost"
                         style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)', display:'inline-flex', alignItems:'center' }}
+                        title="Voir le plan des sièges"
+                        onClick={() => setSeatModal(t)}
+                      >
+                        <Bus size={11} />
+                      </button>
+                      <button
+                        className="btn btn-ghost"
+                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)', display:'inline-flex', alignItems:'center' }}
                         title="Voir le manifeste de ce voyage"
                         onClick={() => { setManifestTripId(String(t.id)); goTab('manifest'); }}
                       >
@@ -964,7 +974,16 @@ export default function AgencyDashboard() {
       {busModal && <Modal title={<><Bus size={14} style={{ marginRight:6 }} />Ajouter un bus</>} onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Nom du bus *"><input className="input-field" placeholder="Bus 1, Minibus A…" value={busForm.bus_name} onChange={e=>setBusForm({...busForm,bus_name:e.target.value})} /></Inp>
-          <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={busForm.total_seats} onChange={e=>setBusForm({...busForm,total_seats:parseInt(e.target.value)})} /></Inp>
+          <div className="grid-2">
+            <Inp label="Sièges"><input className="input-field" type="number" min="6" max="200" value={busForm.total_seats} onChange={e=>setBusForm({...busForm,total_seats:parseInt(e.target.value)})} /></Inp>
+            <Inp label="Disposition des sièges">
+              <select className="input-field" value={busForm.layout} onChange={e=>setBusForm({...busForm,layout:e.target.value})}>
+                <option value="2+3">2+3 — Bus standard</option>
+                <option value="2+2">2+2 — Minibus</option>
+                <option value="2">2 — Coach</option>
+              </select>
+            </Inp>
+          </div>
           <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={busForm.description} onChange={e=>setBusForm({...busForm,description:e.target.value})} /></Inp>
         </div>
       </Modal>}
@@ -972,7 +991,16 @@ export default function AgencyDashboard() {
       {editBus && <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier — {editBus.bus_name}</>} onClose={() => setEditBus(null)} onConfirm={doSaveBus} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>}>
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
           <Inp label="Nom"><input className="input-field" value={editBus.bus_name} onChange={e=>setEditBus({...editBus,bus_name:e.target.value})} /></Inp>
-          <Inp label="Sièges"><input className="input-field" type="number" min="1" max="200" value={editBus.total_seats} onChange={e=>setEditBus({...editBus,total_seats:parseInt(e.target.value)})} /></Inp>
+          <div className="grid-2">
+            <Inp label="Sièges"><input className="input-field" type="number" min="6" max="200" value={editBus.total_seats} onChange={e=>setEditBus({...editBus,total_seats:parseInt(e.target.value)})} /></Inp>
+            <Inp label="Disposition des sièges">
+              <select className="input-field" value={editBus.layout||'2+3'} onChange={e=>setEditBus({...editBus,layout:e.target.value})}>
+                <option value="2+3">2+3 — Bus standard</option>
+                <option value="2+2">2+2 — Minibus</option>
+                <option value="2">2 — Coach</option>
+              </select>
+            </Inp>
+          </div>
           <Inp label="Description"><input className="input-field" value={editBus.description||''} onChange={e=>setEditBus({...editBus,description:e.target.value})} /></Inp>
           <div>
             <label className="input-label" style={{ display:'block', marginBottom:6 }}>Statut</label>
@@ -1260,6 +1288,17 @@ export default function AgencyDashboard() {
             </div>
           </div>
         </Modal>
+      )}
+
+      {/* ── MODAL Plan des sièges ──────────────────────────────── */}
+      {seatModal && (
+        <SeatMapModal
+          mode="view"
+          trip={seatModal}
+          onClose={() => setSeatModal(null)}
+          headers={headers}
+          API={API}
+        />
       )}
     </div>
   );
