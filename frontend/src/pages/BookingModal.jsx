@@ -1,9 +1,8 @@
-
 import { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import SeatPicker from './SeatPicker';
 
-const API = 'http://localhost:5000/api';
+const API = 'https://nzela-production-086a.up.railway.app/api';
 
 /* ── Pays / opérateurs Mobile Money ─────────────────────────── */
 const PAYS = [
