@@ -9,10 +9,10 @@ import {
 const TEAM = [
   { name: 'Perciani Lukielo',  role: 'CEO & Fondateur',                                    photo: '/photos/perciani_luks.png' },
   { name: 'Israél Ongala',     role: 'DRH',                                                photo: '/photos/israel_ongala.png' },
-  { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat',  photo: null },
-  { name: 'Aaron Butu',        role: 'Responsable Marketing',                              photo: null },
-  { name: 'Arnold Lolo',       role: 'Développeur Backend',                                photo: null },
-  { name: 'Daniella Ongala',   role: 'Développeur Frontend',                               photo: null },
+  { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat',  photo: '/photos/grace_kapamba.png' },
+  { name: 'Arnold Lolo',        role: 'Chargé de communication',                              photo: null },
+  { name: 'Aaron Butu',       role: 'Créateur de contenu',                                photo: '/photos/butu.png' },
+  { name: 'Daniella Ongala',   role: 'Assistante communication',                               photo: '/photos/danie.png' },
   { name: 'Kethia',            role: 'Chargée de Marketing',                               photo: null },
   { name: 'Josué Tambwe',      role: 'Support client',                                     photo: null },
   { name: 'Gemima Masela',        role: 'Responsable Finance',                                photo: null },
@@ -38,7 +38,7 @@ const OBJECTIFS = [
 // ── STATS ─────────────────────────────────────────────────────
 const STATS = [
   { val: '10 000+', label: 'Voyageurs/mois visés', Icon: Users },
-  { val: '4',       label: 'Agences partenaires',  Icon: BarChart3 },
+  { val: '1',       label: 'Agences partenaires',  Icon: BarChart3 },
   { val: '3',       label: 'Trajets phares',       Icon: MapPin },
   { val: '100%',    label: 'Mobile Money',         Icon: Wifi },
 ];

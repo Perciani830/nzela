@@ -27,12 +27,14 @@ const FEATURES = [
 
 /* Partenaires — remplace les URL par tes vrais logos */
 const PARTNERS = [
-  { name: 'Tonga-Ekolo', photo: 'frontend/public/tonga_ekolo.png' },
-  { name: 'Orange Money', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/c/c8/Orange_logo.svg/1200px-Orange_logo.svg.png' },
-  { name: 'Airtel Money', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/e/e7/Airtel_logo_2010.svg/1280px-Airtel_logo_2010.svg.png' },
-  { name: 'Rawbank',      logo: 'https://upload.wikimedia.org/wikipedia/fr/thumb/b/b5/Rawbank_logo.svg/1200px-Rawbank_logo.svg.png' },
-  { name: 'Equity BCDC', logo: 'https://upload.wikimedia.org/wikipedia/commons/thumb/3/3e/Equity_Bank_logo.png/640px-Equity_Bank_logo.png' },
-  { name: 'FPI-RDC',     logo: '' }, /* logo interne — remplace par l'URL correcte */
+  { name: 'Tonga-Ekolo', logo: '/tonga_ekolo.png' },
+  { name: 'Orange Money', logo: '/orange.png' },
+  { name: 'Airtel Money', logo: '/airtel.png' },
+  { name: 'zaza_pub',     logo: '/zaza_pub.png' },
+  { name: 'b_one',        logo: '/b_one.png' },
+  { name: 'eciore',       logo: '/eciore.png' },
+  { name: 'kuenda_vutuka_logo',       logo: '/kuenda vutuka logo blanc.png' }, 
+  { name: 'peace',       logo: '/peace.png' },
 ];
 
 /* ── Icône de tag pour le carousel hero ── */
@@ -161,11 +163,11 @@ function PartnerCarousel() {
 
         <div className="partner-track">
           {doubled.map((p, i) => (
-            <div key={i} style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', height:44, padding:'0 8px', opacity:.65, transition:'opacity .2s', cursor:'default' }}
+            <div key={i} style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', height:56, padding:'0 8px', opacity:.65, transition:'opacity .2s', cursor:'default' }}
               onMouseEnter={e => e.currentTarget.style.opacity = '1'}
               onMouseLeave={e => e.currentTarget.style.opacity = '.65'}>
               {p.logo
-                ? <img src={p.logo} alt={p.name} style={{ height:28, maxWidth:90, objectFit:'contain', filter:'grayscale(1) brightness(1.6)' }}
+                ? <img src={p.logo} alt={p.name} style={{ height:38, maxWidth:110, objectFit:'contain' }}
                     onError={e => { e.target.style.display='none'; e.target.parentNode.innerHTML = `<span style="font-size:11px;font-weight:700;color:var(--muted);white-space:nowrap">${p.name}</span>`; }}
                   />
                 : <span style={{ fontSize:11, fontWeight:700, color:'var(--muted)', whiteSpace:'nowrap' }}>{p.name}</span>
