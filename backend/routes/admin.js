@@ -336,4 +336,139 @@ router.post('/agencies/:id/users/:uid/reset-password', auth, (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+// ── VOYAGES D'UNE AGENCE (pour AgencyTripsPanel) ─────────────
+router.get('/agencies/:id/trips', auth, (req, res) => {
+  try {
+    const trips = getDb().prepare(`
+      SELECT t.*, b_count.total_seats,
+             (t.total_seats - COALESCE(b_count.booked, 0)) AS available_seats,
+             buses.name AS bus_name
+      FROM trips t
+      LEFT JOIN buses ON t.bus_id = buses.id
+      LEFT JOIN (
+        SELECT trip_id,
+               COUNT(*) AS booked,
+               MAX(total_seats) AS total_seats
+        FROM bookings
+        WHERE status != 'cancelled'
+        GROUP BY trip_id
+      ) b_count ON b_count.trip_id = t.id
+      WHERE t.agency_id = ?
+      ORDER BY t.departure_date DESC, t.departure_time DESC
+    `).all(req.params.id);
+    res.json(trips);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── SETTINGS ─────────────────────────────────────────────────
+// Crée la table si elle n'existe pas encore
+function ensureSettingsTable(db) {
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS settings (
+      id INTEGER PRIMARY KEY DEFAULT 1 CHECK(id = 1),
+      commission_rate REAL NOT NULL DEFAULT 10,
+      updated_at TEXT DEFAULT (datetime('now'))
+    )
+  `).run();
+  // Insère la ligne unique si elle est absente
+  db.prepare(`INSERT OR IGNORE INTO settings (id, commission_rate) VALUES (1, 10)`).run();
+}
+
+router.get('/settings', auth, (req, res) => {
+  try {
+    const db = getDb();
+    ensureSettingsTable(db);
+    const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
+    res.json(row);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.patch('/settings', auth, (req, res) => {
+  try {
+    const db = getDb();
+    ensureSettingsTable(db);
+    const { commission_rate } = req.body;
+    if (commission_rate === undefined || isNaN(Number(commission_rate))) {
+      return res.status(400).json({ error: 'commission_rate invalide' });
+    }
+    db.prepare(`
+      UPDATE settings SET commission_rate = ?, updated_at = datetime('now') WHERE id = 1
+    `).run(Number(commission_rate));
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── CONTRIBUTIONS ─────────────────────────────────────────────
+// Crée la table si elle n'existe pas encore
+function ensureContributionsTable(db) {
+  db.prepare(`
+    CREATE TABLE IF NOT EXISTS contributions (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      reference   TEXT UNIQUE,
+      contributor_name TEXT,
+      phone       TEXT,
+      operator    TEXT,
+      amount      REAL DEFAULT 0,
+      currency    TEXT DEFAULT 'CDF',
+      transaction_id TEXT,
+      message     TEXT,
+      created_at  TEXT DEFAULT (datetime('now'))
+    )
+  `).run();
+}
+
+router.get('/contributions', auth, (req, res) => {
+  try {
+    const db = getDb();
+    ensureContributionsTable(db);
+    const rows = db.prepare('SELECT * FROM contributions ORDER BY created_at DESC').all();
+    res.json(rows);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.post('/contributions', auth, (req, res) => {
+  try {
+    const db = getDb();
+    ensureContributionsTable(db);
+    const { contributor_name, phone, operator, amount, currency, transaction_id, message } = req.body;
+    if (!amount || isNaN(Number(amount))) return res.status(400).json({ error: 'Montant invalide' });
+    const reference = `CONTRIB-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
+    const result = db.prepare(`
+      INSERT INTO contributions (reference, contributor_name, phone, operator, amount, currency, transaction_id, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(reference, contributor_name || 'Anonyme', phone || null, operator || null,
+           Number(amount), currency || 'CDF', transaction_id || null, message || null);
+    res.status(201).json({ id: result.lastInsertRowid, reference });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+router.delete('/contributions/:id', auth, (req, res) => {
+  try {
+    const db = getDb();
+    ensureContributionsTable(db);
+    db.prepare('DELETE FROM contributions WHERE id = ?').run(req.params.id);
+    res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── RESET COMPLET (supprime toutes les agences + données liées) ─
+router.delete('/reset', auth, (req, res) => {
+  const db = getDb();
+  db.exec('BEGIN');
+  try {
+    // Suppression dans l'ordre pour respecter les clés étrangères
+    db.prepare('DELETE FROM bookings').run();
+    db.prepare('DELETE FROM trips').run();
+    db.prepare('DELETE FROM buses').run();
+    db.prepare('DELETE FROM agency_users').run();
+    db.prepare('DELETE FROM agencies').run();
+    // ⚠️  settings et contributions sont conservés (comme indiqué dans l'UI)
+    db.exec('COMMIT');
+    res.json({ ok: true, message: 'Toutes les agences et leurs données ont été supprimées.' });
+  } catch(e) {
+    db.exec('ROLLBACK');
+    res.status(500).json({ error: e.message });
+  }
+});
+
 module.exports = router;
