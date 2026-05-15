@@ -365,7 +365,7 @@ router.get('/agencies/:id/trips', auth, (req, res) => {
 function ensureSettingsTable(db) {
   db.prepare(`
     CREATE TABLE IF NOT EXISTS settings (
-      id INTEGER PRIMARY KEY DEFAULT 1 CHECK(id = 1),
+      id INTEGER PRIMARY KEY,
       commission_rate REAL NOT NULL DEFAULT 10,
       updated_at TEXT DEFAULT (datetime('now'))
     )
