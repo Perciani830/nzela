@@ -336,92 +336,53 @@ router.post('/agencies/:id/users/:uid/reset-password', auth, (req, res) => {
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
+
 // ── VOYAGES D'UNE AGENCE (pour AgencyTripsPanel) ─────────────
+// trips contient déjà total_seats et available_seats directement
 router.get('/agencies/:id/trips', auth, (req, res) => {
   try {
-    const trips = getDb().prepare(`
-      SELECT t.*, b_count.total_seats,
-             (t.total_seats - COALESCE(b_count.booked, 0)) AS available_seats,
-             buses.name AS bus_name
-      FROM trips t
-      LEFT JOIN buses ON t.bus_id = buses.id
-      LEFT JOIN (
-        SELECT trip_id,
-               COUNT(*) AS booked,
-               MAX(total_seats) AS total_seats
-        FROM bookings
-        WHERE status != 'cancelled'
-        GROUP BY trip_id
-      ) b_count ON b_count.trip_id = t.id
-      WHERE t.agency_id = ?
-      ORDER BY t.departure_date DESC, t.departure_time DESC
-    `).all(req.params.id);
+    const trips = getDb().prepare(
+      `SELECT * FROM trips WHERE agency_id = ?
+       ORDER BY departure_date DESC, departure_time DESC`
+    ).all(req.params.id);
     res.json(trips);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── SETTINGS ─────────────────────────────────────────────────
-// Crée la table si elle n'existe pas encore
-function ensureSettingsTable(db) {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS settings (
-      id INTEGER PRIMARY KEY,
-      commission_rate REAL NOT NULL DEFAULT 10,
-      updated_at TEXT DEFAULT (datetime('now'))
-    )
-  `).run();
-  // Insère la ligne unique si elle est absente
-  db.prepare(`INSERT OR IGNORE INTO settings (id, commission_rate) VALUES (1, 10)`).run();
-}
+// La table settings est un store clé-valeur { key TEXT, value TEXT }
+// déjà créée et initialisée dans initDatabase()
 
 router.get('/settings', auth, (req, res) => {
   try {
-    const db = getDb();
-    ensureSettingsTable(db);
-    const row = db.prepare('SELECT * FROM settings WHERE id = 1').get();
-    res.json(row);
+    const rows = getDb().prepare('SELECT key, value FROM settings').all();
+    // Convertir en objet plat { commission_rate: 10, ... }
+    const result = {};
+    for (const r of rows) {
+      result[r.key] = isNaN(r.value) ? r.value : Number(r.value);
+    }
+    res.json(result);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 router.patch('/settings', auth, (req, res) => {
   try {
     const db = getDb();
-    ensureSettingsTable(db);
-    const { commission_rate } = req.body;
-    if (commission_rate === undefined || isNaN(Number(commission_rate))) {
-      return res.status(400).json({ error: 'commission_rate invalide' });
+    const stmt = db.prepare('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)');
+    for (const [key, value] of Object.entries(req.body)) {
+      stmt.run(key, String(value));
     }
-    db.prepare(`
-      UPDATE settings SET commission_rate = ?, updated_at = datetime('now') WHERE id = 1
-    `).run(Number(commission_rate));
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 // ── CONTRIBUTIONS ─────────────────────────────────────────────
-// Crée la table si elle n'existe pas encore
-function ensureContributionsTable(db) {
-  db.prepare(`
-    CREATE TABLE IF NOT EXISTS contributions (
-      id          INTEGER PRIMARY KEY AUTOINCREMENT,
-      reference   TEXT UNIQUE,
-      contributor_name TEXT,
-      phone       TEXT,
-      operator    TEXT,
-      amount      REAL DEFAULT 0,
-      currency    TEXT DEFAULT 'CDF',
-      transaction_id TEXT,
-      message     TEXT,
-      created_at  TEXT DEFAULT (datetime('now'))
-    )
-  `).run();
-}
+// La table contributions est déjà créée dans initDatabase()
+// Schéma : id TEXT (UUID), reference TEXT UNIQUE NOT NULL, amount REAL NOT NULL, ...
 
 router.get('/contributions', auth, (req, res) => {
   try {
-    const db = getDb();
-    ensureContributionsTable(db);
-    const rows = db.prepare('SELECT * FROM contributions ORDER BY created_at DESC').all();
+    const rows = getDb().prepare('SELECT * FROM contributions ORDER BY created_at DESC').all();
     res.json(rows);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -429,40 +390,39 @@ router.get('/contributions', auth, (req, res) => {
 router.post('/contributions', auth, (req, res) => {
   try {
     const db = getDb();
-    ensureContributionsTable(db);
     const { contributor_name, phone, operator, amount, currency, transaction_id, message } = req.body;
     if (!amount || isNaN(Number(amount))) return res.status(400).json({ error: 'Montant invalide' });
+    const id        = uuidv4();
     const reference = `CONTRIB-${Date.now()}-${Math.random().toString(36).slice(2,6).toUpperCase()}`;
-    const result = db.prepare(`
-      INSERT INTO contributions (reference, contributor_name, phone, operator, amount, currency, transaction_id, message)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `).run(reference, contributor_name || 'Anonyme', phone || null, operator || null,
+    db.prepare(`
+      INSERT INTO contributions (id, reference, contributor_name, phone, operator, amount, currency, transaction_id, message)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(id, reference, contributor_name || 'Anonyme', phone || null, operator || null,
            Number(amount), currency || 'CDF', transaction_id || null, message || null);
-    res.status(201).json({ id: result.lastInsertRowid, reference });
+    res.status(201).json({ id, reference });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 router.delete('/contributions/:id', auth, (req, res) => {
   try {
-    const db = getDb();
-    ensureContributionsTable(db);
-    db.prepare('DELETE FROM contributions WHERE id = ?').run(req.params.id);
+    getDb().prepare('DELETE FROM contributions WHERE id = ?').run(req.params.id);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-// ── RESET COMPLET (supprime toutes les agences + données liées) ─
+// ── RESET COMPLET ─────────────────────────────────────────────
+// Supprime toutes les agences et leurs données liées.
+// settings et contributions sont conservés (comportement affiché dans l'UI).
 router.delete('/reset', auth, (req, res) => {
   const db = getDb();
   db.exec('BEGIN');
   try {
-    // Suppression dans l'ordre pour respecter les clés étrangères
     db.prepare('DELETE FROM bookings').run();
+    db.prepare('DELETE FROM seats').run();
     db.prepare('DELETE FROM trips').run();
     db.prepare('DELETE FROM buses').run();
     db.prepare('DELETE FROM agency_users').run();
     db.prepare('DELETE FROM agencies').run();
-    // ⚠️  settings et contributions sont conservés (comme indiqué dans l'UI)
     db.exec('COMMIT');
     res.json({ ok: true, message: 'Toutes les agences et leurs données ont été supprimées.' });
   } catch(e) {
