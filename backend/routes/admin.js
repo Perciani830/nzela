@@ -2,7 +2,7 @@ const router = require('express').Router();
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcryptjs');
 const { v4: uuidv4 } = require('uuid');
-const { getDb, exportDatabase, importDatabase } = require('../db/database');
+const { getDb, exportDatabase, importDatabase, deleteAgency } = require('../db/database');
 
 const SECRET = process.env.JWT_SECRET || 'busconnect-secret';
 
@@ -173,14 +173,12 @@ router.patch('/agencies/:id', auth, (req, res) => {
 });
 
 // ── SUPPRIMER UNE AGENCE ──────────────────────────────────────
+// deleteAgency() gère la cascade : bookings → seats → trips → buses → agency_users → agency
 router.delete('/agencies/:id', auth, (req, res) => {
   try {
-    const db = getDb();
-    const active = db.prepare("SELECT COUNT(*) c FROM bookings WHERE agency_id=? AND status NOT IN ('cancelled')").get(req.params.id).c;
-    if (active > 0) return res.status(400).json({ error: `Impossible : ${active} réservation(s) active(s) liée(s) à cette agence. Annulez-les d'abord.` });
-    db.prepare('DELETE FROM trips WHERE agency_id=?').run(req.params.id);
-    db.prepare('DELETE FROM buses WHERE agency_id=?').run(req.params.id);
-    db.prepare('DELETE FROM agencies WHERE id=?').run(req.params.id);
+    if (!getDb().prepare('SELECT id FROM agencies WHERE id=?').get(req.params.id))
+      return res.status(404).json({ error: 'Agence introuvable' });
+    deleteAgency(req.params.id);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
