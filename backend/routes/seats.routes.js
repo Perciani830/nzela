@@ -63,49 +63,54 @@ function requireAdmin(req, res, next) {
    Initialise les sièges automatiquement si c'est le premier appel.
    ═══════════════════════════════════════════════════════════════ */
 router.get('/trips/:tripId/seats', (req, res) => {
-  const db = getDb();
-  const { tripId } = req.params;
+  try {
+    const db = getDb();
+    const { tripId } = req.params;
 
-  releaseExpiredSeats(db);
+    releaseExpiredSeats(db);
 
-  const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
-  if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+    const trip = db.prepare('SELECT * FROM trips WHERE id = ?').get(tripId);
+    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
 
-  ensureSeatsExist(db, tripId);
+    ensureSeatsExist(db, tripId);
 
-  const bus = trip.bus_id
-    ? db.prepare('SELECT layout, total_seats FROM buses WHERE id = ?').get(trip.bus_id)
-    : null;
+    const bus = trip.bus_id
+      ? db.prepare('SELECT layout, total_seats FROM buses WHERE id = ?').get(trip.bus_id)
+      : null;
 
-  const seats = db.prepare(`
-    SELECT s.seat_number, s.status, s.booking_id, s.expires_at,
-           b.reference     AS booking_ref,
-           b.passenger_name
-    FROM   seats s
-    LEFT JOIN bookings b ON s.booking_id = b.id
-    WHERE  s.trip_id = ?
-    ORDER  BY s.seat_number
-  `).all(tripId);
+    const seats = db.prepare(`
+      SELECT s.seat_number, s.status, s.booking_id, s.expires_at,
+             b.reference     AS booking_ref,
+             b.passenger_name
+      FROM   seats s
+      LEFT JOIN bookings b ON s.booking_id = b.id
+      WHERE  s.trip_id = ?
+      ORDER  BY s.seat_number
+    `).all(tripId);
 
-  res.json({
-    trip_id:     tripId,
-    layout:      bus?.layout      || '2+3',
-    total_seats: trip.total_seats || bus?.total_seats || 50,
-    seats: seats.map(s => ({
-      seat_number:    s.seat_number,
-      status:         s.status,       // available | pending | reserved | confirmed
-      booking_id:     s.booking_id,
-      booking_ref:    s.booking_ref,
-      passenger_name: s.passenger_name,
-      expires_at:     s.expires_at,
-    })),
-    summary: {
-      available: seats.filter(s => s.status === 'available').length,
-      pending:   seats.filter(s => s.status === 'pending').length,
-      reserved:  seats.filter(s => s.status === 'reserved').length,
-      confirmed: seats.filter(s => s.status === 'confirmed').length,
-    },
-  });
+    res.json({
+      trip_id:     tripId,
+      layout:      bus?.layout      || '2+3',
+      total_seats: trip.total_seats || bus?.total_seats || 50,
+      seats: seats.map(s => ({
+        seat_number:    s.seat_number,
+        status:         s.status,
+        booking_id:     s.booking_id,
+        booking_ref:    s.booking_ref,
+        passenger_name: s.passenger_name,
+        expires_at:     s.expires_at,
+      })),
+      summary: {
+        available: seats.filter(s => s.status === 'available').length,
+        pending:   seats.filter(s => s.status === 'pending').length,
+        reserved:  seats.filter(s => s.status === 'reserved').length,
+        confirmed: seats.filter(s => s.status === 'confirmed').length,
+      },
+    });
+  } catch(e) {
+    console.error('GET /seats error:', e.message, e.stack);
+    res.status(500).json({ error: e.message });
+  }
 });
 
 /* ═══════════════════════════════════════════════════════════════
