@@ -166,6 +166,7 @@ CREATE TABLE IF NOT EXISTS seats (
     "ALTER TABLE agencies ADD COLUMN premium_caption TEXT",
     "ALTER TABLE agencies ADD COLUMN note INTEGER DEFAULT 3",
     "ALTER TABLE buses ADD COLUMN layout TEXT DEFAULT '2+3'",
+    "ALTER TABLE bookings ADD COLUMN seat_numbers TEXT DEFAULT NULL",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
   // ── Migration : ajouter ON DELETE CASCADE sur les tables existantes ──────────

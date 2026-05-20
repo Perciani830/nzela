@@ -241,6 +241,70 @@ router.get('/bookings', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// POST /api/agency/bookings — Réservation sur place (espèces)
+router.post('/bookings', auth, (req, res) => {
+  try {
+    const { trip_id, passenger_name, passenger_phone, passengers, seat_numbers } = req.body;
+
+    if (!trip_id || !passenger_name || !passenger_phone)
+      return res.status(400).json({ error: 'trip_id, passenger_name et passenger_phone sont requis' });
+
+    const db   = getDb();
+    const trip = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(trip_id, req.user.agency_id);
+    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+    const nb = Math.max(1, parseInt(passengers) || 1);
+    if (trip.available_seats < nb)
+      return res.status(400).json({ error: `Places insuffisantes (${trip.available_seats} disponible${trip.available_seats > 1 ? 's' : ''})` });
+
+    // Vérifier que les sièges demandés sont libres
+    const seats = Array.isArray(seat_numbers) ? seat_numbers : [];
+    if (seats.length > 0) {
+      const taken = db.prepare(
+        `SELECT seat_numbers FROM bookings WHERE trip_id=? AND status!='cancelled'`
+      ).all(trip_id).flatMap(b => { try { return JSON.parse(b.seat_numbers||'[]'); } catch { return []; } });
+      const conflict = seats.filter(s => taken.includes(s));
+      if (conflict.length > 0)
+        return res.status(409).json({ error: `Sièges déjà réservés : ${conflict.join(', ')}` });
+    }
+
+    // Commission depuis la table agencies (pas depuis le JWT)
+    const agency        = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(req.user.agency_id);
+    const commissionRate = agency ? (agency.commission_rate || 10) : 10;
+    const total          = trip.price * nb;
+    const commission     = Math.round(total * commissionRate / 100);
+
+    const chars     = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const reference = 'NSP-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+    const id        = uuidv4();
+
+    runTransaction(db, () => {
+      db.prepare(`
+        INSERT INTO bookings
+          (id, reference, trip_id, agency_id, passenger_name, passenger_phone,
+           passengers, seat_numbers, total_price, commission_rate, commission_amount,
+           payment_method, payment_status, status, boarding_status)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,'cash','completed','confirmed','present')
+      `).run(id, reference, trip_id, req.user.agency_id, passenger_name, passenger_phone,
+             nb, JSON.stringify(seats), total, commissionRate, commission);
+
+      db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(nb, trip_id);
+
+      // Marquer les sièges dans la table seats
+      if (seats.length > 0) {
+        const upsert = db.prepare(`
+          INSERT INTO seats (id, trip_id, seat_number, status, booking_id)
+          VALUES (?,?,?,'confirmed',?)
+          ON CONFLICT(trip_id, seat_number)
+          DO UPDATE SET status='confirmed', booking_id=excluded.booking_id
+        `);
+        for (const s of seats) { try { upsert.run(uuidv4(), trip_id, s, id); } catch {} }
+      }
+    });
+
+    res.status(201).json({ reference, total, commission });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
 router.patch('/bookings/:id/confirm', auth, (req, res) => {
   try {
     const db = getDb();
