@@ -20,13 +20,15 @@ function auth(req, res, next) {
 router.get('/stats', auth, (req, res) => {
   try {
     const db = getDb();
-    const total_agencies = db.prepare("SELECT COUNT(*) c FROM agencies WHERE is_active=1").get().c;
-    const confirmed      = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='confirmed'").get().c;
-    const pending        = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='pending'").get().c;
-    const cancelled      = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='cancelled'").get().c;
-    const revenue_raw    = db.prepare("SELECT COALESCE(SUM(total_price),0) s FROM bookings WHERE payment_status='completed' AND status='confirmed'").get().s;
-    const commission     = db.prepare("SELECT COALESCE(SUM(commission_amount),0) s FROM bookings WHERE status='confirmed'").get().s;
-    res.json({ total_agencies, confirmed, pending, cancelled, revenue_raw, commission });
+    const total_agencies  = db.prepare("SELECT COUNT(*) c FROM agencies WHERE is_active=1").get().c;
+    const confirmed       = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='confirmed'").get().c;
+    const pending         = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='pending'").get().c;
+    const cancelled       = db.prepare("SELECT COUNT(*) c FROM bookings WHERE status='cancelled'").get().c;
+    const revenue_raw     = db.prepare("SELECT COALESCE(SUM(total_price),0) s FROM bookings WHERE payment_status='completed' AND status='confirmed'").get().s;
+    const commission      = db.prepare("SELECT COALESCE(SUM(commission_amount),0) s FROM bookings WHERE status='confirmed'").get().s;
+    const total_bookings  = confirmed; // alias attendu par AdminDashboard (stats.total_bookings)
+    const total_trips     = db.prepare("SELECT COUNT(*) c FROM trips WHERE is_active=1").get().c;
+    res.json({ total_agencies, confirmed, pending, cancelled, revenue_raw, commission, total_bookings, total_trips });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -131,8 +133,27 @@ router.post('/reset-stats', auth, (req, res) => {
 
 // ── AGENCES ───────────────────────────────────────────────────
 router.get('/agencies', auth, (req, res) => {
-  try { res.json(getDb().prepare('SELECT id,agency_name,username,email,phone,logo_url,commission_rate,cancel_rate,is_active,premium,premium_order,premium_photo_url,premium_caption,note,created_at FROM agencies ORDER BY created_at DESC').all()); }
-  catch(e) { res.status(500).json({ error: e.message }); }
+  try {
+    const db       = getDb();
+    const agencies = db.prepare(`
+      SELECT
+        a.id, a.agency_name, a.username, a.email, a.phone, a.logo_url,
+        a.commission_rate, a.cancel_rate, a.is_active,
+        a.premium, a.premium_order, a.premium_photo_url, a.premium_caption,
+        a.note, a.created_at,
+        COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.total_price      ELSE 0 END), 0) AS total_revenue,
+        COALESCE(SUM(CASE WHEN b.status='confirmed' THEN b.commission_amount ELSE 0 END), 0) AS total_commission,
+        COUNT(CASE WHEN b.status='confirmed' THEN 1 END)                                     AS total_bookings,
+        COUNT(CASE WHEN b.status='pending'   THEN 1 END)                                     AS pending_bookings,
+        COUNT(CASE WHEN b.status='cancelled' THEN 1 END)                                     AS cancelled_bookings,
+        (SELECT COUNT(*) FROM trips t WHERE t.agency_id=a.id AND t.is_active=1)              AS total_trips
+      FROM agencies a
+      LEFT JOIN bookings b ON b.agency_id = a.id
+      GROUP BY a.id
+      ORDER BY a.created_at DESC
+    `).all();
+    res.json(agencies);
+  } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
 router.post('/agencies', auth, (req, res) => {

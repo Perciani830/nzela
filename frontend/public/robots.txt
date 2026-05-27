@@ -1,5 +1,8 @@
 User-agent: *
 Allow: /
+
+# Bloquer les routes privées
+Disallow: /api/
 Disallow: /admin
 Disallow: /agency
 
