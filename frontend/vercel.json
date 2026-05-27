@@ -3,6 +3,9 @@
   "buildCommand": "node node_modules/vite/bin/vite.js build",
   "outputDirectory": "dist",
   "rewrites": [
+    { "source": "/sitemap.xml", "destination": "/sitemap.xml" },
+    { "source": "/robots.txt",  "destination": "/robots.txt"  },
+    { "source": "/manifest.json", "destination": "/manifest.json" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]
 }
