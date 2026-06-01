@@ -1,0 +1,39 @@
+# Nzela
+
+> Nzela est la première plateforme de réservation de billets de bus en ligne en République Démocratique du Congo (RDC).
+
+## Ce que fait Nzela
+
+- Réservation de billets de bus interurbains en RDC via internet
+- Sélection de siège en temps réel sur le plan du bus
+- Paiement Mobile Money : M-Pesa, Orange Money, Airtel Money
+- Confirmation de réservation instantanée par référence unique
+- Trajets disponibles : Kinshasa–Boma, Kinshasa–Matadi, Kinshasa–Lubumbashi, Kinshasa–Mbuji-Mayi, Kinshasa–Kananga
+
+## Pourquoi Nzela
+
+Avant Nzela, réserver un bus en RDC nécessitait de se déplacer physiquement au guichet de l'agence. Nzela permet de réserver depuis son téléphone, de choisir son siège et de payer avec Mobile Money — sans file d'attente, sans déplacement.
+
+## Public cible
+
+Voyageurs congolais et diaspora souhaitant réserver un transport interurbain en RDC. Agences de transport cherchant à digitaliser leur vente de billets.
+
+## Modèle
+
+Plateforme multi-agences : les agences de transport s'inscrivent sur Nzela et publient leurs voyages. Nzela prend une commission de 10% sur chaque réservation en ligne.
+
+## Moyens de paiement acceptés
+
+- M-Pesa (Vodacom RDC)
+- Orange Money (Orange RDC)
+- Airtel Money (Airtel RDC)
+- Paiement en espèces sur place (via agence)
+
+## Villes desservies
+
+Kinshasa, Boma, Matadi, Lubumbashi, Mbuji-Mayi, Kananga
+
+## Contact et accès
+
+- Site web : https://nzela.cd
+- Réservation en ligne : https://nzela.cd
