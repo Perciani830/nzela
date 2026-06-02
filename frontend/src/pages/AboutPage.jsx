@@ -10,7 +10,7 @@ const TEAM = [
   { name: 'Perciani Lukielo',  role: 'CEO & Fondateur',                                    photo: '/photos/perciani_luks.png' },
   { name: 'Israél Ongala',     role: 'DRH',                                                photo: '/photos/israel_ongala.png' },
   { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat',  photo: '/photos/grace_kapamba.png' },
-  { name: 'Arnold Lolo',        role: 'Chef de la Chargé de communication',                photo: '/photos/op.png' },
+  { name: 'Arnold Lolo',        role: ' Chargé de communication',                photo: '/photos/op.png' },
   { name: 'Aaron Butu',       role: 'Communicateur',                                photo: '/photos/butu.png' },
   { name: 'Daniella Ongala',   role: 'Assistante communication',                               photo: '/photos/danie.png' },
   { name: 'Qetsia Mupoyi',            role: 'Responsable Finance',                         photo: '/photos/qetsia.png' },
