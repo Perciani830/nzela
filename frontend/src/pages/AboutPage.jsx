@@ -5,17 +5,35 @@ import {
   MapPin, Users, BarChart3, Wifi,
 } from 'lucide-react';
 
+// ── Icônes réseaux sociaux (SVG inline — Lucide n'a pas Facebook/Instagram) ──
+function IconFacebook({ size = 16, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill={color} xmlns="http://www.w3.org/2000/svg">
+      <path d="M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z"/>
+    </svg>
+  );
+}
+function IconInstagram({ size = 16, color = 'currentColor' }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" xmlns="http://www.w3.org/2000/svg">
+      <rect x="2" y="2" width="20" height="20" rx="5" ry="5"/>
+      <circle cx="12" cy="12" r="4"/>
+      <circle cx="17.5" cy="6.5" r="1" fill={color} stroke="none"/>
+    </svg>
+  );
+}
+
 // ── ÉQUIPE — remplace les données ici ─────────────────────────
 const TEAM = [
-  { name: 'Perciani Lukielo',  role: 'CEO & Fondateur',                                    photo: '/photos/perciani_luks.png' },
-  { name: 'Israél Ongala',     role: 'DRH',                                                photo: '/photos/israel_ongala.png' },
-  { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat',  photo: '/photos/grace_kapamba.png' },
-  { name: 'Arnold Lolo',        role: ' Chargé de communication',                photo: '/photos/op.png' },
-  { name: 'Aaron Butu',       role: 'Communicateur',                                photo: '/photos/butu.png' },
-  { name: 'Daniella Ongala',   role: 'Assistante communication',                               photo: '/photos/danie.png' },
-  { name: 'Qetsia Mupoyi',            role: 'Responsable Finance',                         photo: '/photos/qetsia.png' },
-  { name: 'Josué Tambwe',      role: 'Support Client',                                     photo: '/photo' },
-  { name: 'Gemima Masela',        role: 'Support Client',                                photo: '/photos/Gemina.png' },
+  { name: 'Perciani Lukielo',  role: 'CEO & Fondateur',                                   photo: '/photos/perciani_luks.png', facebook: 'https://web.facebook.com/perciani.luks', instagram: '' },
+  { name: 'Israél Ongala',     role: 'DRH',                                               photo: '/photos/israel_ongala.png', facebook: 'https://web.facebook.com/nzeladrc', instagram: 'https://www.instagram.com/israelongala/' },
+  { name: 'Grâce Kapamba',     role: 'Sécretaire Adm, chargée commercial et partenatiat', photo: '/photos/grace_kapamba.png', facebook: 'https://web.facebook.com/nzeladrc', instagram: '' },
+  { name: 'Arnold Lolo',       role: 'Chargé de communication',                           photo: '/photos/op.png',            facebook: 'https://web.facebook.com/arnold.lolomasuangi', instagram: 'https://www.instagram.com/arnold.lolo/' },
+  { name: 'Aaron Butu',        role: 'Communicateur',                                     photo: '/photos/butu.png',          facebook: 'https://web.facebook.com/nzeladrc', instagram: 'https://www.instagram.com/bantu__creator/' },
+  { name: 'Daniella Ongala',   role: 'Assistante communication',                          photo: '/photos/danie.png',         facebook: 'https://web.facebook.com/nzeladrc', instagram: 'https://www.instagram.com/ongaladaniella/' },
+  { name: 'Qetsia Mupoyi',     role: 'Responsable Finance',                               photo: '/photos/qetsia.png',        facebook: 'https://web.facebook.com/nzeladrc', instagram: '' },
+  { name: 'Josué Tambwe',      role: 'Support Client',                                    photo: '/photos/josue.png',         facebook: 'https://web.facebook.com/nzeladrc', instagram: '' },
+  { name: 'Gemima Masela',     role: 'Support Client',                                    photo: '/photos/Gemina.png',        facebook: 'https://web.facebook.com/nzeladrc', instagram: 'https://www.instagram.com/gmasela/' },
 ];
 
 // ── CIBLES ────────────────────────────────────────────────────
@@ -130,9 +148,48 @@ function TeamCard({ member, delay }) {
         <p style={{ margin: '0 0 6px', fontSize: 16, fontWeight: 700, color: '#F0F4F8', fontFamily: 'Plus Jakarta Sans, sans-serif' }}>
           {member.name}
         </p>
-        <p style={{ margin: 0, fontSize: 13, color: '#3DAA6A', fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.05em' }}>
+        <p style={{ margin: '0 0 14px', fontSize: 13, color: '#3DAA6A', fontFamily: 'DM Sans, sans-serif', letterSpacing: '0.05em' }}>
           {member.role}
         </p>
+        {/* Icônes réseaux sociaux */}
+        {(member.facebook || member.instagram) && (
+          <div style={{ display: 'flex', justifyContent: 'center', gap: 10 }}>
+            {member.facebook && (
+              <a href={member.facebook} target="_blank" rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(24,119,242,0.12)',
+                  border: '1px solid rgba(24,119,242,0.25)',
+                  color: '#1877F2',
+                  transition: 'background 0.2s, transform 0.2s',
+                  textDecoration: 'none',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(24,119,242,0.25)'; e.currentTarget.style.transform = 'scale(1.15)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(24,119,242,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                <IconFacebook size={15} color="#1877F2" />
+              </a>
+            )}
+            {member.instagram && (
+              <a href={member.instagram} target="_blank" rel="noopener noreferrer"
+                style={{
+                  display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                  width: 32, height: 32, borderRadius: '50%',
+                  background: 'rgba(225,48,108,0.12)',
+                  border: '1px solid rgba(225,48,108,0.25)',
+                  color: '#E1306C',
+                  transition: 'background 0.2s, transform 0.2s',
+                  textDecoration: 'none',
+                }}
+                onMouseEnter={e => { e.currentTarget.style.background = 'rgba(225,48,108,0.25)'; e.currentTarget.style.transform = 'scale(1.15)'; }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'rgba(225,48,108,0.12)'; e.currentTarget.style.transform = 'scale(1)'; }}
+              >
+                <IconInstagram size={15} color="#E1306C" />
+              </a>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );
