@@ -1,0 +1,7 @@
+User-agent: *
+Allow: /
+Sitemap: https://nzela.cd/sitemap.xml
+
+Disallow: /api/
+Disallow: /admin
+Disallow: /agency
