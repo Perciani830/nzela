@@ -1,6 +1,34 @@
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
-const { getDb, runTransaction } = require('../db/database');
+const { getDb, runTransaction, ensureSeatsExist } = require('../db/database');
+
+/* ─────────────────────────────────────────────────────────────
+   HELPER — Confirmation des sièges après paiement validé
+   Les sièges ont été bloqués en 'pending' avec session_token
+   comme booking_id temporaire. On les passe à 'confirmed'
+   avec le vrai booking.id une fois le paiement reçu.
+───────────────────────────────────────────────────────────── */
+function confirmSeats(db, booking) {
+  if (!booking || !booking.seat_numbers) return;
+  const seatNumbers = booking.seat_numbers.split(',').map(s => s.trim()).filter(Boolean);
+  if (seatNumbers.length === 0) return;
+
+  ensureSeatsExist(db, booking.trip_id);
+
+  const ph = seatNumbers.map(() => '?').join(',');
+  runTransaction(db, () => {
+    db.prepare(`
+      UPDATE seats
+      SET    status     = 'confirmed',
+             booking_id = ?,
+             expires_at = NULL
+      WHERE  trip_id    = ?
+        AND  seat_number IN (${ph})
+        AND  status IN ('pending', 'reserved')
+    `).run(booking.id, booking.trip_id, ...seatNumbers);
+  });
+  console.log(`🪑 Sièges confirmés — ${booking.reference} | ${seatNumbers.join(', ')}`);
+}
 
 /* ─────────────────────────────────────────────────────────────
    CONSTANTES MODULE-LEVEL
@@ -202,6 +230,8 @@ router.post('/pay', async (req, res) => {
         db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
           payment_method='mobilemoney', transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?`)
           .run(txId, rate, commission_amount, booking_id);
+        const confirmedBooking = db.prepare('SELECT * FROM bookings WHERE id=?').get(booking_id);
+        confirmSeats(db, confirmedBooking);
         console.log(`✅ MPESA v1 — ${booking.reference} | ${booking.total_price} | tx: ${txId}`);
         return res.json({ success: true, status: 'confirmed', reference: booking.reference, transaction_id: txId });
       } else if (code === '201' || code === '202' || data?.status === 'PENDING') {
@@ -367,6 +397,8 @@ router.post('/callback/mobilemoney', (req, res) => {
       db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
         transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
         .run(txId, rate, commission_amount, ref);
+      const confirmedBooking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(ref);
+      confirmSeats(db, confirmedBooking);
       console.log(`✅ MM v2 CONFIRMÉ — ${ref}`);
     } else if (status_code === '400' || txStatus === 'FAILED') {
       db.prepare("UPDATE bookings SET status='cancelled', payment_status='failed' WHERE reference=?").run(ref);
@@ -410,6 +442,8 @@ router.get('/callback/card', (req, res) => {
         db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
           transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
           .run(txId, rate, commission_amount, ref);
+        const confirmedBooking = db.prepare('SELECT * FROM bookings WHERE reference=?').get(ref);
+        confirmSeats(db, confirmedBooking);
         console.log(`✅ Card v3 APPROUVÉE — ${ref}`);
       }
       return res.redirect(`${FRONTEND}/?payment=success&ref=${ref}`);

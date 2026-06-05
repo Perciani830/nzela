@@ -257,15 +257,16 @@ router.post('/bookings', auth, (req, res) => {
     if (trip.available_seats < nb)
       return res.status(400).json({ error: `Places insuffisantes (${trip.available_seats} disponible${trip.available_seats > 1 ? 's' : ''})` });
 
-    // Vérifier que les sièges demandés sont libres
+    // Vérifier que les sièges demandés sont libres (table seats + bookings)
     const seats = Array.isArray(seat_numbers) ? seat_numbers : [];
     if (seats.length > 0) {
-      const taken = db.prepare(
-        `SELECT seat_numbers FROM bookings WHERE trip_id=? AND status!='cancelled'`
-      ).all(trip_id).flatMap(b => { try { return JSON.parse(b.seat_numbers||'[]'); } catch { return []; } });
-      const conflict = seats.filter(s => taken.includes(s));
-      if (conflict.length > 0)
-        return res.status(409).json({ error: `Sièges déjà réservés : ${conflict.join(', ')}` });
+      // Sièges déjà verrouillés dans la table seats (pending/reserved/confirmed)
+      const ph = seats.map(() => '?').join(',');
+      const takenInSeats = db.prepare(
+        `SELECT seat_number FROM seats WHERE trip_id=? AND seat_number IN (${ph}) AND status IN ('pending','reserved','confirmed')`
+      ).all(trip_id, ...seats).map(r => r.seat_number);
+      if (takenInSeats.length > 0)
+        return res.status(409).json({ error: `Sièges indisponibles : ${takenInSeats.join(', ')}` });
     }
 
     // Commission depuis la table agencies (pas depuis le JWT)

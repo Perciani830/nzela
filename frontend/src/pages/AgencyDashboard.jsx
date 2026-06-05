@@ -1480,8 +1480,8 @@ export default function AgencyDashboard() {
                       ? <SeatPicker
                           layout={onsiteSeatsData.layout}
                           totalSeats={onsiteSeatsData.total_seats}
-                          occupiedSeats={onsiteSeatsData.seats.filter(s => s.status==='reserved'||s.status==='confirmed').map(s=>s.seat_number)}
-                          pendingSeats={onsiteSeatsData.seats.filter(s => s.status==='pending').map(s=>s.seat_number)}
+                          occupiedSeats={onsiteSeatsData.seats.filter(s => s.status==='reserved'||s.status==='confirmed'||s.status==='pending').map(s=>s.seat_number)}
+                          pendingSeats={[]}
                           selectedSeats={onsiteSeats}
                           onSelect={setOnsiteSeats}
                           maxSelect={onsiteForm.passengers}
