@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import {
   Users, Check, X, Clock, UserPlus, Printer,
-  ChevronDown, ChevronUp, Phone, AlertTriangle,
+  ChevronDown, ChevronUp, Phone,
 } from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
@@ -22,85 +22,21 @@ function BoardBadge({ status }) {
   return <span className={`badge ${cls}`}>{label}</span>;
 }
 
-/* ── Modal Walk-in ──────────────────────────────────────────── */
-function WalkInModal({ trip, onClose, onSuccess }) {
-  const [form, setForm] = useState({ passenger_name:'', passenger_phone:'', passengers:1, payment_method:'cash' });
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-
-  const submit = async () => {
-    if (!form.passenger_name || !form.passenger_phone) return setError('Nom et téléphone requis');
-    setLoading(true); setError('');
-    try {
-      await axios.post(`${API}/agency/bookings/walkin`, { ...form, trip_id: trip.id }, { headers: getHeaders() });
-      onSuccess();
-      onClose();
-    } catch(e) { setError(e.response?.data?.error || 'Erreur'); }
-    finally { setLoading(false); }
-  };
-
-  return (
-    <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth:420 }}>
-        <div className="modal-header">
-          <div>
-            <h2 style={{ display:'flex', alignItems:'center', gap:8 }}><UserPlus size={17} /> Passager sur place</h2>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-              {trip.departure_city} → {trip.arrival_city} · {trip.departure_time}
-            </div>
-          </div>
-          <button className="modal-close" onClick={onClose}><X size={16} /></button>
-        </div>
-        <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:12 }}>
-          {error && (
-            <div style={{ background:'rgba(255,74,74,0.1)', border:'1px solid rgba(255,74,74,0.25)', borderRadius:8, padding:'9px 12px', fontSize:13, color:'var(--err)', display:'flex', gap:7, alignItems:'center' }}>
-              <AlertTriangle size={13} /> {error}
-            </div>
-          )}
-          <div className="input-group">
-            <label className="input-label">Nom du passager *</label>
-            <input className="input-field" placeholder="Jean Lukeba" value={form.passenger_name} onChange={e => setForm({...form, passenger_name: e.target.value})} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Téléphone *</label>
-            <input className="input-field" placeholder="+243 81 000 0000" value={form.passenger_phone} onChange={e => setForm({...form, passenger_phone: e.target.value})} />
-          </div>
-          <div className="input-group">
-            <label className="input-label">Nombre de places</label>
-            <input className="input-field" type="number" min={1} max={trip.available_seats} value={form.passengers} onChange={e => setForm({...form, passengers: parseInt(e.target.value)||1})} />
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{trip.available_seats} places restantes</div>
-          </div>
-          <div className="input-group">
-            <label className="input-label">Mode de paiement</label>
-            <select className="input-field" value={form.payment_method} onChange={e => setForm({...form, payment_method: e.target.value})}>
-              <option value="cash">Espèces</option>
-              <option value="mobile_money">Mobile Money</option>
-            </select>
-          </div>
-          <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, padding:'9px 12px', fontSize:13 }}>
-            Total : <strong style={{ color:'var(--gold)' }}>{(trip.price * (form.passengers||1)).toLocaleString('fr-FR')} FC</strong>
-          </div>
-        </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:'7px 14px' }} onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" onClick={submit} disabled={loading} style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
-            {loading ? <><div className="spinner"/> Enregistrement…</> : <><Check size={13} /> Confirmer</>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
+/* ── Badge statut réservation (confirmée / annulée) ─────────── */
+function BookingStatusBadge({ status }) {
+  if (status === 'cancelled') return <span className="badge b-r">Annulée</span>;
+  return <span className="badge b-g">Confirmée</span>;
 }
 
 /* ══════════════════════════════════════════════════════════════
    COMPOSANT PRINCIPAL
 ══════════════════════════════════════════════════════════════ */
-export default function ManifestTab({ agencyName, showToast, tripId }) {
-  const [manifest, setManifest] = useState(null);   // { trip, bookings }
-  const [loading, setLoading]   = useState(false);
-  const [walkIn, setWalkIn]     = useState(false);
-  const [updating, setUpdating] = useState(null);    // id du booking en cours de maj
-  const [expanded, setExpanded] = useState({});      // lignes dépliées (détails)
+export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsiteBooking }) {
+  const [manifest, setManifest]   = useState(null);   // { trip, bookings }
+  const [loading, setLoading]     = useState(false);
+  const [updating, setUpdating]   = useState(null);    // id du booking en cours de maj (embarquement)
+  const [cancelling, setCancelling] = useState(null);  // id du booking en cours d'annulation
+  const [expanded, setExpanded]   = useState({});      // lignes dépliées (détails)
 
   /* ── Chargement du manifeste ────────────────────────────── */
   const loadManifest = async (id) => {
@@ -131,16 +67,36 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
     finally { setUpdating(null); }
   };
 
+  /* ── Annulation d'une réservation ─────────────────────────
+     Réutilise la même route que l'onglet Réservations
+     (PATCH /agency/bookings/:id/cancel) : remboursement de la
+     commission et libération des sièges déjà gérés côté serveur. */
+  const cancelBooking = async (bookingId, amount) => {
+    if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés des revenus de l'agence.`)) return;
+    setCancelling(bookingId);
+    try {
+      await axios.patch(`${API}/agency/bookings/${bookingId}/cancel`, {}, { headers: getHeaders() });
+      showToast('Réservation annulée', 'success');
+      loadManifest(tripId);
+    } catch(e) { showToast(e.response?.data?.error || 'Erreur lors de l\'annulation', 'error'); }
+    finally { setCancelling(null); }
+  };
+
   /* ── Impression ─────────────────────────────────────────── */
   const print = () => window.print();
 
-  /* ── Stats rapides ──────────────────────────────────────── */
+  /* ── Stats rapides ──────────────────────────────────────────
+     Ne portent que sur les réservations confirmées : une
+     réservation annulée n'a plus de sens d'embarquement. */
+  const confirmedBookings = manifest ? manifest.bookings.filter(b => b.status === 'confirmed') : [];
+  const cancelledCount    = manifest ? manifest.bookings.filter(b => b.status === 'cancelled').length : 0;
   const stats = manifest ? {
-    total:   manifest.bookings.length,
-    present: manifest.bookings.filter(b => b.boarding_status === 'present').length,
-    absent:  manifest.bookings.filter(b => b.boarding_status === 'absent').length,
-    pending: manifest.bookings.filter(b => b.boarding_status === 'pending' || !b.boarding_status).length,
-    seats:   manifest.bookings.reduce((s, b) => s + (b.passengers || 1), 0),
+    total:     confirmedBookings.length,
+    present:   confirmedBookings.filter(b => b.boarding_status === 'present').length,
+    absent:    confirmedBookings.filter(b => b.boarding_status === 'absent').length,
+    pending:   confirmedBookings.filter(b => b.boarding_status === 'pending' || !b.boarding_status).length,
+    seats:     confirmedBookings.reduce((s, b) => s + (b.passengers || 1), 0),
+    cancelled: cancelledCount,
   } : null;
 
   /* ── Aucun voyage sélectionné ───────────────────────────── */
@@ -186,8 +142,9 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
           <button
             className="btn btn-primary"
             style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6 }}
-            onClick={() => setWalkIn(true)}
-            disabled={trip.available_seats === 0}
+            onClick={() => onOpenOnsiteBooking && onOpenOnsiteBooking(trip.id)}
+            disabled={trip.available_seats === 0 || !onOpenOnsiteBooking}
+            title={!onOpenOnsiteBooking ? 'Fonction indisponible' : undefined}
           >
             <UserPlus size={13} /> Passager sur place
           </button>
@@ -208,7 +165,8 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
           { label:'Présents',      val: stats.present, color:'var(--ok)' },
           { label:'Absents',       val: stats.absent,  color:'var(--err)' },
           { label:'En attente',    val: stats.pending, color:'var(--gold)' },
-          { label:'Sièges vendus', val: stats.seats,   color:'var(--green-l)' },
+          { label:'Sièges vendus', val: stats.seats,     color:'var(--green-l)' },
+          { label:'Annulés',       val: stats.cancelled, color:'var(--muted)' },
         ].map(({ label, val, color }) => (
           <div key={label} style={{ background:'var(--surface)', border:'1px solid var(--border)', borderRadius:'var(--r)', padding:'11px 14px' }}>
             <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:22, color }}>{val}</div>
@@ -221,7 +179,7 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
       <div className="glass" style={{ overflow:'hidden' }}>
         {bookings.length === 0 ? (
           <div style={{ textAlign:'center', padding:'40px 20px', color:'var(--muted)', fontSize:13 }}>
-            Aucun passager confirmé pour ce voyage.
+            Aucune réservation pour ce voyage.
           </div>
         ) : (
           <div style={{ overflowX:'auto' }}>
@@ -231,9 +189,15 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                   <th>#</th>
                   <th>Référence</th>
                   <th>Passager</th>
+                  <th>Trajet</th>
+                  <th>Bus</th>
                   <th>Sièges</th>
+                  <th>Total</th>
+                  <th>Commission</th>
+                  <th>Paiement</th>
                   <th>Statut</th>
                   <th>Embarquement</th>
+                  <th>Action</th>
                   <th></th>
                 </tr>
               </thead>
@@ -241,8 +205,14 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                 {bookings.map((b, i) => {
                   const isExp = expanded[b.id];
                   const busy  = updating === b.id;
+                  const cancBusy = cancelling === b.id;
+                  const isCancelled = b.status === 'cancelled';
+                  const paymentLabel = b.payment_method === 'cash' ? 'Espèces'
+                    : b.payment_method === 'card' ? 'Carte'
+                    : b.payment_method === 'mobilemoney' ? 'Mobile Money'
+                    : (b.payment_method || '—');
                   return [
-                    <tr key={b.id} style={{ cursor:'pointer' }}>
+                    <tr key={b.id} style={{ cursor:'pointer', opacity: isCancelled ? 0.6 : 1 }}>
                       <td style={{ color:'var(--muted)', fontSize:12 }}>{i + 1}</td>
                       <td>
                         <code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>
@@ -255,15 +225,20 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                           <Phone size={10} /> {b.passenger_phone}
                         </div>
                       </td>
+                      <td style={{ fontSize:12 }}>{trip.departure_city} → {trip.arrival_city}</td>
+                      <td>{trip.bus_name ? <span className="badge b-b" style={{ fontSize:11 }}>{trip.bus_name}</span> : <span style={{ color:'var(--muted)' }}>—</span>}</td>
                       <td style={{ fontWeight:700 }}>{b.passengers || 1}</td>
-                      <td><BoardBadge status={b.boarding_status || 'pending'} /></td>
+                      <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
+                      <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount > 0 ? `-${Number(b.commission_amount).toLocaleString('fr-FR')} FC` : '—'}</td>
+                      <td style={{ fontSize:12 }}>{paymentLabel}</td>
+                      <td><BookingStatusBadge status={b.status} /></td>
                       <td>
                         <div style={{ display:'flex', gap:5 }}>
                           <button
                             className={`btn ${b.boarding_status === 'present' ? 'btn-primary' : 'btn-ghost'}`}
                             style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center', gap:4 }}
                             onClick={() => updateBoarding(b.id, 'present')}
-                            disabled={busy}
+                            disabled={busy || isCancelled}
                             title="Marquer présent"
                           >
                             <Check size={12} />
@@ -272,7 +247,7 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                             className={`btn ${b.boarding_status === 'absent' ? 'btn-danger' : 'btn-ghost'}`}
                             style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center', gap:4 }}
                             onClick={() => updateBoarding(b.id, 'absent')}
-                            disabled={busy}
+                            disabled={busy || isCancelled}
                             title="Marquer absent"
                           >
                             <X size={12} />
@@ -281,12 +256,27 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                             className="btn btn-ghost"
                             style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center', gap:4, color:'var(--muted)' }}
                             onClick={() => updateBoarding(b.id, 'pending')}
-                            disabled={busy}
+                            disabled={busy || isCancelled}
                             title="Réinitialiser"
                           >
                             <Clock size={12} />
                           </button>
                         </div>
+                      </td>
+                      <td>
+                        {isCancelled ? (
+                          <span style={{ fontSize:11, color:'var(--muted)' }}>—</span>
+                        ) : (
+                          <button
+                            className="btn btn-danger"
+                            style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center', gap:4 }}
+                            onClick={() => cancelBooking(b.id, b.total_price)}
+                            disabled={cancBusy}
+                            title="Annuler la réservation"
+                          >
+                            {cancBusy ? <div className="spinner" style={{ width:11, height:11 }} /> : <X size={12} />}
+                          </button>
+                        )}
                       </td>
                       <td>
                         <button
@@ -302,10 +292,8 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
                     /* Ligne dépliée — détails supplémentaires */
                     isExp && (
                       <tr key={`${b.id}-detail`} style={{ background:'rgba(61,170,106,0.04)' }}>
-                        <td colSpan={7} style={{ padding:'12px 16px' }}>
+                        <td colSpan={13} style={{ padding:'12px 16px' }}>
                           <div style={{ display:'flex', gap:24, flexWrap:'wrap', fontSize:12 }}>
-                            <div><span style={{ color:'var(--muted)' }}>Montant : </span><strong style={{ color:'var(--gold)' }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</strong></div>
-                            <div><span style={{ color:'var(--muted)' }}>Paiement : </span><strong>{b.payment_method === 'cash' ? 'Espèces' : 'Mobile Money'}</strong></div>
                             {b.passenger_email && <div><span style={{ color:'var(--muted)' }}>Email : </span><strong>{b.passenger_email}</strong></div>}
                             <div><span style={{ color:'var(--muted)' }}>Réservé le : </span><strong>{new Date(b.created_at).toLocaleDateString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</strong></div>
                           </div>
@@ -320,14 +308,6 @@ export default function ManifestTab({ agencyName, showToast, tripId }) {
         )}
       </div>
 
-      {/* ── Modal walk-in ─────────────────────────────────── */}
-      {walkIn && (
-        <WalkInModal
-          trip={trip}
-          onClose={() => setWalkIn(false)}
-          onSuccess={() => { loadManifest(tripId); showToast('Passager ajouté', 'success'); }}
-        />
-      )}
     </div>
   );
 }

@@ -203,7 +203,7 @@ function CityStatsGrid({ trips, bookings }) {
     const cityBookings = bookings.filter(b => b.departure_city === city);
     const confirmed    = cityBookings.filter(b => b.status === 'confirmed').length;
     const pending      = cityBookings.filter(b => b.status === 'pending').length;
-    const revenue      = cityBookings.filter(b => b.status !== 'cancelled').reduce((s,b) => s + Number(b.total_price||0), 0);
+    const revenue      = cityBookings.filter(b => b.status === 'confirmed').reduce((s,b) => s + Number(b.total_price||0), 0);
     const fillRate     = cityTrips.length > 0
       ? Math.round(cityBookings.filter(b=>b.status!=='cancelled').length / cityTrips.reduce((s,t) => s+(t.total_seats||0), 0) * 100)
       : 0;
@@ -456,6 +456,26 @@ export default function AgencyDashboard() {
     if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés de vos revenus.`)) return;
     try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
     catch { err('Erreur'); }
+  };
+
+  // ── Réservation sur place — ouverture directe depuis le Manifeste ────────────
+  // Reprend exactement la logique du bouton "Choisir les sièges →" (step 0),
+  // mais avec le trip_id déjà connu (celui du manifeste affiché).
+  const openOnsiteForTrip = async (tripId) => {
+    setOnsiteTripId(tripId);
+    setOnsiteSeats([]);
+    setOnsiteForm({ name:'', phone:'', passengers:1 });
+    setOnsiteModal(true);
+    setOnsiteSeatsData(null);
+    setOnsiteSeatsLoad(true);
+    try {
+      const r = await axios.get(`${API}/trips/${tripId}/seats`);
+      setOnsiteSeatsData(r.data);
+      setOnsiteStep(1);
+    } catch {
+      err('Impossible de charger le plan des sièges');
+      setOnsiteStep(0);
+    } finally { setOnsiteSeatsLoad(false); }
   };
 
   // ── Réservation sur place ─────────────────────────────────────────────────────
@@ -746,6 +766,7 @@ export default function AgencyDashboard() {
                 agencyName={agencyName}
                 showToast={showToast}
                 tripId={manifestTripId || undefined}
+                onOpenOnsiteBooking={openOnsiteForTrip}
               />
             </div>
           )

@@ -377,10 +377,12 @@ router.get('/manifest/:trip_id', auth, (req, res) => {
     if (req.user.city && !req.user.is_owner && trip.departure_city !== req.user.city)
       return res.status(403).json({ error: 'Ce voyage ne concerne pas votre ville' });
 
+    // On inclut aussi les réservations annulées : le manifeste doit permettre
+    // de voir qu'un client a annulé son voyage, pas seulement les confirmées.
     const bookings = db.prepare(`
       SELECT b.*, COALESCE(b.boarding_status, 'pending') as boarding_status
       FROM bookings b
-      WHERE b.trip_id=? AND b.agency_id=? AND b.status='confirmed'
+      WHERE b.trip_id=? AND b.agency_id=? AND b.status IN ('confirmed','cancelled')
       ORDER BY b.created_at ASC
     `).all(req.params.trip_id, req.user.agency_id);
     res.json({ trip, bookings });
@@ -401,29 +403,10 @@ router.patch('/bookings/:id/board', auth, (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-router.post('/bookings/walkin', auth, (req, res) => {
-  try {
-    const { trip_id, passenger_name, passenger_phone, passengers, payment_method } = req.body;
-    if (!trip_id || !passenger_name || !passenger_phone)
-      return res.status(400).json({ error: 'Nom, téléphone et voyage requis' });
-    const seats = Math.max(1, parseInt(passengers)||1);
-    const db    = getDb();
-    const trip  = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(trip_id, req.user.agency_id);
-    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
-    if (trip.available_seats < seats) return res.status(400).json({ error: 'Places insuffisantes' });
-    const total = trip.price * seats;
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    const ref   = 'WLK-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
-    const id    = uuidv4();
-    runTransaction(db, () => {
-      db.prepare(
-        `INSERT INTO bookings (id,reference,trip_id,agency_id,passenger_name,passenger_phone,passengers,total_price,commission_rate,commission_amount,status,payment_status,payment_method,boarding_status) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)`
-      ).run(id, ref, trip_id, req.user.agency_id, passenger_name, passenger_phone, seats, total, 0, 0, 'confirmed', 'completed', payment_method||'cash', 'present');
-      db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
-    });
-    res.status(201).json({ ok: true, reference: ref, total_price: total });
-  } catch(e) { res.status(500).json({ error: e.message }); }
-});
+// NOTE : l'ancienne route POST /bookings/walkin a été retirée.
+// Le "Passager sur place" du Manifeste utilise désormais POST /bookings
+// (même route que l'onglet Réservations) : sélection de sièges obligatoire,
+// verrouillage dans la table seats, et commission réelle de l'agence.
 
 // ── GESTION DES SOUS-COMPTES (agency_users) ───────────────────────────────────
 // Seul le propriétaire (is_owner = true dans le JWT) peut gérer les sous-comptes
