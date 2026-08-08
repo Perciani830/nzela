@@ -1,9 +1,11 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ManifestTab from './ManifestTab';
 import SeatMapModal from './SeatMapModal';
 import SeatPicker from './SeatPicker';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import {
   Check, X, Info, Crown, LogOut, Globe, Menu,
   BarChart2, Bus, Map, Ticket, ClipboardList, Users, Settings,
@@ -13,6 +15,8 @@ import {
   Inbox, ImageIcon, Building, Percent, Save,
   Banknote, Smartphone, Pencil, Ban, KeyRound, Wrench,
   AlertTriangle, Rocket, User, CheckCircle,
+  Package, PackageCheck, PackageOpen, Printer, Search, RefreshCw,
+  Edit2, Loader2, ChevronDown,
 } from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
@@ -145,6 +149,208 @@ function buildDates(dateFrom, dateTo, activeDays) {
     cur.setDate(cur.getDate() + 1);
   }
   return dates;
+}
+
+// ── Helpers colis ─────────────────────────────────────────────────────────────
+function fmtFC(n) { return Number(n || 0).toLocaleString('fr-FR'); }
+function fmtDateColis(d) {
+  if (!d) return '';
+  return new Date(d + 'T12:00').toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'long' });
+}
+function todayStr() { return new Date().toISOString().split('T')[0]; }
+
+function ColisPill({ status }) {
+  const ok = status === 'ok';
+  return (
+    <span style={{
+      display:'inline-flex', alignItems:'center', gap:4,
+      background: ok ? 'rgba(61,170,106,.15)' : 'rgba(232,168,56,.15)',
+      color: ok ? '#3DAA6A' : '#E8A838',
+      border:`1px solid ${ok ? 'rgba(61,170,106,.3)' : 'rgba(232,168,56,.3)'}`,
+      borderRadius:20, padding:'2px 10px', fontSize:11, fontWeight:800,
+    }}>
+      {ok ? <PackageCheck size={10}/> : <PackageOpen size={10}/>}
+      {ok ? 'OK — Soldé' : 'Reste à payer'}
+    </span>
+  );
+}
+
+function exportColisPDF({ colis, trip, agencyName, filterLabel }) {
+  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
+  doc.setFillColor(26, 61, 43);
+  doc.rect(0, 0, 210, 36, 'F');
+  doc.setTextColor(255, 255, 255);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(18);
+  doc.text('LISTE DES COLIS', 14, 14);
+  doc.setFontSize(9);
+  doc.setFont('helvetica', 'normal');
+  doc.text(agencyName || 'Agence', 14, 22);
+  if (trip) {
+    doc.text(`${trip.departure_city} → ${trip.arrival_city}  ·  ${fmtDateColis(trip.departure_date)}  ·  ${trip.departure_time}`, 14, 29);
+  } else {
+    doc.text(filterLabel || '', 14, 29);
+  }
+  doc.setFontSize(8);
+  doc.text(
+    `Imprimé le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`,
+    196, 10, { align:'right' }
+  );
+  const head = [['#','Destinataire','Description','Total (FC)','Avance (FC)','Reste (FC)','Statut']];
+  const body = colis.map((c, i) => [
+    i+1, c.recipient_name, c.description,
+    fmtFC(c.total_amount), fmtFC(c.advance_paid), fmtFC(c.remaining),
+    c.payment_status === 'ok' ? 'OK ✓' : 'Reste à payer',
+  ]);
+  const totMontant = colis.reduce((s,c) => s+(c.total_amount||0), 0);
+  const totAvance  = colis.reduce((s,c) => s+(c.advance_paid||0), 0);
+  const totReste   = colis.reduce((s,c) => s+(c.remaining||0),    0);
+  autoTable(doc, {
+    head, body,
+    startY: 42,
+    styles: { fontSize:9, cellPadding:3, textColor:[30,30,30] },
+    headStyles: { fillColor:[61,170,106], textColor:255, fontStyle:'bold' },
+    alternateRowStyles: { fillColor:[245,252,248] },
+    columnStyles: {
+      0: { cellWidth:9,  halign:'center' },
+      3: { halign:'right', cellWidth:24 },
+      4: { halign:'right', cellWidth:24 },
+      5: { halign:'right', cellWidth:24 },
+      6: { cellWidth:28, halign:'center' },
+    },
+    foot: [['','',`TOTAL (${colis.length} colis)`, fmtFC(totMontant), fmtFC(totAvance), fmtFC(totReste),'']],
+    footStyles: { fillColor:[26,61,43], textColor:255, fontStyle:'bold' },
+  });
+  const finalY = doc.lastAutoTable.finalY + 6;
+  doc.setFontSize(8);
+  doc.setTextColor(120);
+  doc.text('Document généré par nzela · À transmettre au gestionnaire de la ville de destination', 14, finalY);
+  const filename = trip
+    ? `colis_${trip.departure_city}-${trip.arrival_city}_${trip.departure_date}.pdf`
+    : `colis_${new Date().toISOString().split('T')[0]}.pdf`;
+  doc.save(filename);
+}
+
+function ColisModal({ trips, initial, onClose, onSave }) {
+  const [form, setForm] = useState({
+    trip_id:        initial?.trip_id        || '',
+    recipient_name: initial?.recipient_name || '',
+    description:    initial?.description    || '',
+    total_amount:   initial?.total_amount   ?? '',
+    advance_paid:   initial?.advance_paid   ?? '',
+  });
+  const [saving, setSaving] = useState(false);
+  const [formErr, setFormErr] = useState('');
+
+  const total     = parseFloat(form.total_amount) || 0;
+  const advance   = parseFloat(form.advance_paid) || 0;
+  const remaining = Math.max(0, total - advance);
+  const payStatus = advance >= total && total > 0 ? 'ok' : 'partial';
+
+  const field = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
+
+  const handleSave = async () => {
+    setFormErr('');
+    if (!form.trip_id)              return setFormErr('Sélectionnez un voyage');
+    if (!form.recipient_name.trim()) return setFormErr('Nom du destinataire requis');
+    if (!form.description.trim())    return setFormErr('Description requise');
+    if (total <= 0)                  return setFormErr('Montant total invalide');
+    if (advance < 0 || advance > total) return setFormErr("L'avance ne peut pas dépasser le total");
+    setSaving(true);
+    try {
+      await onSave({ ...form, total_amount: total, advance_paid: advance });
+      onClose();
+    } catch(e) {
+      setFormErr(e?.response?.data?.error || 'Erreur serveur');
+    } finally { setSaving(false); }
+  };
+
+  return (
+    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
+      <div className="modal-box" style={{ maxWidth:500 }}>
+        <div className="modal-header">
+          <div>
+            <h2 style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <Package size={16} color="var(--green-l)" />
+              {initial ? 'Modifier le colis' : 'Enregistrer un colis'}
+            </h2>
+            <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Expédition sans voyageur</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>×</button>
+        </div>
+        <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:13 }}>
+          {/* Voyage */}
+          <div className="input-group">
+            <label className="input-label">Voyage <span style={{ color:'var(--err)' }}>*</span></label>
+            <div style={{ position:'relative' }}>
+              <select className="input-field" value={form.trip_id} onChange={field('trip_id')} style={{ paddingRight:30 }}>
+                <option value="">— Sélectionner un voyage —</option>
+                {trips.map(t => (
+                  <option key={t.id} value={t.id}>
+                    {t.departure_city} → {t.arrival_city} · {fmtDateColis(t.departure_date)} {t.departure_time}
+                  </option>
+                ))}
+              </select>
+              <ChevronDown size={13} style={{ position:'absolute', right:9, top:'50%', transform:'translateY(-50%)', color:'var(--muted)', pointerEvents:'none' }} />
+            </div>
+          </div>
+          {/* Destinataire */}
+          <div className="input-group">
+            <label className="input-label">Nom du destinataire <span style={{ color:'var(--err)' }}>*</span></label>
+            <input className="input-field" placeholder="Jean Mukeba" value={form.recipient_name} onChange={field('recipient_name')} />
+          </div>
+          {/* Description */}
+          <div className="input-group">
+            <label className="input-label">Description du colis <span style={{ color:'var(--err)' }}>*</span></label>
+            <textarea className="input-field" placeholder="Ex: 2 cartons vêtements, pièces électroniques…"
+              value={form.description} onChange={field('description')}
+              style={{ resize:'vertical', minHeight:70, fontFamily:'inherit' }} />
+          </div>
+          {/* Montants */}
+          <div className="grid-2">
+            <div className="input-group">
+              <label className="input-label">Montant total (FC) <span style={{ color:'var(--err)' }}>*</span></label>
+              <input className="input-field" type="number" min="0" step="100" placeholder="0" value={form.total_amount} onChange={field('total_amount')} />
+            </div>
+            <div className="input-group">
+              <label className="input-label">Avance payée (FC)</label>
+              <input className="input-field" type="number" min="0" step="100" placeholder="0" value={form.advance_paid} onChange={field('advance_paid')} />
+            </div>
+          </div>
+          {/* Récap paiement */}
+          {total > 0 && (
+            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'12px 14px' }}>
+              {[
+                ['Total',         `${fmtFC(total)} FC`,     undefined],
+                ['Avance payée',  `${fmtFC(advance)} FC`,   undefined],
+                ['Reste à payer', `${fmtFC(remaining)} FC`, remaining > 0 ? '#E8A838' : '#3DAA6A'],
+              ].map(([l,v,color]) => (
+                <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:5 }}>
+                  <span style={{ color:'var(--muted)' }}>{l}</span>
+                  <span style={{ fontWeight:800, color: color || 'var(--text)', fontFamily:'monospace' }}>{v}</span>
+                </div>
+              ))}
+              <div style={{ display:'flex', justifyContent:'flex-end', paddingTop:8, borderTop:'1px solid var(--border)', marginTop:4 }}>
+                <ColisPill status={payStatus} />
+              </div>
+            </div>
+          )}
+          {formErr && (
+            <div style={{ background:'rgba(220,80,80,.1)', border:'1px solid rgba(220,80,80,.3)', borderRadius:8, padding:'9px 12px', fontSize:13, color:'var(--err)', display:'flex', alignItems:'center', gap:7 }}>
+              <AlertTriangle size={13} /> {formErr}
+            </div>
+          )}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-ghost" style={{ fontSize:12, padding:'7px 14px' }} onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" onClick={handleSave} disabled={saving}
+            style={{ display:'inline-flex', alignItems:'center', gap:7, opacity:saving?.7:1 }}>
+            {saving ? <><div className="spinner"/>Enregistrement…</> : <><Check size={13}/>Enregistrer</>}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 // ── Composant : Sélecteur de voyage pour le manifeste ─────────────────────────
@@ -327,6 +533,16 @@ export default function AgencyDashboard() {
   const [resetPassModal, setResetPassModal] = useState(null);
   const [newPass, setNewPass]               = useState('');
   const [userForm, setUserForm]             = useState({ username:'', password:'', full_name:'', city:'', role:'manager' });
+
+  // ── État onglet Colis ─────────────────────────────────────────────────────────
+  const [colisList,     setColisList]     = useState([]);
+  const [colisLoading,  setColisLoading]  = useState(false);
+  const [colisModal,    setColisModal]    = useState(null);  // null | 'new' | colisObj
+  const [colisDeleting, setColisDeleting] = useState(null);
+  const [colisFilterType, setColisFilterType] = useState('date'); // 'date' | 'trip'
+  const [colisFilterDate, setColisFilterDate] = useState(todayStr());
+  const [colisFilterTrip, setColisFilterTrip] = useState('');
+  const [colisSearch,     setColisSearch]     = useState('');
 
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
@@ -635,6 +851,44 @@ export default function AgencyDashboard() {
     } catch(e) { err(e.response?.data?.error || 'Erreur'); }
   };
 
+  // ── CRUD Colis ────────────────────────────────────────────────────────────────
+  const loadColis = useCallback(async (silent = false) => {
+    if (!silent) setColisLoading(true);
+    try {
+      const params = colisFilterType === 'trip' && colisFilterTrip
+        ? { trip_id: colisFilterTrip }
+        : { date: colisFilterDate };
+      const r = await axios.get(`${API}/agency/colis`, { headers, params });
+      setColisList(Array.isArray(r.data) ? r.data : []);
+    } catch(e) {
+      if (!silent) err(e?.response?.data?.error || 'Impossible de charger les colis');
+    } finally { if (!silent) setColisLoading(false); }
+  }, [headers, colisFilterType, colisFilterDate, colisFilterTrip]);
+
+  useEffect(() => { if (tab === 'colis') loadColis(); }, [tab, loadColis]);
+
+  const doSaveColis = async (formData) => {
+    if (colisModal && colisModal.id) {
+      await axios.patch(`${API}/agency/colis/${colisModal.id}`, formData, { headers });
+      ok('Colis modifié');
+    } else {
+      await axios.post(`${API}/agency/colis`, formData, { headers });
+      ok('Colis enregistré');
+    }
+    loadColis();
+  };
+
+  const doDeleteColis = async (id, name) => {
+    if (!confirm(`Supprimer le colis de ${name} ?`)) return;
+    setColisDeleting(id);
+    try {
+      await axios.delete(`${API}/agency/colis/${id}`, { headers });
+      ok('Colis supprimé');
+      loadColis();
+    } catch(e) { err(e?.response?.data?.error || 'Erreur lors de la suppression'); }
+    finally { setColisDeleting(null); }
+  };
+
   // ── Villes d'arrivée disponibles (exclut la ville de départ) ─────────────────
   const arrivalCities = (depCity) => CITIES.filter(c => c !== depCity);
 
@@ -644,6 +898,7 @@ export default function AgencyDashboard() {
     { id:'trips',     Icon: Map,           label:'Voyages' },
     { id:'bookings',  Icon: Ticket,        label:'Réservations' },
     { id:'manifest',  Icon: ClipboardList, label:'Manifeste' },
+    { id:'colis',     Icon: Package,       label:'Colis' },
     ...(isOwner ? [{ id:'users', Icon: Users, label:'Gestionnaires' }] : []),
     { id:'settings',  Icon: Settings,      label:'Paramètres' },
   ];
@@ -717,6 +972,12 @@ export default function AgencyDashboard() {
                 <Ticket size={13} /> + Réservation sur place
               </button>
             )}
+            {tab==='colis' && (
+              <button className="btn btn-primary" style={{ display:'inline-flex', alignItems:'center', gap:6 }}
+                onClick={() => setColisModal('new')}>
+                <Package size={13} /> + Nouveau colis
+              </button>
+            )}
             {tab==='users' && isOwner && <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Gestionnaire</button>}
             <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px', display:'inline-flex', alignItems:'center' }} onClick={() => { localStorage.clear(); navigate('/login'); }}><LogOut size={14} /></button>
           </div>
@@ -770,6 +1031,170 @@ export default function AgencyDashboard() {
               />
             </div>
           )
+          : tab === 'colis'
+            ? (() => {
+                // Calculs locaux
+                const colisDisplayed = colisList.filter(c => {
+                  if (!colisSearch) return true;
+                  const q = colisSearch.toLowerCase();
+                  return c.recipient_name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
+                });
+                const colisSelectedTrip = colisFilterType === 'trip' && colisFilterTrip
+                  ? trips.find(t => String(t.id) === String(colisFilterTrip))
+                  : null;
+                const colisTotMontant = colisDisplayed.reduce((s,c) => s+(c.total_amount||0), 0);
+                const colisTotReste   = colisDisplayed.reduce((s,c) => s+(c.remaining||0),    0);
+                const colisNbOk       = colisDisplayed.filter(c => c.payment_status==='ok').length;
+
+                return (
+                  <div style={{ paddingBottom:40 }}>
+                    {/* Filtres */}
+                    <div className="glass p-16 fade-in" style={{ marginBottom:14, display:'flex', flexWrap:'wrap', alignItems:'center', gap:12 }}>
+                      {/* Toggle date / voyage */}
+                      <div style={{ display:'flex', background:'var(--night)', borderRadius:8, padding:3, gap:2 }}>
+                        {[{ id:'date', label:'Par date' },{ id:'trip', label:'Par voyage' }].map(({ id, label }) => (
+                          <button key={id}
+                            onClick={() => { setColisFilterType(id); setColisSearch(''); }}
+                            style={{ background:colisFilterType===id?'var(--green-d)':'none', border:'none', borderRadius:6, padding:'5px 12px', fontSize:12, color:colisFilterType===id?'#fff':'var(--muted)', cursor:'pointer', fontWeight:colisFilterType===id?700:400, transition:'all .15s' }}>
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                      {/* Filtre date ou voyage */}
+                      {colisFilterType === 'date'
+                        ? <input type="date" value={colisFilterDate}
+                            onChange={e => setColisFilterDate(e.target.value)}
+                            className="input-field" style={{ width:'auto', fontSize:12 }} />
+                        : (
+                          <div style={{ position:'relative' }}>
+                            <select value={colisFilterTrip} onChange={e => setColisFilterTrip(e.target.value)}
+                              className="input-field" style={{ paddingRight:28, fontSize:12, minWidth:240 }}>
+                              <option value="">— Tous les voyages —</option>
+                              {trips.map(t => (
+                                <option key={t.id} value={t.id}>
+                                  {t.departure_city} → {t.arrival_city} · {fmtDateColis(t.departure_date)} {t.departure_time}
+                                </option>
+                              ))}
+                            </select>
+                            <ChevronDown size={12} style={{ position:'absolute', right:9, top:'50%', transform:'translateY(-50%)', color:'var(--muted)', pointerEvents:'none' }} />
+                          </div>
+                        )
+                      }
+                      {/* Recherche */}
+                      <div style={{ position:'relative', flex:1, minWidth:160 }}>
+                        <Search size={12} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--muted)' }} />
+                        <input className="input-field" placeholder="Rechercher destinataire ou colis…"
+                          value={colisSearch} onChange={e => setColisSearch(e.target.value)}
+                          style={{ paddingLeft:30, fontSize:12 }} />
+                        {colisSearch && (
+                          <button onClick={() => setColisSearch('')}
+                            style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'var(--muted)', cursor:'pointer', display:'flex', padding:0 }}>
+                            <X size={12} />
+                          </button>
+                        )}
+                      </div>
+                      {/* Export PDF */}
+                      <button onClick={() => exportColisPDF({ colis:colisDisplayed, trip:colisSelectedTrip, agencyName, filterLabel:`Date : ${fmtDateColis(colisFilterDate)}` })}
+                        disabled={colisDisplayed.length===0}
+                        className="btn btn-ghost"
+                        style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, opacity:colisDisplayed.length?1:.5 }}>
+                        <Printer size={13} /> Exporter PDF
+                      </button>
+                      {/* Rafraîchir */}
+                      <button onClick={() => loadColis()} className="btn btn-ghost" style={{ padding:'7px 10px', display:'inline-flex', alignItems:'center' }} title="Rafraîchir">
+                        <RefreshCw size={13} />
+                      </button>
+                    </div>
+
+                    {/* Stats rapides */}
+                    {colisDisplayed.length > 0 && (
+                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))', gap:10, marginBottom:14 }}>
+                        {[
+                          { label:'Colis total',         value: colisDisplayed.length,       color:'var(--text)' },
+                          { label:'Montant total',        value:`${fmtFC(colisTotMontant)} FC`, color:'#4A90D9' },
+                          { label:'Reste à percevoir',    value:`${fmtFC(colisTotReste)} FC`,  color:'#E8A838' },
+                          { label:`Soldés`,               value:`${colisNbOk} / ${colisDisplayed.length}`, color:'#3DAA6A' },
+                        ].map(s => (
+                          <div key={s.label} className="glass p-16" style={{ padding:'11px 14px' }}>
+                            <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4, textTransform:'uppercase', letterSpacing:'.06em' }}>{s.label}</div>
+                            <div style={{ fontSize:15, fontWeight:800, color:s.color }}>{s.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Tableau */}
+                    {colisLoading
+                      ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34, height:34, margin:'0 auto', borderWidth:2.5 }}/></div>
+                      : colisDisplayed.length === 0
+                        ? (
+                          <div className="glass" style={{ textAlign:'center', padding:'60px 24px' }}>
+                            <Package size={36} style={{ margin:'0 auto 12px', display:'block', opacity:.2 }} />
+                            <div style={{ fontWeight:700, fontSize:15, marginBottom:6 }}>Aucun colis</div>
+                            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:18 }}>
+                              {colisSearch ? `Aucun résultat pour « ${colisSearch} »` : 'Aucun colis enregistré pour ce filtre'}
+                            </div>
+                            <button className="btn btn-primary" onClick={() => setColisModal('new')}
+                              style={{ display:'inline-flex', alignItems:'center', gap:7 }}>
+                              <Package size={13} /> Enregistrer un colis
+                            </button>
+                          </div>
+                        )
+                        : (
+                          <div className="glass" style={{ overflow:'hidden' }}>
+                            <div style={{ overflowX:'auto' }}>
+                              <table className="data-table">
+                                <thead>
+                                  <tr>
+                                    <th>#</th><th>Destinataire</th><th>Description</th>
+                                    <th>Voyage</th><th style={{ textAlign:'right' }}>Total</th>
+                                    <th style={{ textAlign:'right' }}>Avance</th>
+                                    <th style={{ textAlign:'right' }}>Reste</th>
+                                    <th>Statut</th><th></th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {colisDisplayed.map((c, i) => (
+                                    <tr key={c.id}>
+                                      <td style={{ fontSize:12, color:'var(--muted)', fontWeight:700 }}>{i+1}</td>
+                                      <td style={{ fontWeight:700 }}>{c.recipient_name}</td>
+                                      <td style={{ maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:12, color:'var(--muted)' }} title={c.description}>{c.description}</td>
+                                      <td>
+                                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
+                                          <CityBadge city={c.departure_city} />
+                                          <span style={{ color:'var(--muted)', fontSize:12 }}>→</span>
+                                          <span style={{ fontSize:12, fontWeight:600 }}>{c.arrival_city}</span>
+                                        </div>
+                                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{fmtDateColis(c.departure_date)} · {c.departure_time}</div>
+                                      </td>
+                                      <td style={{ textAlign:'right', fontWeight:800, fontFamily:'monospace' }}>{fmtFC(c.total_amount)}</td>
+                                      <td style={{ textAlign:'right', fontFamily:'monospace', color:'#3DAA6A' }}>{fmtFC(c.advance_paid)}</td>
+                                      <td style={{ textAlign:'right', fontFamily:'monospace', fontWeight:800, color: c.remaining>0 ? '#E8A838' : '#3DAA6A' }}>{fmtFC(c.remaining)}</td>
+                                      <td><ColisPill status={c.payment_status} /></td>
+                                      <td>
+                                        <div style={{ display:'flex', gap:5, justifyContent:'flex-end' }}>
+                                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 8px', display:'inline-flex', alignItems:'center' }}
+                                            onClick={() => setColisModal(c)} title="Modifier">
+                                            <Edit2 size={11} />
+                                          </button>
+                                          <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 8px', display:'inline-flex', alignItems:'center', opacity:colisDeleting===c.id?.5:1 }}
+                                            disabled={colisDeleting===c.id}
+                                            onClick={() => doDeleteColis(c.id, c.recipient_name)} title="Supprimer">
+                                            {colisDeleting===c.id ? <div className="spinner" style={{ width:11, height:11 }}/> : <Trash2 size={11} />}
+                                          </button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            </div>
+                          </div>
+                        )
+                    }
+                  </div>
+                );
+              })()
           : loading
             ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
             : <>
@@ -1600,6 +2025,16 @@ export default function AgencyDashboard() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── MODAL Colis ──────────────────────────────────────────── */}
+      {colisModal !== null && (
+        <ColisModal
+          trips={trips}
+          initial={colisModal === 'new' ? null : colisModal}
+          onClose={() => setColisModal(null)}
+          onSave={doSaveColis}
+        />
       )}
 
       {/* ── MODAL Plan des sièges ──────────────────────────────── */}

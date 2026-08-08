@@ -391,7 +391,7 @@ export default function PublicSite() {
             <Carousel slides={slides}/>
             <div className="quote-band mt12">
               <p style={{ fontFamily:'var(--font)', fontSize:13, fontWeight:600, position:'relative', zIndex:1, lineHeight:1.55 }}>
-                "Plus de 10 000 voyageurs nous font confiance chaque mois."
+                "Plus de 10 000 voyageurs nous ferons confiance chaque mois."
                 <br/><span style={{ opacity:.7, fontWeight:400, fontSize:11 }}>Rejoignez la communauté Nzela — la RDC se déplace avec nous.</span>
               </p>
             </div>
@@ -488,7 +488,7 @@ export default function PublicSite() {
         <Logo size={22} tagline/>
         <div style={{ fontSize:11, color:'var(--muted)' }}>© 2026 Nzela · Kinshasa, RDC</div>
         <div style={{ fontSize:11, color:'var(--muted)', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
-          <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Phone size={11} /> +243 85 91 53 213</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Phone size={11} /> +243 84 67 00 169</span>
           <span>·</span>
           <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Mail size={11} /> support@nzela.cd</span>
         </div>

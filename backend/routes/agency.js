@@ -75,7 +75,7 @@ router.get('/stats', auth, (req, res) => {
 router.get('/settings', auth, (req, res) => {
   try {
     const ag = getDb().prepare(
-      'SELECT agency_name, email, phone, address, cancel_rate, commission_rate, logo_url, home_city FROM agencies WHERE id=?'
+      'SELECT agency_name, email, phone, address, cancel_rate, commission_rate, logo_url, home_city, parcel_price_per_kg FROM agencies WHERE id=?'
     ).get(req.user.agency_id);
     if (!ag) return res.status(404).json({ error: 'Introuvable' });
     res.json(ag);
@@ -86,12 +86,19 @@ router.patch('/settings', auth, (req, res) => {
   try {
     // Seul le propriétaire peut modifier les settings globaux
     // Un gestionnaire de ville peut mettre à jour home_city uniquement si son token n'a pas city
-    const { email, phone, address, cancel_rate, logo_url, home_city } = req.body;
+    const { email, phone, address, cancel_rate, logo_url, home_city, parcel_price_per_kg } = req.body;
     const rate = parseFloat(cancel_rate);
     if (isNaN(rate) || rate < 0 || rate > 100) return res.status(400).json({ error: 'Taux invalide (0-100)' });
+
+    let pricePerKg = null;
+    if (parcel_price_per_kg !== undefined && parcel_price_per_kg !== null && parcel_price_per_kg !== '') {
+      pricePerKg = parseFloat(parcel_price_per_kg);
+      if (isNaN(pricePerKg) || pricePerKg < 0) return res.status(400).json({ error: 'Tarif/kg invalide' });
+    }
+
     getDb().prepare(
-      'UPDATE agencies SET email=COALESCE(?,email), phone=COALESCE(?,phone), address=COALESCE(?,address), cancel_rate=?, logo_url=COALESCE(?,logo_url), home_city=? WHERE id=?'
-    ).run(email||null, phone||null, address||null, rate, logo_url||null, home_city||null, req.user.agency_id);
+      'UPDATE agencies SET email=COALESCE(?,email), phone=COALESCE(?,phone), address=COALESCE(?,address), cancel_rate=?, logo_url=COALESCE(?,logo_url), home_city=?, parcel_price_per_kg=COALESCE(?,parcel_price_per_kg) WHERE id=?'
+    ).run(email||null, phone||null, address||null, rate, logo_url||null, home_city||null, pricePerKg, req.user.agency_id);
     res.json({ ok: true });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
@@ -303,7 +310,7 @@ router.post('/bookings', auth, (req, res) => {
       }
     });
 
-    res.status(201).json({ reference, total, commission });
+    res.status(201).json({ id, reference, total, commission });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 router.patch('/bookings/:id/confirm', auth, (req, res) => {
@@ -495,6 +502,104 @@ router.post('/users/:id/reset-password', auth, requireOwner, (req, res) => {
     db.prepare('UPDATE agency_users SET password=? WHERE id=? AND agency_id=?')
       .run(bcrypt.hashSync(password, 10), req.params.id, req.user.agency_id);
     res.json({ ok: true });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── COLIS ─────────────────────────────────────────────────────────────────────
+
+// Créer un colis pour un voyage
+router.post('/parcels', auth, (req, res) => {
+  try {
+    const {
+      trip_id, sender_name, sender_phone,
+      receiver_name, receiver_phone,
+      weight_kg, amount_paid, total_amount,
+    } = req.body;
+
+    if (!trip_id || !sender_name || !sender_phone || !receiver_name || !receiver_phone)
+      return res.status(400).json({ error: 'Voyage, dépositaire et destinataire requis' });
+
+    const db   = getDb();
+    const trip = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(trip_id, req.user.agency_id);
+    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+    // Vérification ville pour les gestionnaires (même règle que le manifeste)
+    if (req.user.city && !req.user.is_owner && trip.departure_city !== req.user.city)
+      return res.status(403).json({ error: 'Ce voyage ne concerne pas votre ville' });
+
+    const agency = db.prepare('SELECT parcel_price_per_kg FROM agencies WHERE id=?').get(req.user.agency_id);
+    const weight = weight_kg ? Number(weight_kg) : null;
+
+    // Si un poids est fourni ET l'agence a défini un tarif/kg → calcul automatique.
+    // Sinon → montant saisi manuellement par le gestionnaire.
+    let total;
+    if (weight && agency?.parcel_price_per_kg > 0) {
+      total = Math.round(weight * agency.parcel_price_per_kg);
+    } else {
+      total = Number(total_amount);
+      if (!total || total <= 0) return res.status(400).json({ error: 'Montant à payer requis (aucun tarif/kg défini pour cette agence)' });
+    }
+
+    const paid = Math.max(0, Number(amount_paid) || 0);
+    if (paid > total) return res.status(400).json({ error: 'L\'avance ne peut pas dépasser le montant total' });
+
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+    const ref   = 'CLX-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
+    const id    = uuidv4();
+
+    db.prepare(`
+      INSERT INTO parcels
+        (id, reference, trip_id, agency_id, sender_name, sender_phone,
+         receiver_name, receiver_phone, weight_kg, total_amount, amount_paid, status)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?, 'registered')
+    `).run(id, ref, trip_id, req.user.agency_id, sender_name, sender_phone,
+           receiver_name, receiver_phone, weight, total, paid);
+
+    res.status(201).json({
+      ok: true, id, reference: ref,
+      total_amount: total, amount_paid: paid, balance_due: total - paid,
+    });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Lister les colis d'un voyage
+router.get('/trips/:trip_id/parcels', auth, (req, res) => {
+  try {
+    const db   = getDb();
+    const trip = db.prepare('SELECT * FROM trips WHERE id=? AND agency_id=?').get(req.params.trip_id, req.user.agency_id);
+    if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+
+    if (req.user.city && !req.user.is_owner && trip.departure_city !== req.user.city)
+      return res.status(403).json({ error: 'Ce voyage ne concerne pas votre ville' });
+
+    const parcels = db.prepare(`
+      SELECT * FROM parcels WHERE trip_id=? AND agency_id=? ORDER BY created_at ASC
+    `).all(req.params.trip_id, req.user.agency_id).map(p => ({
+      ...p,
+      balance_due: p.total_amount - p.amount_paid,
+      payment_status: p.amount_paid <= 0 ? 'unpaid' : (p.amount_paid >= p.total_amount ? 'paid' : 'partial'),
+    }));
+
+    res.json({ trip, parcels });
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
+// Enregistrer le paiement du reste (à la réception ou en cours de route)
+router.patch('/parcels/:id/pay', auth, (req, res) => {
+  try {
+    const db  = getDb();
+    const p   = db.prepare('SELECT * FROM parcels WHERE id=? AND agency_id=?').get(req.params.id, req.user.agency_id);
+    if (!p) return res.status(404).json({ error: 'Colis introuvable' });
+
+    const { amount_paid } = req.body;
+    const newPaid = amount_paid !== undefined ? Number(amount_paid) : p.total_amount; // par défaut : solde total réglé
+    if (newPaid < 0 || newPaid > p.total_amount)
+      return res.status(400).json({ error: 'Montant invalide' });
+
+    db.prepare('UPDATE parcels SET amount_paid=? WHERE id=? AND agency_id=?')
+      .run(newPaid, req.params.id, req.user.agency_id);
+
+    res.json({ ok: true, amount_paid: newPaid, balance_due: p.total_amount - newPaid });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

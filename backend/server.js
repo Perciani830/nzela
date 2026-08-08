@@ -33,11 +33,12 @@ app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 initDatabase();
 
 // ── ROUTES API ─────────────────────────────────────────────────
-app.use('/api/auth',   require('./routes/auth'));
-app.use('/api/public', require('./routes/public'));
-app.use('/api/agency', require('./routes/agency'));
-app.use('/api/admin',  require('./routes/admin'));
-app.use('/api',        require('./routes/seats.routes')); // ← sièges
+app.use('/api/auth',         require('./routes/auth'));
+app.use('/api/public',       require('./routes/public'));
+app.use('/api/agency/colis', require('./routes/colis_routes')); // ← colis
+app.use('/api/agency',       require('./routes/agency'));
+app.use('/api/admin',        require('./routes/admin'));
+app.use('/api',              require('./routes/seats.routes')); // ← sièges
 
 app.get('/api/health', (_, res) => res.json({
   ok: true,

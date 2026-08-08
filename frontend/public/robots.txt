@@ -1,1 +1,8 @@
+# Permettre à tous les robots d'accéder à tout le site
+User-agent: *
+
+# Autoriser tout le contenu public
+Allow: /
+
+# Indiquer l'emplacement du sitemap (indispensable)
 Sitemap: https://www.nzela.cd/sitemap.xml
