@@ -4,5 +4,12 @@ User-agent: *
 # Autoriser tout le contenu public
 Allow: /
 
+# Zones privées / non pertinentes pour l'indexation
+Disallow: /login
+Disallow: /agency
+Disallow: /admin
+Disallow: /paiement-succes
+Disallow: /paiement-echec
+
 # Indiquer l'emplacement du sitemap (indispensable)
 Sitemap: https://www.nzela.cd/sitemap.xml
