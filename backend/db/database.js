@@ -4,8 +4,13 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 
-const DATA_DIR = path.join(__dirname, '../data');
+// Sur Railway, on utilise /tmp (toujours accessible en écriture)
+const DATA_DIR = process.env.RAILWAY_ENVIRONMENT
+  ? '/tmp/nzela-data'
+  : path.join(__dirname, '../data');
+
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+console.log('📁 Dossier data :', DATA_DIR);
 
 let db;
 function getDb() {
