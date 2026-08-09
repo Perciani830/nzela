@@ -1,4 +1,4 @@
-FROM node:22-alpine
+FROM node:22-slim
 
 WORKDIR /app
 
@@ -7,8 +7,8 @@ RUN npm install --production
 
 COPY . .
 
-RUN mkdir -p /app/data
+RUN mkdir -p /app/../data
 
 EXPOSE 5000
 
-CMD ["node", "--experimental-sqlite", "server.js"]
+CMD ["node", "--experimental-sqlite", "--trace-warnings", "server.js"]
