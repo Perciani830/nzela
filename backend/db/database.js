@@ -4,13 +4,8 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 
-// Volume persistant Railway monté sur /app/data
-// En local : dossier ../data à côté du backend
-const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
-  || (process.env.RAILWAY_ENVIRONMENT ? '/app/data' : path.join(__dirname, '../data'));
-
+const DATA_DIR = path.join(__dirname, '../data');
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
-console.log('📁 Dossier data :', DATA_DIR);
 
 let db;
 function getDb() {
@@ -71,6 +66,7 @@ function initDatabase() {
       password TEXT NOT NULL, email TEXT, phone TEXT, address TEXT, logo_url TEXT,
       commission_rate REAL DEFAULT 10, cancel_rate REAL DEFAULT 20,
       home_city TEXT,
+      parcel_price_per_kg REAL DEFAULT NULL,
       is_active INTEGER DEFAULT 1,
       premium INTEGER DEFAULT 0, premium_order INTEGER DEFAULT 999,
       premium_photo_url TEXT, premium_caption TEXT,
@@ -155,6 +151,20 @@ CREATE TABLE IF NOT EXISTS seats (
   expires_at   TEXT,
   UNIQUE(trip_id, seat_number)
 );
+
+CREATE TABLE IF NOT EXISTS colis (
+  id             TEXT PRIMARY KEY,
+  agency_id      TEXT NOT NULL,
+  trip_id        TEXT NOT NULL,
+  recipient_name TEXT NOT NULL,
+  description    TEXT NOT NULL,
+  total_amount   REAL NOT NULL DEFAULT 0,
+  advance_paid   REAL NOT NULL DEFAULT 0,
+  payment_status TEXT NOT NULL DEFAULT 'partial',
+  created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+  FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE,
+  FOREIGN KEY (trip_id)   REFERENCES trips(id)    ON DELETE CASCADE
+);
   `);
 
   // Migrations pour les bases existantes (ignorées si la colonne existe déjà)
@@ -172,6 +182,7 @@ CREATE TABLE IF NOT EXISTS seats (
     "ALTER TABLE agencies ADD COLUMN note INTEGER DEFAULT 3",
     "ALTER TABLE buses ADD COLUMN layout TEXT DEFAULT '2+3'",
     "ALTER TABLE bookings ADD COLUMN seat_numbers TEXT DEFAULT NULL",
+    "ALTER TABLE agencies ADD COLUMN parcel_price_per_kg REAL DEFAULT NULL",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
   // ── Migration : ajouter ON DELETE CASCADE sur les tables existantes ──────────
