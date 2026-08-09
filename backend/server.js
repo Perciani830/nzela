@@ -46,6 +46,7 @@ initDatabase();
 app.use('/api/auth',   require('./routes/auth'));
 app.use('/api/public', require('./routes/public'));
 app.use('/api/agency', require('./routes/agency'));
+app.use('/api/agency/colis', require('./routes/colis_routes')); // ← module colis (était absent, cause du 404)
 app.use('/api/admin',  require('./routes/admin'));
 app.use('/api',        require('./routes/seats.routes')); // ← sièges
 
