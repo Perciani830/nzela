@@ -40,7 +40,6 @@ const PROVIDER_MAP = {
   MPESA:   'MPESA',
   ORANGE:  'ORANGE',
   AIRTEL:  'AIRTEL',
-  AFRICEL: 'AFRICELL',
   MTN:     'MTN',
   MOOV:    'MOOV',
 };
@@ -375,7 +374,6 @@ router.post('/pay', async (req, res) => {
 router.post('/callback/mobilemoney', (req, res) => {
   try {
     const body        = req.body;
-    console.log('📦 Callback MM v2 RAW BODY:', JSON.stringify(body));
     const status_code = String(body?.status_code || body?.statusCode || '');
     const txStatus    = (body?.transactionStatus || '').toUpperCase().trim();
     const ref         = body?.originatingTransactionId || body?.transactionRefId || '';

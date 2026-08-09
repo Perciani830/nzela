@@ -6,7 +6,7 @@ const API = 'https://nzela-production-086a.up.railway.app/api';
 
 /* ── Pays / opérateurs Mobile Money ─────────────────────────── */
 const PAYS = [
-  { code:'CD', nom:'🇨🇩 RDC',           flag:'https://flagcdn.com/24x18/cd.png', prefix:'+243', ops:['MPESA','ORANGE','AIRTEL','AFRICEL'] },
+  { code:'CD', nom:'🇨🇩 RDC',           flag:'https://flagcdn.com/24x18/cd.png', prefix:'+243', ops:['MPESA','ORANGE','AIRTEL'] },
   { code:'CG', nom:'🇨🇬 Congo-Brazza',   flag:'https://flagcdn.com/24x18/cg.png', prefix:'+242', ops:['AIRTEL','MTN'] },
   { code:'CM', nom:'🇨🇲 Cameroun',       flag:'https://flagcdn.com/24x18/cm.png', prefix:'+237', ops:['ORANGE','MTN'] },
   { code:'CI', nom:"🇨🇮 Côte d'Ivoire", flag:'https://flagcdn.com/24x18/ci.png', prefix:'+225', ops:['ORANGE','MTN','MOOV'] },
@@ -15,7 +15,6 @@ const ALL_OPS = {
   MPESA:   { id:'MPESA',   label:'M-Pesa',       logo:'/mpesa.png',    v1:true  },
   ORANGE:  { id:'ORANGE',  label:'Orange Money', logo:'/orange.png',   v1:false },
   AIRTEL:  { id:'AIRTEL',  label:'Airtel',       logo:'/airtel.png',   v1:false },
-  AFRICEL: { id:'AFRICEL', label:'Africell',     logo:'/africell.png', v1:false },
   MTN:     { id:'MTN',     label:'MTN',          logo:'/mtn.png',      v1:false },
   MOOV:    { id:'MOOV',    label:'Moov',         logo:'/moov.png',     v1:false },
 };
@@ -29,8 +28,27 @@ function formatPhone(raw, prefix) {
   const local = digits.startsWith('0') ? digits.slice(1) : digits;
   return prefix + local;
 }
-function validatePhone(formatted) {
-  return /^\+\d{10,}$/.test(formatted);
+function validatePhone(raw, prefix) {
+  const trimmed = (raw || '').trim();
+
+  // Uniquement des chiffres, avec au plus un "+" en tout début (aucun autre caractère spécial toléré)
+  if (!/^\+?\d+$/.test(trimmed)) return false;
+
+  const prefixDigits = prefix.replace('+', '');       // ex: "243"
+  const digitsOnly    = trimmed.replace(/\D/g, '');
+
+  // Format international : +243XXXXXXXXX → exactement 9 chiffres après le préfixe
+  if (trimmed.startsWith('+') || digitsOnly.startsWith(prefixDigits)) {
+    const local = digitsOnly.startsWith(prefixDigits) ? digitsOnly.slice(prefixDigits.length) : digitsOnly;
+    return /^\d{9}$/.test(local);
+  }
+
+  // Format local : 0XXXXXXXXX → exactement 10 chiffres, commence par 0
+  if (digitsOnly.startsWith('0')) {
+    return /^0\d{9}$/.test(digitsOnly);
+  }
+
+  return false;
 }
 
 /* ── Étapes ────────────────────────────────────────────────────
@@ -109,7 +127,7 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
           onSuccess?.();
         } else if (status === 'cancelled') {
           stopPolling();
-          setResult({ type:'error', message:"Paiement refusé ou annulé par l'opérateur." });
+          setResult({ type:'error', message:"Le paiement a été refusé par l'opérateur. Vérifiez votre solde ou réessayez avec un autre mode de paiement." });
         } else if (pollCount.current >= MAX_POLLS) {
           stopPolling();
           setResult({ type:'error', message:'Délai dépassé. Si vous avez été débité, contactez le support.' });
@@ -206,10 +224,12 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
     if (!pay.method) return showToast('Choisissez un mode de paiement', 'error');
     if (pay.method === 'mobilemoney') {
       if (!pay.operator) return showToast('Choisissez un opérateur', 'error');
-      const phoneFormatted = formatPhone(pay.wallet, paysInfo.prefix);
-      if (!validatePhone(phoneFormatted))
-        return showToast(`Numéro invalide. Format : ${paysInfo.prefix}XXXXXXXXX`, 'error');
-      pay._phoneFormatted = phoneFormatted;
+      if (!validatePhone(pay.wallet, paysInfo.prefix))
+        return showToast(
+          `Numéro invalide. Formats acceptés : ${paysInfo.prefix}XXXXXXXXX (9 chiffres) ou 0XXXXXXXXX (10 chiffres). Chiffres uniquement, sans espace ni caractère spécial.`,
+          'error'
+        );
+      pay._phoneFormatted = formatPhone(pay.wallet, paysInfo.prefix);
     }
     if (pay.method === 'card' && (!cardInfo.phone || !cardInfo.email))
       return showToast('Téléphone et email requis pour la carte', 'error');
@@ -539,7 +559,7 @@ export default function BookingModal({ trip, onClose, onSuccess, showToast }) {
                 Réf : <strong style={{ color:'var(--green-l)' }}>{booking?.reference}</strong>
               </div>
               {[
-                { m:'mobilemoney', i:'📱', t:'Mobile Money',   s:'M-Pesa, Orange, Airtel, Africell, MTN' },
+                { m:'mobilemoney', i:'📱', t:'Mobile Money',   s:'M-Pesa, Orange, Airtel, MTN' },
                 { m:'card',        i:'💳', t:'Carte bancaire', s:'Visa, Mastercard — paiement sécurisé 3D' },
               ].map(o => (
                 <div key={o.m} className={`pay-opt${pay.method === o.m ? ' sel' : ''}`}
