@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import ManifestTab from './ManifestTab';
@@ -489,7 +489,10 @@ function CityFilterTabs({ value, onChange, trips, bookings }) {
 
 export default function AgencyDashboard() {
   const navigate = useNavigate();
-  const { user, headers } = getAuth();
+  const { user, headers: _headers } = getAuth();
+  // useMemo pour stabiliser headers et éviter les boucles infinies dans useEffect
+  const token = user?.token || localStorage.getItem('token');
+  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
   const [tab, setTab]             = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats]         = useState({});
@@ -865,7 +868,7 @@ export default function AgencyDashboard() {
     } finally { if (!silent) setColisLoading(false); }
   }, [headers, colisFilterType, colisFilterDate, colisFilterTrip]);
 
-  useEffect(() => { if (tab === 'colis') loadColis(); }, [tab, loadColis]);
+  useEffect(() => { if (tab === 'colis') loadColis(); }, [tab, colisFilterType, colisFilterDate, colisFilterTrip]); // eslint-disable-line
 
   const doSaveColis = async (formData) => {
     if (colisModal && colisModal.id) {

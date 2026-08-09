@@ -1,26 +1,3 @@
-/**
- * ROUTES COLIS — /api/agency/colis
- *
- * À ajouter dans server.js :
- *   const colisRoutes = require('./routes/colis_routes');
- *   app.use('/api/agency/colis', colisRoutes);
- *
- * Migration SQL à exécuter une seule fois :
- *   CREATE TABLE IF NOT EXISTS colis (
- *     id          TEXT PRIMARY KEY,
- *     agency_id   TEXT NOT NULL,
- *     trip_id     TEXT NOT NULL,
- *     recipient_name TEXT NOT NULL,
- *     description TEXT NOT NULL,
- *     total_amount   REAL NOT NULL DEFAULT 0,
- *     advance_paid   REAL NOT NULL DEFAULT 0,
- *     remaining      REAL GENERATED ALWAYS AS (total_amount - advance_paid) STORED,
- *     payment_status TEXT NOT NULL DEFAULT 'partial',  -- 'ok' | 'partial'
- *     created_at  TEXT NOT NULL DEFAULT (datetime('now')),
- *     FOREIGN KEY (agency_id) REFERENCES agencies(id),
- *     FOREIGN KEY (trip_id)   REFERENCES trips(id)
- *   );
- */
 
 const router  = require('express').Router();
 const jwt     = require('jsonwebtoken');
