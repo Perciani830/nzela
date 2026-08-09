@@ -4,10 +4,10 @@ const { v4: uuidv4 } = require('uuid');
 const path = require('path');
 const fs = require('fs');
 
-// Sur Railway, on utilise /tmp (toujours accessible en écriture)
-const DATA_DIR = process.env.RAILWAY_ENVIRONMENT
-  ? '/tmp/nzela-data'
-  : path.join(__dirname, '../data');
+// Volume persistant Railway monté sur /app/data
+// En local : dossier ../data à côté du backend
+const DATA_DIR = process.env.RAILWAY_VOLUME_MOUNT_PATH
+  || (process.env.RAILWAY_ENVIRONMENT ? '/app/data' : path.join(__dirname, '../data'));
 
 if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 console.log('📁 Dossier data :', DATA_DIR);
