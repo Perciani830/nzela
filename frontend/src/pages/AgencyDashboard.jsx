@@ -496,6 +496,11 @@ export default function AgencyDashboard() {
   const [tab, setTab]             = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [stats, setStats]         = useState({});
+  const [withdrawBalance, setWithdrawBalance] = useState(0);
+  const [withdrawals, setWithdrawals]         = useState([]);
+  const [withdrawModal, setWithdrawModal]     = useState(false);
+  const [withdrawAmount, setWithdrawAmount]   = useState('');
+  const [withdrawLoading, setWithdrawLoading] = useState(false);
   const [trips, setTrips]         = useState([]);
   const [bookings, setBookings]   = useState([]);
   const [buses, setBuses]         = useState([]);
@@ -576,12 +581,14 @@ export default function AgencyDashboard() {
   const load = async (silent = false) => {
     if (!silent) setLoading(true);
     try {
-      const [s,t,b,bs,se] = await Promise.all([
+      const [s,t,b,bs,se,wb,wl] = await Promise.all([
         axios.get(`${API}/agency/stats`,    { headers }),
         axios.get(`${API}/agency/trips`,    { headers }),
         axios.get(`${API}/agency/bookings`, { headers }),
         axios.get(`${API}/agency/buses`,    { headers }),
         axios.get(`${API}/agency/settings`, { headers }),
+        axios.get(`${API}/agency/withdrawals/balance`, { headers }).catch(()=>({data:{balance:0}})),
+        axios.get(`${API}/agency/withdrawals`,         { headers }).catch(()=>({data:[]})),
       ]);
       setStats(s.data);
       setTrips(Array.isArray(t.data) ? t.data : []);
@@ -589,6 +596,8 @@ export default function AgencyDashboard() {
       setBookings(newBookings);
       setBuses(Array.isArray(bs.data) ? bs.data : []);
       setSettings(prev => ({ ...prev, ...se.data }));
+      setWithdrawBalance(wb.data?.balance || 0);
+      setWithdrawals(Array.isArray(wl.data) ? wl.data : []);
       const newPending = newBookings.filter(b => b.status === 'pending').length;
       if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
         const diff = newPending - prevPendingRef.current;
@@ -675,6 +684,20 @@ export default function AgencyDashboard() {
     if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés de vos revenus.`)) return;
     try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
     catch { err('Erreur'); }
+  };
+  const doWithdraw = async () => {
+    const amount = parseFloat(withdrawAmount);
+    if (!amount || amount <= 0) return err('Montant invalide');
+    if (amount > withdrawBalance) return err(`Solde insuffisant (disponible : ${withdrawBalance.toLocaleString('fr-FR')} FC)`);
+    setWithdrawLoading(true);
+    try {
+      await axios.post(`${API}/agency/withdrawals`, { amount }, { headers });
+      ok('Retrait lancé — en attente de virement par l\'administration');
+      setWithdrawModal(false);
+      setWithdrawAmount('');
+      load();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+    finally { setWithdrawLoading(false); }
   };
 
   // ── Réservation sur place — ouverture directe depuis le Manifeste ────────────
@@ -1206,7 +1229,7 @@ export default function AgencyDashboard() {
             <div className="grid-4" style={{ marginBottom:16 }}>
               {[
                 { Icon: Wallet,  label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
-                { Icon: Gem,     label:`Commission Nzela (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
+                { Icon: Gem,     label:`Majoration en ligne (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
                 { Icon: Bus,     label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
                 { Icon: Clock,   label:'En attente', value:pending, cls:'purple' },
               ].map((s,i) => (
@@ -1215,6 +1238,32 @@ export default function AgencyDashboard() {
                 </div>
               ))}
             </div>
+
+            <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
+              <div>
+                <div className="section-title" style={{ margin:0 }}>Solde disponible au retrait</div>
+                <div style={{ fontSize:22, fontWeight:800, color:'var(--gold)', marginTop:4 }}>{withdrawBalance.toLocaleString('fr-FR')} FC</div>
+              </div>
+              <button className="btn btn-primary" onClick={()=>setWithdrawModal(true)} disabled={withdrawBalance<=0}>💸 Lancer un retrait</button>
+            </div>
+
+            {withdrawals.length > 0 && (
+              <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:16 }}>
+                <div className="section-title" style={{ marginBottom:12 }}>Historique des retraits</div>
+                <div style={{ overflowX:'auto' }}>
+                  <table className="data-table">
+                    <thead><tr><th>Date</th><th>Montant</th><th>Statut</th></tr></thead>
+                    <tbody>{withdrawals.map(w=>(
+                      <tr key={w.id}>
+                        <td style={{ fontSize:12, color:'var(--muted)' }}>{new Date(w.requested_at).toLocaleDateString('fr-FR')}</td>
+                        <td style={{ fontWeight:700 }}>{Number(w.amount).toLocaleString('fr-FR')} FC</td>
+                        <td><span className={`badge ${w.status==='paid' ? 'b-g' : 'b-y'}`}>{w.status==='paid' ? 'Payé' : 'En attente'}</span></td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              </div>
+            )}
 
             {/* Stats par ville — visible uniquement pour le propriétaire */}
             {isOwner && <CityStatsGrid trips={trips} bookings={bookings} />}
@@ -1416,7 +1465,7 @@ export default function AgencyDashboard() {
               <div style={{ background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:9, padding:'11px 13px' }}>
                 <div style={{ fontSize:10, color:'var(--muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Simulation sur 45 000 FC</div>
                 {[
-                  ['Commission Nzela ('+(settings.commission_rate||10)+'%)', (45000*(settings.commission_rate||10)/100).toLocaleString('fr-FR'), 'var(--err)'],
+                  ['Majoration en ligne ('+(settings.commission_rate||10)+'%)', (45000*(settings.commission_rate||10)/100).toLocaleString('fr-FR'), 'var(--err)'],
                   ['Rétention agence ('+(settings.cancel_rate||20)+'%)', (45000*(settings.cancel_rate||20)/100).toLocaleString('fr-FR'), 'var(--gold)'],
                   ['Remboursement client', Math.max(0,45000*(1-(settings.commission_rate||10)/100-(settings.cancel_rate||20)/100)).toLocaleString('fr-FR'), 'var(--ok)'],
                 ].map(([l,v,c]) => (
@@ -1541,6 +1590,27 @@ export default function AgencyDashboard() {
       </nav>
 
       {/* ── MODALS ─────────────────────────────────────────────────────────────── */}
+
+      {withdrawModal && (
+        <Modal title={<>💸 Lancer un retrait</>} onClose={() => setWithdrawModal(false)} onConfirm={doWithdraw} confirmLabel={withdrawLoading ? 'Envoi…' : 'Confirmer le retrait →'}>
+          <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
+            <div style={{ fontSize:13, color:'var(--muted)' }}>
+              Solde disponible : <strong style={{ color:'var(--gold)' }}>{withdrawBalance.toLocaleString('fr-FR')} FC</strong>
+            </div>
+            <Inp label="Montant à retirer (FC) *">
+              <input
+                className="input-field" type="number" min="1" max={withdrawBalance}
+                placeholder="Ex : 50000"
+                value={withdrawAmount}
+                onChange={e=>setWithdrawAmount(e.target.value)}
+              />
+            </Inp>
+            <div style={{ fontSize:12, color:'var(--muted)' }}>
+              Le retrait est enregistré immédiatement et transmis à l'administration pour exécution du virement — aucune demande d'approbation préalable n'est nécessaire de votre côté.
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {busModal && <Modal title={<><Bus size={14} style={{ marginRight:6 }} />Ajouter un bus</>} onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
         <div style={{ display:'flex', flexDirection:'column', gap:11 }}>

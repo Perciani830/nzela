@@ -71,7 +71,9 @@ router.get('/reversements', auth, (req, res) => {
     const dateTo   = to   || dimanche.toISOString().split('T')[0];
     const agencies = db.prepare('SELECT * FROM agencies WHERE is_active=1 ORDER BY agency_name ASC').all();
     const result = agencies.map(ag => {
-      const bookings = db.prepare(`SELECT b.*, t.departure_city, t.arrival_city, t.departure_date FROM bookings b JOIN trips t ON b.trip_id=t.id WHERE b.agency_id=? AND b.status='confirmed' AND b.payment_status='completed' AND DATE(b.created_at) >= ? AND DATE(b.created_at) <= ? ORDER BY b.created_at DESC`).all(ag.id, dateFrom, dateTo);
+      // Seules les réservations "online" (encaissées par Nzela via MaishaPay) génèrent un
+      // reversement — le "onsite" est du cash déjà en poche de l'agence, rien à lui reverser.
+      const bookings = db.prepare(`SELECT b.*, t.departure_city, t.arrival_city, t.departure_date FROM bookings b JOIN trips t ON b.trip_id=t.id WHERE b.agency_id=? AND b.status='confirmed' AND b.payment_status='completed' AND b.channel != 'onsite' AND DATE(b.created_at) >= ? AND DATE(b.created_at) <= ? ORDER BY b.created_at DESC`).all(ag.id, dateFrom, dateTo);
       const confirmed=bookings.length, revenue_brut=bookings.reduce((s,b)=>s+b.total_price,0), commission=bookings.reduce((s,b)=>s+(b.commission_amount||0),0), a_reverser=revenue_brut-commission;
       return { ...ag, confirmed, revenue_brut, commission, a_reverser, bookings };
     });
@@ -108,7 +110,11 @@ router.get('/export-month', auth, (req, res) => {
       const cancelled  = agBookings.filter(b => b.status === 'cancelled').length;
       const revenue    = agBookings.filter(b=>b.status==='confirmed').reduce((s,b)=>s+b.total_price,0);
       const commission = agBookings.filter(b=>b.status==='confirmed').reduce((s,b)=>s+(b.commission_amount||0),0);
-      return { agency_name: ag.agency_name, confirmed, cancelled, revenue, commission, a_reverser: revenue - commission };
+      // a_reverser : uniquement la part "online" (argent réellement détenu par Nzela)
+      const onlineConfirmed = agBookings.filter(b=>b.status==='confirmed' && b.channel!=='onsite');
+      const revenueOnline    = onlineConfirmed.reduce((s,b)=>s+b.total_price,0);
+      const commissionOnline = onlineConfirmed.reduce((s,b)=>s+(b.commission_amount||0),0);
+      return { agency_name: ag.agency_name, confirmed, cancelled, revenue, commission, a_reverser: revenueOnline - commissionOnline };
     });
     res.json({ period: { year: y, month: m, from: dateFrom, to: dateTo }, bookings, summary, total: { bookings: bookings.length, confirmed: bookings.filter(b=>b.status==='confirmed').length, revenue: bookings.filter(b=>b.status==='confirmed').reduce((s,b)=>s+b.total_price,0), commission: bookings.filter(b=>b.status==='confirmed').reduce((s,b)=>s+(b.commission_amount||0),0) } });
   } catch(e) { res.status(500).json({ error: e.message }); }

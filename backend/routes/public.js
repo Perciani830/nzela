@@ -75,6 +75,22 @@ function genRef() {
   return 'BUS-' + Array.from({ length: 8 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
+/* ─────────────────────────────────────────────────────────────
+   COMMISSION EN LIGNE
+   Le prix affiché/encaissé en ligne = prix agence + majoration(%).
+   La commission Nzela = exactement cette majoration, donc l'agence
+   touche toujours son prix plein (celui du guichet), jamais moins.
+   total_price (déjà majoré) → commission = total_price × rate/(100+rate)
+   ex: base 45 000, rate 10% → total_price = 49 500, commission = 4 500,
+       net agence = 45 000 (identique au guichet).
+───────────────────────────────────────────────────────────── */
+function applyOnlineMarkup(basePrice, rate) {
+  return Math.round(basePrice * (1 + rate / 100));
+}
+function commissionFromOnlineTotal(totalPrice, rate) {
+  return Math.round(totalPrice * rate / (100 + rate));
+}
+
 function genContribRef() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   return 'CONTRIB-' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('') + '-' + Date.now();
@@ -94,7 +110,7 @@ router.get('/trips', (req, res) => {
   const db = getDb();
   let q = `
     SELECT t.*, a.agency_name, a.logo_url agency_logo, a.phone agency_phone,
-           a.premium, a.premium_order, a.cancel_rate
+           a.premium, a.premium_order, a.cancel_rate, a.commission_rate
     FROM trips t JOIN agencies a ON t.agency_id = a.id
     WHERE t.available_seats > 0 AND t.is_active = 1 AND a.is_active = 1
   `;
@@ -103,7 +119,15 @@ router.get('/trips', (req, res) => {
   if (to)   { q += ' AND LOWER(t.arrival_city)   LIKE ?'; p.push('%' + to.toLowerCase()   + '%'); }
   if (date) { q += ' AND t.departure_date = ?';            p.push(date); }
   q += ' ORDER BY a.premium DESC, a.premium_order ASC, t.price ASC, t.departure_time ASC';
-  try { res.json(db.prepare(q).all(...p)); }
+  try {
+    const rows = db.prepare(q).all(...p).map(t => {
+      const { commission_rate, ...rest } = t;
+      // Prix affiché au client en ligne = prix agence + majoration Nzela
+      rest.price = applyOnlineMarkup(t.price, commission_rate || 10);
+      return rest;
+    });
+    res.json(rows);
+  }
   catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -136,7 +160,9 @@ router.post('/book', (req, res) => {
     WHERE t.id=? AND t.available_seats>=? AND t.is_active=1 AND a.is_active=1
   `).get(trip_id, seats);
   if (!trip) return res.status(404).json({ error: 'Trajet indisponible ou places insuffisantes' });
-  const total = trip.price * seats;
+  const rate  = trip.commission_rate || 10;
+  // total_price = montant réellement facturé en ligne au client (prix agence + majoration Nzela)
+  const total = applyOnlineMarkup(trip.price * seats, rate);
   const ref   = genRef();
   const id    = uuidv4();
   try {
@@ -144,10 +170,10 @@ router.post('/book', (req, res) => {
       db.prepare(`
         INSERT INTO bookings
           (id,reference,trip_id,agency_id,passenger_name,passenger_phone,
-           passenger_email,passengers,total_price,commission_rate,status,payment_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+           passenger_email,passengers,total_price,commission_rate,status,payment_status,channel)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'online')
       `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null,
-             seats, total, trip.commission_rate||10, 'pending', 'pending');
+             seats, total, rate, 'pending', 'pending');
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
     res.status(201).json({ booking_id: id, reference: ref, total_price: total });
@@ -185,7 +211,7 @@ router.post('/pay', async (req, res) => {
   if (booking.payment_status === 'completed') return res.status(400).json({ error: 'Déjà payée' });
 
   const rate              = booking.commission_rate || 10;
-  const commission_amount = Math.round(booking.total_price * rate / 100);
+  const commission_amount = commissionFromOnlineTotal(booking.total_price, rate);
   const { publicKey, secretKey, gatewayMode } = getMaishapayKeys();
   const BASE_URL = process.env.API_BASE_URL || 'https://nzela-production-086a.up.railway.app';
 
@@ -392,7 +418,7 @@ router.post('/callback/mobilemoney', (req, res) => {
 
     if (status_code === '200' || txStatus === 'SUCCESS') {
       const rate              = booking.commission_rate || 10;
-      const commission_amount = Math.round(booking.total_price * rate / 100);
+      const commission_amount = commissionFromOnlineTotal(booking.total_price, rate);
       db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
         transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
         .run(txId, rate, commission_amount, ref);
@@ -437,7 +463,7 @@ router.get('/callback/card', (req, res) => {
     if (String(status) === '200' || description === 'APPROVED') {
       if (booking.payment_status !== 'completed') {
         const rate              = booking.commission_rate || 10;
-        const commission_amount = Math.round(booking.total_price * rate / 100);
+        const commission_amount = commissionFromOnlineTotal(booking.total_price, rate);
         db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
           transaction_id=?, commission_rate=?, commission_amount=? WHERE reference=?`)
           .run(txId, rate, commission_amount, ref);

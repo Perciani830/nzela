@@ -183,6 +183,9 @@ CREATE TABLE IF NOT EXISTS colis (
     "ALTER TABLE buses ADD COLUMN layout TEXT DEFAULT '2+3'",
     "ALTER TABLE bookings ADD COLUMN seat_numbers TEXT DEFAULT NULL",
     "ALTER TABLE agencies ADD COLUMN parcel_price_per_kg REAL DEFAULT NULL",
+    // Canal de la réservation : 'online' (site public, commission Nzela appliquée)
+    // ou 'onsite' (guichet agence, aucune commission — l'agence garde le montant exact)
+    "ALTER TABLE bookings ADD COLUMN channel TEXT DEFAULT 'online'",
   ].forEach(sql => { try { db.exec(sql); } catch(e) {} });
 
   // ── Migration : ajouter ON DELETE CASCADE sur les tables existantes ──────────
@@ -208,11 +211,18 @@ CREATE TABLE IF NOT EXISTS colis (
           payment_status TEXT DEFAULT 'pending', payment_method TEXT,
           transaction_id TEXT, boarding_status TEXT DEFAULT NULL,
           seat_numbers TEXT DEFAULT NULL,
+          channel TEXT DEFAULT 'online',
           created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
           FOREIGN KEY (trip_id) REFERENCES trips(id) ON DELETE CASCADE,
           FOREIGN KEY (agency_id) REFERENCES agencies(id) ON DELETE CASCADE
         );
-        INSERT INTO bookings_new SELECT * FROM bookings;
+        INSERT INTO bookings_new (id,reference,trip_id,agency_id,passenger_name,passenger_phone,
+          passenger_email,passengers,total_price,commission_rate,commission_amount,status,
+          payment_status,payment_method,transaction_id,boarding_status,seat_numbers,created_at)
+        SELECT id,reference,trip_id,agency_id,passenger_name,passenger_phone,
+          passenger_email,passengers,total_price,commission_rate,commission_amount,status,
+          payment_status,payment_method,transaction_id,boarding_status,seat_numbers,created_at
+        FROM bookings;
         DROP TABLE bookings;
         ALTER TABLE bookings_new RENAME TO bookings;
 

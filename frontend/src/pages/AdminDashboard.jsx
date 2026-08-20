@@ -338,6 +338,7 @@ export default function AdminDashboard() {
   const [gallery, setGallery]           = useState([]);
   const [settings, setSettings]         = useState({ commission_rate:10 });
   const [contributions, setContributions] = useState([]);
+  const [withdrawals, setWithdrawals]      = useState([]);
 
   const [agencyModal, setAgencyModal]   = useState(false);
   const [editAgency, setEditAgency]     = useState(null);
@@ -366,16 +367,18 @@ export default function AdminDashboard() {
   const load = async (silent=false) => {
     if (!silent) setLoading(true);
     try {
-      const [st, ag, gl, se, co] = await Promise.all([
+      const [st, ag, gl, se, co, wd] = await Promise.all([
         axios.get(`${API}/admin/stats`,        { headers }).catch(()=>({data:{}})),
         axios.get(`${API}/admin/agencies`,      { headers }),
         axios.get(`${API}/admin/gallery`,       { headers }).catch(()=>({data:[]})),
         axios.get(`${API}/admin/settings`,      { headers }).catch(()=>({data:{commission_rate:10}})),
         axios.get(`${API}/admin/contributions`, { headers }).catch(()=>({data:[]})),
+        axios.get(`${API}/admin/withdrawals`,   { headers }).catch(()=>({data:[]})),
       ]);
       setStats(st.data || {}); setAgencies(Array.isArray(ag.data) ? ag.data : []);
       setGallery(Array.isArray(gl.data) ? gl.data : []); setSettings(se.data || { commission_rate:10 });
       setContributions(Array.isArray(co.data) ? co.data : []);
+      setWithdrawals(Array.isArray(wd.data) ? wd.data : []);
     } catch(e) {
       if (e.response?.status===401) { localStorage.clear(); navigate('/admin/login'); }
       else if (!silent) err('Erreur de chargement');
@@ -383,6 +386,12 @@ export default function AdminDashboard() {
   };
 
   useEffect(() => { load(); const iv = setInterval(() => load(true), 15000); return () => clearInterval(iv); }, []);
+
+  const doMarkPaid = async (id) => {
+    if (!confirm('Confirmer que le virement a bien été effectué à l\'agence ?')) return;
+    try { await axios.patch(`${API}/admin/withdrawals/${id}/pay`, {}, { headers }); ok('Retrait marqué comme payé'); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
 
   const doCreateAgency = async () => {
     const { agency_name, username, password } = agencyForm;
@@ -633,6 +642,7 @@ export default function AdminDashboard() {
   const TABS = [
     { id:'overview',      Icon: LayoutDashboard, label:'Vue globale' },
     { id:'agencies',      Icon: Building2,       label:'Agences' },
+    { id:'withdrawals',   Icon: Wallet,          label:'Retraits' },
     { id:'gallery',       Icon: ImageIcon,        label:'Galerie' },
     { id:'contributions', Icon: HeartHandshake,   label:'Contributions' },
     { id:'settings',      Icon: Settings,         label:'Paramètres' },
@@ -908,6 +918,39 @@ export default function AdminDashboard() {
             </div>
           )}
 
+          {/* ── RETRAITS ─────────────────────────────────────── */}
+          {tab==='withdrawals' && (
+            <div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:12, marginBottom:16 }}>
+                <StatCard Icon={Wallet} label="En attente de virement" value={withdrawals.filter(w=>w.status==='pending').length} sub={`${withdrawals.filter(w=>w.status==='pending').reduce((s,w)=>s+Number(w.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--gold)" />
+                <StatCard Icon={Check}   label="Payés" value={withdrawals.filter(w=>w.status==='paid').length} sub={`${withdrawals.filter(w=>w.status==='paid').reduce((s,w)=>s+Number(w.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--ok)" />
+              </div>
+              <div className="glass" style={{ overflow:'hidden' }}>
+                {withdrawals.length===0
+                  ? <div style={{ textAlign:'center', padding:40, color:'var(--muted)', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                      <Wallet size={32} style={{ opacity:.25 }} /> Aucun retrait pour l'instant
+                    </div>
+                  : <div style={{ overflowX:'auto' }}>
+                      <table className="data-table">
+                        <thead><tr><th>Agence</th><th>Téléphone</th><th>Montant</th><th>Statut</th><th>Demandé le</th><th>Payé le</th><th></th></tr></thead>
+                        <tbody>{withdrawals.map(w=>(
+                          <tr key={w.id}>
+                            <td style={{ fontWeight:600 }}>{w.agency_name}</td>
+                            <td style={{ color:'var(--muted)', fontSize:12 }}>{w.agency_phone||'—'}</td>
+                            <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(w.amount).toLocaleString('fr-FR')} FC</td>
+                            <td><span className={`badge ${w.status==='paid' ? 'b-g' : 'b-y'}`}>{w.status==='paid' ? 'Payé' : 'En attente'}</span></td>
+                            <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(w.requested_at).toLocaleDateString('fr-FR')}</td>
+                            <td style={{ fontSize:11, color:'var(--muted)' }}>{w.processed_at ? new Date(w.processed_at).toLocaleDateString('fr-FR') : '—'}</td>
+                            <td>{w.status!=='paid' && <button className="btn btn-primary" style={{ fontSize:11, padding:'5px 10px' }} onClick={()=>doMarkPaid(w.id)}>Marquer payé</button>}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                }
+              </div>
+            </div>
+          )}
+
           {/* ── CONTRIBUTIONS ───────────────────────────────── */}
           {tab==='contributions' && (
             <div>
@@ -950,9 +993,9 @@ export default function AdminDashboard() {
                   <Gem size={15} /> Commission Nzela (globale)
                 </div>
                 <p style={{ fontSize:13, color:'var(--muted)', marginBottom:14, lineHeight:1.7 }}>
-                  Taux par défaut appliqué à chaque nouvelle agence. Chaque agence peut avoir son propre taux modifiable dans sa fiche.
+                  Majoration appliquée uniquement sur les billets vendus EN LIGNE (le prix du guichet reste inchangé). Chaque agence peut avoir son propre taux modifiable dans sa fiche.
                 </p>
-                <Inp label="Taux de commission par défaut (%)">
+                <Inp label="Majoration en ligne par défaut (%)">
                   <input className="input-field" type="number" min="0" max="50" step="1"
                     value={settings.commission_rate||10}
                     onChange={e=>setSettings({...settings,commission_rate:Number(e.target.value)})} />
@@ -1060,7 +1103,7 @@ export default function AdminDashboard() {
                 onChange={e=>setAgencyForm({...agencyForm,phone:e.target.value})} />
             </Inp>
             <div style={{ gridColumn:'1/-1' }}>
-              <Inp label="Taux de commission (%)" hint={`Taux global actuel : ${settings.commission_rate||10}%`}>
+              <Inp label="Majoration en ligne (%)" hint={`Taux global actuel : ${settings.commission_rate||10}% — s'applique uniquement aux ventes en ligne`}>
                 <input className="input-field" type="number" min="0" max="50" step="1" value={agencyForm.commission_rate}
                   onChange={e=>setAgencyForm({...agencyForm,commission_rate:Number(e.target.value)})} />
               </Inp>
@@ -1082,7 +1125,7 @@ export default function AdminDashboard() {
             </div>
             <Inp label="Email"><input className="input-field" type="email" value={editAgency.email||''} onChange={e=>setEditAgency({...editAgency,email:e.target.value})} /></Inp>
             <Inp label="Téléphone"><input className="input-field" value={editAgency.phone||''} onChange={e=>setEditAgency({...editAgency,phone:e.target.value})} /></Inp>
-            <Inp label="Commission (%)"><input className="input-field" type="number" min="0" max="50" value={editAgency.commission_rate||10} onChange={e=>setEditAgency({...editAgency,commission_rate:Number(e.target.value)})} /></Inp>
+            <Inp label="Majoration en ligne (%)"><input className="input-field" type="number" min="0" max="50" value={editAgency.commission_rate||10} onChange={e=>setEditAgency({...editAgency,commission_rate:Number(e.target.value)})} /></Inp>
             <Inp label="Note (1-5)"><input className="input-field" type="number" min="1" max="5" value={editAgency.note||3} onChange={e=>setEditAgency({...editAgency,note:Number(e.target.value)})} /></Inp>
             <div style={{ gridColumn:'1/-1' }}>
               <Inp label="Statut">

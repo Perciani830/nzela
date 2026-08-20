@@ -276,11 +276,10 @@ router.post('/bookings', auth, (req, res) => {
         return res.status(409).json({ error: `Sièges indisponibles : ${takenInSeats.join(', ')}` });
     }
 
-    // Commission depuis la table agencies (pas depuis le JWT)
-    const agency        = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(req.user.agency_id);
-    const commissionRate = agency ? (agency.commission_rate || 10) : 10;
-    const total          = trip.price * nb;
-    const commission     = Math.round(total * commissionRate / 100);
+    // Réservation sur place = paiement cash direct à l'agence.
+    // Nzela ne touche jamais cet argent → AUCUNE commission, l'agence garde le montant exact.
+    const total      = trip.price * nb;
+    const commission = 0;
 
     const chars     = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
     const reference = 'NSP-' + Array.from({length:8}, () => chars[Math.floor(Math.random()*chars.length)]).join('');
@@ -291,10 +290,10 @@ router.post('/bookings', auth, (req, res) => {
         INSERT INTO bookings
           (id, reference, trip_id, agency_id, passenger_name, passenger_phone,
            passengers, seat_numbers, total_price, commission_rate, commission_amount,
-           payment_method, payment_status, status, boarding_status)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,'cash','completed','confirmed','present')
+           payment_method, payment_status, status, boarding_status, channel)
+        VALUES (?,?,?,?,?,?,?,?,?,0,0,'cash','completed','confirmed','present','onsite')
       `).run(id, reference, trip_id, req.user.agency_id, passenger_name, passenger_phone,
-             nb, JSON.stringify(seats), total, commissionRate, commission);
+             nb, JSON.stringify(seats), total);
 
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(nb, trip_id);
 
@@ -318,9 +317,18 @@ router.patch('/bookings/:id/confirm', auth, (req, res) => {
     const db = getDb();
     const b  = db.prepare('SELECT * FROM bookings WHERE id=? AND agency_id=?').get(req.params.id, req.user.agency_id);
     if (!b) return res.status(404).json({ error: 'Réservation introuvable' });
-    const agency = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(req.user.agency_id);
-    const rate   = agency ? (agency.commission_rate || 10) : 10;
-    const commission_amount = Math.round(b.total_price * rate / 100);
+
+    let rate = 0, commission_amount = 0;
+    if (b.channel === 'onsite') {
+      // Réservation guichet : aucune commission, quel que soit le taux de l'agence
+      rate = 0; commission_amount = 0;
+    } else {
+      // Réservation en ligne confirmée manuellement (ex: cash à l'embarquement) :
+      // total_price contient déjà la majoration en ligne → on en extrait la commission
+      const agency = db.prepare('SELECT commission_rate FROM agencies WHERE id=?').get(req.user.agency_id);
+      rate = agency ? (agency.commission_rate || 10) : 10;
+      commission_amount = Math.round(b.total_price * rate / (100 + rate));
+    }
     db.prepare("UPDATE bookings SET status='confirmed', payment_status='completed', commission_rate=?, commission_amount=? WHERE id=? AND agency_id=?")
       .run(rate, commission_amount, req.params.id, req.user.agency_id);
     res.json({ ok: true, commission_amount });
