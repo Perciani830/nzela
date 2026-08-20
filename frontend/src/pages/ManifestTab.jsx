@@ -189,7 +189,7 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
                   <th>#</th>
                   <th>Référence</th>
                   <th>Passager</th>
-                  <th>Trajet</th>
+                  <th>Trajet / départ</th>
                   <th>Bus</th>
                   <th>Sièges</th>
                   <th>Total</th>
@@ -225,9 +225,16 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
                           <Phone size={10} /> {b.passenger_phone}
                         </div>
                       </td>
-                      <td style={{ fontSize:12 }}>{trip.departure_city} → {trip.arrival_city}</td>
+                      <td style={{ fontSize:12 }}>
+                        <div>{b.departure_city || trip.departure_city} → {b.arrival_city || trip.arrival_city}</div>
+                        <div style={{ color:'var(--muted)', fontSize:11 }}>
+                          {b.departure_date || trip.departure_date || '—'} · {b.departure_time || trip.departure_time || '—'}
+                        </div>
+                      </td>
                       <td>{trip.bus_name ? <span className="badge b-b" style={{ fontSize:11 }}>{trip.bus_name}</span> : <span style={{ color:'var(--muted)' }}>—</span>}</td>
-                      <td style={{ fontWeight:700 }}>{b.passengers || 1}</td>
+                      <td style={{ fontWeight:700 }}>
+                        {(() => { const raw = b.seat_numbers; let seats = []; try { seats = Array.isArray(raw) ? raw : JSON.parse(raw || '[]'); } catch { seats = String(raw || '').split(',').map(x => x.trim()).filter(Boolean); } return seats.length ? seats.join(', ') : '—'; })()}
+                      </td>
                       <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
                       <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount > 0 ? `-${Number(b.commission_amount).toLocaleString('fr-FR')} FC` : '—'}</td>
                       <td style={{ fontSize:12 }}>{paymentLabel}</td>

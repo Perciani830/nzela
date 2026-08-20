@@ -1,6 +1,14 @@
+/*
+ * MIGRATIONS SQL À EXÉCUTER MANUELLEMENT SI NÉCESSAIRE (ne pas exécuter automatiquement) :
+ * ALTER TABLE bookings ADD COLUMN seat_numbers TEXT DEFAULT NULL;
+ *
+ * Le schéma fourni (database.js) contient déjà cette migration pour les bases existantes.
+ * Table de sièges canonique : `seats` (et non `bus_seats`).
+ */
+
 const router = require('express').Router();
 const { v4: uuidv4 } = require('uuid');
-const { getDb, runTransaction, ensureSeatsExist } = require('../db/database');
+const { getDb, runTransaction, ensureSeatsExist, releaseExpiredSeats } = require('../db/database');
 
 /* ─────────────────────────────────────────────────────────────
    HELPER — Confirmation des sièges après paiement validé
@@ -149,7 +157,7 @@ router.get('/premium-agencies', (req, res) => {
 
 // ── POST /api/public/book ─────────────────────────────────────
 router.post('/book', (req, res) => {
-  const { trip_id, name, phone, email, passengers } = req.body;
+  const { trip_id, name, phone, email, passengers, seat_numbers, session_token } = req.body;
   if (!trip_id || !name || !phone)
     return res.status(400).json({ error: 'Nom, téléphone et trajet requis' });
   const seats = Math.max(1, Math.min(10, parseInt(passengers) || 1));
@@ -170,10 +178,17 @@ router.post('/book', (req, res) => {
       db.prepare(`
         INSERT INTO bookings
           (id,reference,trip_id,agency_id,passenger_name,passenger_phone,
-           passenger_email,passengers,total_price,commission_rate,status,payment_status,channel)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'online')
+           passenger_email,passengers,seat_numbers,total_price,commission_rate,status,payment_status,channel)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'online')
       `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null,
-             seats, total, rate, 'pending', 'pending');
+             seats, Array.isArray(seat_numbers) ? seat_numbers.join(',') : null,
+             total, rate, 'pending', 'pending');
+      if (session_token && Array.isArray(seat_numbers) && seat_numbers.length) {
+        const ph = seat_numbers.map(() => '?').join(',');
+        db.prepare(`UPDATE seats SET booking_id=?, expires_at=NULL
+                    WHERE trip_id=? AND seat_number IN (${ph}) AND status='pending' AND booking_id=?`)
+          .run(id, trip_id, ...seat_numbers, session_token);
+      }
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
     res.status(201).json({ booking_id: id, reference: ref, total_price: total });
@@ -222,6 +237,8 @@ router.post('/pay', async (req, res) => {
       db.prepare(`UPDATE bookings SET status='confirmed', payment_status='completed',
         payment_method=?, transaction_id=?, commission_rate=?, commission_amount=? WHERE id=?`)
         .run('cash', txId, rate, commission_amount, booking_id);
+      const confirmedBooking = db.prepare('SELECT * FROM bookings WHERE id=?').get(booking_id);
+      confirmSeats(db, confirmedBooking);
       console.log(`✅ Espèces — ${booking.reference} | ${booking.total_price} FC`);
       return res.json({ success: true, status: 'confirmed', reference: booking.reference, transaction_id: txId });
     } catch (e) { return res.status(500).json({ error: e.message }); }
@@ -773,6 +790,9 @@ router.get('/callback/card-contrib', (req, res) => {
 
 // GET /public/trips/:id/seats — Plan des sièges d'un voyage
 router.get('/trips/:id/seats', (req, res) => {
+  const db = getDb();
+  releaseExpiredSeats(db);
+  ensureSeatsExist(db, req.params.id);
   const trip = db.prepare(`
     SELECT t.id, t.total_seats, b.layout
     FROM trips t
@@ -784,7 +804,7 @@ router.get('/trips/:id/seats', (req, res) => {
 
   const seats = db.prepare(`
     SELECT seat_number, status, booking_id
-    FROM bus_seats
+    FROM seats
     WHERE trip_id = ?
   `).all(req.params.id);
 
@@ -802,33 +822,39 @@ router.post('/trips/:id/seats/reserve', (req, res) => {
   if (!seat_numbers?.length || !session_token)
     return res.status(400).json({ error: 'seat_numbers et session_token requis' });
 
+  const db = getDb();
+  releaseExpiredSeats(db);
   const trip = db.prepare('SELECT id, total_seats FROM trips WHERE id=? AND is_active=1').get(req.params.id);
   if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+  ensureSeatsExist(db, req.params.id);
 
-  // Vérifier si des sièges sont déjà pris (reserved/confirmed)
+  // Vérifier si des sièges sont déjà pris (y compris pending d'une autre session)
   const placeholders = seat_numbers.map(() => '?').join(',');
   const taken = db.prepare(`
-    SELECT seat_number FROM bus_seats
+    SELECT seat_number FROM seats
     WHERE trip_id=? AND seat_number IN (${placeholders})
-    AND status IN ('reserved','confirmed')
-  `).all(req.params.id, ...seat_numbers).map(r => r.seat_number);
+    AND status IN ('pending','reserved','confirmed')
+    AND (status != 'pending' OR booking_id IS NULL OR booking_id != ?)
+  `).all(req.params.id, ...seat_numbers, session_token).map(r => r.seat_number);
 
   if (taken.length > 0)
     return res.status(409).json({ error: 'Sièges indisponibles', unavailable: taken });
 
-  // Upsert en statut "pending" avec le session_token
+  const expiresAt = new Date(Date.now() + 15 * 60 * 1000).toISOString().replace('T', ' ').split('.')[0];
+  db.prepare(`UPDATE seats SET status='available', booking_id=NULL, expires_at=NULL
+              WHERE trip_id=? AND status='pending' AND booking_id=?`).run(req.params.id, session_token);
   const upsert = db.prepare(`
-    INSERT INTO bus_seats (trip_id, seat_number, status, session_token)
-    VALUES (?, ?, 'pending', ?)
+    INSERT INTO seats (id, trip_id, seat_number, status, booking_id, expires_at)
+    VALUES (?, ?, ?, 'pending', ?, ?)
     ON CONFLICT(trip_id, seat_number)
-    DO UPDATE SET status='pending', session_token=excluded.session_token
+    DO UPDATE SET status='pending', booking_id=excluded.booking_id, expires_at=excluded.expires_at
   `);
   const runAll = db.transaction(() => {
-    for (const sn of seat_numbers) upsert.run(req.params.id, sn, session_token);
+    for (const sn of seat_numbers) upsert.run(uuidv4(), req.params.id, sn, session_token, expiresAt);
   });
   runAll();
 
-  res.json({ ok: true, reserved: seat_numbers });
+  res.json({ ok: true, reserved: seat_numbers, expires_at: expiresAt });
 });
 
 // DELETE /public/trips/:id/seats/reserve — Libérer les sièges d'une session
@@ -836,10 +862,9 @@ router.delete('/trips/:id/seats/reserve', (req, res) => {
   const { session_token } = req.body;
   if (!session_token) return res.status(400).json({ error: 'session_token requis' });
 
-  db.prepare(`
-    DELETE FROM bus_seats
-    WHERE trip_id=? AND session_token=? AND status='pending'
-  `).run(req.params.id, session_token);
+  const db = getDb();
+  db.prepare(`UPDATE seats SET status='available', booking_id=NULL, expires_at=NULL
+              WHERE trip_id=? AND booking_id=? AND status='pending'`).run(req.params.id, session_token);
 
   res.json({ ok: true });
 });
@@ -850,15 +875,20 @@ router.post('/trips/:id/seats/assign', (req, res) => {
   if (!seat_numbers?.length || !booking_id)
     return res.status(400).json({ error: 'seat_numbers et booking_id requis' });
 
+  const db = getDb();
   const finalStatus = status || 'reserved';
+  const booking = db.prepare('SELECT id, trip_id FROM bookings WHERE id=?').get(booking_id);
+  if (!booking || booking.trip_id !== req.params.id)
+    return res.status(404).json({ error: 'Réservation introuvable pour ce voyage' });
+  ensureSeatsExist(db, req.params.id);
   const upsert = db.prepare(`
-    INSERT INTO bus_seats (trip_id, seat_number, status, booking_id)
-    VALUES (?, ?, ?, ?)
+    INSERT INTO seats (id, trip_id, seat_number, status, booking_id, expires_at)
+    VALUES (?, ?, ?, ?, ?, NULL)
     ON CONFLICT(trip_id, seat_number)
-    DO UPDATE SET status=excluded.status, booking_id=excluded.booking_id, session_token=NULL
+    DO UPDATE SET status=excluded.status, booking_id=excluded.booking_id, expires_at=NULL
   `);
   const runAll = db.transaction(() => {
-    for (const sn of seat_numbers) upsert.run(req.params.id, sn, finalStatus, booking_id);
+    for (const sn of seat_numbers) upsert.run(uuidv4(), req.params.id, sn, finalStatus, booking_id);
   });
   runAll();
 

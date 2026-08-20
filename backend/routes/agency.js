@@ -395,8 +395,10 @@ router.get('/manifest/:trip_id', auth, (req, res) => {
     // On inclut aussi les réservations annulées : le manifeste doit permettre
     // de voir qu'un client a annulé son voyage, pas seulement les confirmées.
     const bookings = db.prepare(`
-      SELECT b.*, COALESCE(b.boarding_status, 'pending') as boarding_status
+      SELECT b.*, COALESCE(b.boarding_status, 'pending') as boarding_status,
+             t.departure_date, t.departure_time, t.departure_city, t.arrival_city
       FROM bookings b
+      JOIN trips t ON t.id = b.trip_id
       WHERE b.trip_id=? AND b.agency_id=? AND b.status IN ('confirmed','cancelled')
       ORDER BY b.created_at ASC
     `).all(req.params.trip_id, req.user.agency_id);
