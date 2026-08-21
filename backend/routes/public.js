@@ -174,6 +174,12 @@ router.post('/book', (req, res) => {
   const ref   = genRef();
   const id    = uuidv4();
   try {
+    // Normaliser seat_numbers : le front (BookingModal) envoie une chaîne "1A,1B",
+    // mais un tableau ["1A","1B"] doit aussi être accepté (Array.isArray seul ratait la chaîne).
+    const seatArr = Array.isArray(seat_numbers)
+      ? seat_numbers.map(s => String(s).trim()).filter(Boolean)
+      : (typeof seat_numbers === 'string' ? seat_numbers.split(',').map(s => s.trim()).filter(Boolean) : []);
+
     runTransaction(db, () => {
       db.prepare(`
         INSERT INTO bookings
@@ -181,13 +187,13 @@ router.post('/book', (req, res) => {
            passenger_email,passengers,seat_numbers,total_price,commission_rate,status,payment_status,channel)
         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'online')
       `).run(id, ref, trip_id, trip.agency_id, name, phone, email||null,
-             seats, Array.isArray(seat_numbers) ? seat_numbers.join(',') : null,
+             seats, seatArr.length ? seatArr.join(',') : null,
              total, rate, 'pending', 'pending');
-      if (session_token && Array.isArray(seat_numbers) && seat_numbers.length) {
-        const ph = seat_numbers.map(() => '?').join(',');
+      if (session_token && seatArr.length) {
+        const ph = seatArr.map(() => '?').join(',');
         db.prepare(`UPDATE seats SET booking_id=?, expires_at=NULL
                     WHERE trip_id=? AND seat_number IN (${ph}) AND status='pending' AND booking_id=?`)
-          .run(id, trip_id, ...seat_numbers, session_token);
+          .run(id, trip_id, ...seatArr, session_token);
       }
       db.prepare('UPDATE trips SET available_seats=available_seats-? WHERE id=?').run(seats, trip_id);
     });
