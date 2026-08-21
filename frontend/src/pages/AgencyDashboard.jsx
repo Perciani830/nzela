@@ -552,6 +552,12 @@ export default function AgencyDashboard() {
   const [colisFilterTrip, setColisFilterTrip] = useState('');
   const [colisSearch,     setColisSearch]     = useState('');
 
+  // ── État filtres finance / réservations (Vue d'ensemble) ─────────────────────
+  const [financePeriod, setFinancePeriod] = useState('all');   // 'all' | 'day' | 'month'
+  const [financeDate,   setFinanceDate]   = useState(todayStr());        // YYYY-MM-DD
+  const [financeMonth,  setFinanceMonth]  = useState(todayStr().slice(0,7)); // YYYY-MM
+  const [financeStatus, setFinanceStatus] = useState('all');   // 'all' | 'confirmed' | 'cancelled' | 'pending'
+
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
@@ -572,6 +578,23 @@ export default function AgencyDashboard() {
 
   const visibleTrips    = filteredByCity(trips,    'departure_city');
   const visibleBookings = filteredByCity(bookings, 'departure_city');
+
+  // ── Filtre finance (Vue d'ensemble) : par jour/mois + par statut ──────────────
+  const financeFilteredBookings = useMemo(() => {
+    return visibleBookings.filter(b => {
+      if (financeStatus !== 'all' && b.status !== financeStatus) return false;
+      if (financePeriod === 'day'   && (b.created_at || '').slice(0,10) !== financeDate) return false;
+      if (financePeriod === 'month' && !(b.created_at || '').startsWith(financeMonth)) return false;
+      return true;
+    });
+  }, [visibleBookings, financeStatus, financePeriod, financeDate, financeMonth]);
+
+  const financeSummary = useMemo(() => {
+    const confirmed = financeFilteredBookings.filter(b => b.status === 'confirmed');
+    const totalAmount = financeFilteredBookings.reduce((s,b) => s + Number(b.total_price||0), 0);
+    const netRevenue  = confirmed.reduce((s,b) => s + Number(b.total_price||0) - Number(b.commission_amount||0), 0);
+    return { count: financeFilteredBookings.length, totalAmount, netRevenue };
+  }, [financeFilteredBookings]);
 
   // Voyages disponibles pour le sélecteur de manifeste (filtrés par ville du gestionnaire)
   const manifestTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
@@ -793,7 +816,18 @@ export default function AgencyDashboard() {
           ${tripBookings.length === 0
             ? `<tr><td colspan="8" style="text-align:center;padding:30px;color:#888;">Aucun passager enregistré</td></tr>`
             : tripBookings.map((b, i) => {
-                const seats = (() => { try { return JSON.parse(b.seat_numbers || '[]'); } catch { return []; } })();
+                // seat_numbers a 2 formats selon l'origine : JSON.stringify (résa guichet)
+                // ou chaîne "1A,1B" (résa en ligne) — on gère les deux, sinon les sièges
+                // des clients en ligne n'apparaissaient jamais sur le manifeste imprimé.
+                const seats = (() => {
+                  const raw = b.seat_numbers;
+                  try {
+                    const parsed = JSON.parse(raw || '[]');
+                    return Array.isArray(parsed) ? parsed : String(raw).split(',').map(x=>x.trim()).filter(Boolean);
+                  } catch {
+                    return String(raw || '').split(',').map(x=>x.trim()).filter(Boolean);
+                  }
+                })();
                 return `<tr>
                   <td style="font-weight:bold">${i+1}</td>
                   <td class="ref">${b.reference}</td>
@@ -1269,15 +1303,62 @@ export default function AgencyDashboard() {
             {isOwner && <CityStatsGrid trips={trips} bookings={bookings} />}
 
             <div className="glass p-16 fade-in fade-in-3">
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
-                <div className="section-title" style={{ margin:0 }}>Réservations récentes {userCity && <CityBadge city={userCity} />}</div>
+              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:10 }}>
+                <div className="section-title" style={{ margin:0 }}>Réservations & revenus {userCity && <CityBadge city={userCity} />}</div>
                 <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => setTab('bookings')}>Voir tout →</button>
               </div>
-              {visibleBookings.length===0
-                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}><Inbox size={15} /> Aucune réservation{userCity ? ` pour ${userCity}` : ''}</div>
-                : <div style={{ overflowX:'auto' }}><table className="data-table">
+
+              {/* ── Barre de filtres : période + statut ─────────────────────── */}
+              <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:14 }}>
+                <div style={{ display:'flex', background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, padding:3 }}>
+                  {[
+                    { id:'all',   label:'Tout' },
+                    { id:'day',   label:'Jour' },
+                    { id:'month', label:'Mois' },
+                  ].map(p => (
+                    <button key={p.id} onClick={() => setFinancePeriod(p.id)}
+                      style={{ background:financePeriod===p.id?'var(--green-d)':'none', border:'none', borderRadius:6, padding:'5px 12px', fontSize:12, color:financePeriod===p.id?'#fff':'var(--muted)', cursor:'pointer', fontWeight:financePeriod===p.id?700:400, transition:'all .15s' }}>
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {financePeriod === 'day' && (
+                  <input type="date" className="input-field" value={financeDate} onChange={e=>setFinanceDate(e.target.value)} style={{ width:150, fontSize:12, padding:'7px 10px' }} />
+                )}
+                {financePeriod === 'month' && (
+                  <input type="month" className="input-field" value={financeMonth} onChange={e=>setFinanceMonth(e.target.value)} style={{ width:150, fontSize:12, padding:'7px 10px' }} />
+                )}
+
+                <select className="input-field" value={financeStatus} onChange={e=>setFinanceStatus(e.target.value)} style={{ width:150, fontSize:12, padding:'7px 10px' }}>
+                  <option value="all">Tous statuts</option>
+                  <option value="confirmed">Réussies</option>
+                  <option value="cancelled">Annulées</option>
+                  <option value="pending">En attente</option>
+                </select>
+              </div>
+
+              {/* ── Résumé chiffré du filtre actif ──────────────────────────── */}
+              <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:14 }}>
+                <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
+                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Réservations</div>
+                  <div style={{ fontSize:16, fontWeight:800 }}>{financeSummary.count}</div>
+                </div>
+                <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
+                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Montant total</div>
+                  <div style={{ fontSize:16, fontWeight:800, color:'var(--gold)' }}>{financeSummary.totalAmount.toLocaleString('fr-FR')} FC</div>
+                </div>
+                <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
+                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Revenus nets (réussies)</div>
+                  <div style={{ fontSize:16, fontWeight:800, color:'var(--green-l)' }}>{financeSummary.netRevenue.toLocaleString('fr-FR')} FC</div>
+                </div>
+              </div>
+
+              {financeFilteredBookings.length===0
+                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}><Inbox size={15} /> Aucune réservation pour ce filtre</div>
+                : <div style={{ overflowX:'auto', maxHeight:420, overflowY:'auto' }}><table className="data-table">
                     <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
-                    <tbody>{visibleBookings.slice(0,5).map(b => (
+                    <tbody>{financeFilteredBookings.map(b => (
                       <tr key={b.id}>
                         <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
                         <td>
