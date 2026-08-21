@@ -193,7 +193,6 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
                   <th>Bus</th>
                   <th>Sièges</th>
                   <th>Total</th>
-                  <th>Commission</th>
                   <th>Paiement</th>
                   <th>Statut</th>
                   <th>Embarquement</th>
@@ -235,8 +234,7 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
                       <td style={{ fontWeight:700 }}>
                         {(() => { const raw = b.seat_numbers; let seats = []; try { seats = Array.isArray(raw) ? raw : JSON.parse(raw || '[]'); } catch { seats = String(raw || '').split(',').map(x => x.trim()).filter(Boolean); } return seats.length ? seats.join(', ') : '—'; })()}
                       </td>
-                      <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
-                      <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount > 0 ? `-${Number(b.commission_amount).toLocaleString('fr-FR')} FC` : '—'}</td>
+                      <td style={{ color:'var(--gold)', fontWeight:700 }}>{(Number(b.total_price) - Number(b.commission_amount||0)).toLocaleString('fr-FR')} FC</td>
                       <td style={{ fontSize:12 }}>{paymentLabel}</td>
                       <td><BookingStatusBadge status={b.status} /></td>
                       <td>
@@ -299,7 +297,7 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
                     /* Ligne dépliée — détails supplémentaires */
                     isExp && (
                       <tr key={`${b.id}-detail`} style={{ background:'rgba(61,170,106,0.04)' }}>
-                        <td colSpan={13} style={{ padding:'12px 16px' }}>
+                        <td colSpan={12} style={{ padding:'12px 16px' }}>
                           <div style={{ display:'flex', gap:24, flexWrap:'wrap', fontSize:12 }}>
                             {b.passenger_email && <div><span style={{ color:'var(--muted)' }}>Email : </span><strong>{b.passenger_email}</strong></div>}
                             <div><span style={{ color:'var(--muted)' }}>Réservé le : </span><strong>{new Date(b.created_at).toLocaleDateString('fr-FR', { day:'numeric', month:'short', hour:'2-digit', minute:'2-digit' })}</strong></div>

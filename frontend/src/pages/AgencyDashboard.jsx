@@ -834,7 +834,7 @@ export default function AgencyDashboard() {
                   <td style="font-weight:600">${b.passenger_name}</td>
                   <td>${b.passenger_phone || '—'}</td>
                   <td>${seats.length ? seats.map(s=>`<span class="seat">${s}</span>`).join('') : '—'}</td>
-                  <td style="font-weight:700">${Number(b.total_price).toLocaleString('fr-FR')}</td>
+                  <td style="font-weight:700">${(Number(b.total_price) - Number(b.commission_amount||0)).toLocaleString('fr-FR')}</td>
                   <td><span class="badge">${b.payment_method==='cash'?'Espèces':'Mobile Money'}</span></td>
                   <td><span class="badge">${b.status==='confirmed'?'Confirmé':b.status==='pending'?'En attente':'—'}</span></td>
                 </tr>`;
@@ -844,7 +844,7 @@ export default function AgencyDashboard() {
       </table>
       <div class="footer">
         <span>Nzela — Système de réservation · nzela.cd</span>
-        <span>${trip.bus_name ? 'Bus : ' + trip.bus_name : ''} · Total : ${tripBookings.reduce((s,b)=>s+Number(b.total_price||0),0).toLocaleString('fr-FR')} FC</span>
+        <span>${trip.bus_name ? 'Bus : ' + trip.bus_name : ''} · Total : ${tripBookings.reduce((s,b)=>s+Number(b.total_price||0)-Number(b.commission_amount||0),0).toLocaleString('fr-FR')} FC</span>
       </div>
       <script>window.onload = () => { window.print(); }<\/script>
     </body></html>`);
