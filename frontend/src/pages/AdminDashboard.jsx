@@ -1,29 +1,23 @@
-import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
-import ManifestTab from './ManifestTab';
-import SeatMapModal from './SeatMapModal';
-import SeatPicker from './SeatPicker';
+import * as XLSX from 'xlsx';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import SeatMapModal from './SeatMapModal';
 import {
   Check, X, Info, Crown, LogOut, Globe, Menu,
-  BarChart2, Bus, Map, Ticket, ClipboardList, Users, Settings,
-  Building2, Anchor, Mountain, Waves, MapPin,
-  Camera, FolderOpen, Trash2, Loader,
-  Calendar, Wallet, Gem, Clock,
-  Inbox, ImageIcon, Building, Percent, Save,
-  Banknote, Smartphone, Pencil, Ban, KeyRound, Wrench,
-  AlertTriangle, Rocket, User, CheckCircle,
-  Package, PackageCheck, PackageOpen, Printer, Search, RefreshCw,
-  Edit2, Loader2, ChevronDown,
+  LayoutDashboard, Building2, ImageIcon, HeartHandshake, Settings,
+  Wallet, Gem, Ticket, Bus, Trophy, MapPin, Users,
+  Pencil, Trash2, Ban, KeyRound, Star, User, Mail, Phone,
+  AlertTriangle, Download, Upload, Database, Wrench,
+  Anchor, Mountain, Waves, ChevronUp, ChevronDown,
+  ShieldAlert, FileSpreadsheet, FileText, RotateCcw, Flame,
 } from 'lucide-react';
 
 const API = 'https://nzela-production-086a.up.railway.app/api';
-const CITIES = ['Kinshasa','Matadi','Boma','Moanda'];
-const DAYS_FR = ['Dim','Lun','Mar','Mer','Jeu','Ven','Sam'];
+const CITIES = ['Kinshasa', 'Matadi', 'Boma', 'Moanda'];
 
-// Icônes / couleurs par ville pour les badges
 const CITY_META = {
   Kinshasa: { color:'#3DAA6A', bg:'rgba(61,170,106,0.12)', Icon: Building2 },
   Boma:     { color:'#4A90D9', bg:'rgba(74,144,217,0.12)', Icon: Anchor },
@@ -31,31 +25,78 @@ const CITY_META = {
   Moanda:   { color:'#9B59B6', bg:'rgba(155,89,182,0.12)', Icon: Waves },
 };
 
-function getAuth() {
-  return {
-    user: JSON.parse(localStorage.getItem('user') || '{}'),
-    headers: { Authorization: `Bearer ${localStorage.getItem('token')}` }
-  };
+function getAdminHeaders() {
+  return { Authorization: `Bearer ${localStorage.getItem('token')}` };
 }
 
+/* ── Toast ──────────────────────────────────────────────────── */
 function Toast({ msg, type, onClose }) {
   useEffect(() => { const t = setTimeout(onClose, 3500); return () => clearTimeout(t); }, []);
-  const Icon = type === 'success' ? Check : type === 'error' ? X : Info;
+  const colors = { success:'var(--ok)', error:'var(--err)', info:'var(--gold)' };
+  const Icon   = type === 'success' ? Check : type === 'error' ? X : Info;
   return (
-    <div className={`toast ${type==='success'?'t-ok':type==='error'?'t-err':'t-inf'}`} style={{ zIndex:300, display:'flex', alignItems:'center', gap:7 }}>
-      <Icon size={13} />
+    <div style={{ position:'fixed', top:20, right:20, zIndex:9999, display:'flex', alignItems:'center', gap:10, background:'var(--card)', border:`1px solid ${colors[type]||'var(--border)'}`, borderRadius:12, padding:'12px 16px', fontSize:13, fontWeight:600, color:colors[type]||'var(--text)', boxShadow:'0 8px 32px rgba(0,0,0,0.4)', minWidth:260, maxWidth:380 }}>
+      <Icon size={14} />
       <span style={{ flex:1 }}>{msg}</span>
-      <button onClick={onClose} style={{ marginLeft:'auto', background:'none', border:'none', color:'inherit', cursor:'pointer', display:'flex', alignItems:'center' }}><X size={14} /></button>
+      <button onClick={onClose} style={{ background:'none', border:'none', color:'inherit', cursor:'pointer', display:'flex', alignItems:'center', opacity:0.6 }}><X size={14} /></button>
     </div>
   );
 }
 
-function StatusBadge({ status }) {
-  const m = { pending:['En attente','b-o'], confirmed:['Confirmé','b-g'], cancelled:['Annulé','b-r'] };
-  const [l,c] = m[status] || [status,'b-b'];
-  return <span className={`badge ${c}`}>{l}</span>;
+/* ── Inp ────────────────────────────────────────────────────── */
+function Inp({ label, children, hint }) {
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:5 }}>
+      <label style={{ fontSize:12, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.06em' }}>{label}</label>
+      {children}
+      {hint && <div style={{ fontSize:11, color:'var(--muted)' }}>{hint}</div>}
+    </div>
+  );
 }
 
+/* ── Modal ──────────────────────────────────────────────────── */
+function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder', maxWidth=500, children }) {
+  return (
+    <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.7)', backdropFilter:'blur(4px)', zIndex:200, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}
+      onClick={e => e.target===e.currentTarget && onClose()}>
+      <div style={{ background:'var(--night)', border:'1px solid var(--border)', borderRadius:16, width:'100%', maxWidth, maxHeight:'90vh', overflowY:'auto', boxShadow:'0 24px 80px rgba(0,0,0,0.6)' }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'18px 22px', borderBottom:'1px solid var(--border)', position:'sticky', top:0, background:'var(--night)', zIndex:1 }}>
+          <div>
+            <h2 style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:17, margin:0 }}>{title}</h2>
+            {subtitle && <div style={{ fontSize:12, color:'var(--muted)', marginTop:3 }}>{subtitle}</div>}
+          </div>
+          <button onClick={onClose} style={{ width:30, height:30, borderRadius:8, background:'var(--card)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--muted)' }}><X size={14} /></button>
+        </div>
+        <div style={{ padding:'18px 22px', display:'flex', flexDirection:'column', gap:14 }}>{children}</div>
+        <div style={{ display:'flex', justifyContent:'flex-end', gap:10, padding:'14px 22px', borderTop:'1px solid var(--border)', position:'sticky', bottom:0, background:'var(--night)' }}>
+          <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={onClose}>Annuler</button>
+          <button className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ── StatCard ───────────────────────────────────────────────── */
+function StatCard({ Icon: IconComp, label, value, sub, color='var(--green-l)' }) {
+  return (
+    <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:14, padding:'16px 18px' }}>
+      <div style={{ marginBottom:8 }}><IconComp size={22} color={color} /></div>
+      <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:22, color, lineHeight:1 }}>{value}</div>
+      <div style={{ fontSize:12, color:'var(--muted)', marginTop:4 }}>{label}</div>
+      {sub && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+/* ── AgencyAvatar ───────────────────────────────────────────── */
+function AgencyAvatar({ name, logoUrl, size=36 }) {
+  const initials = name ? name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
+  if (logoUrl) return <img src={logoUrl} alt={name} style={{ width:size, height:size, borderRadius:10, objectFit:'cover', border:'1px solid rgba(61,170,106,0.2)', flexShrink:0 }} onError={e=>{e.target.style.display='none'}} />;
+  return <div style={{ width:size, height:size, borderRadius:10, background:'linear-gradient(135deg,var(--green-d),var(--green-l))', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'var(--font)', fontWeight:800, fontSize:size*0.36, flexShrink:0 }}>{initials}</div>;
+}
+
+/* ── CityBadge ──────────────────────────────────────────────── */
 function CityBadge({ city }) {
   const meta = CITY_META[city] || { color:'var(--muted)', bg:'var(--card)', Icon: MapPin };
   return (
@@ -65,1250 +106,683 @@ function CityBadge({ city }) {
   );
 }
 
-function AgencyAvatar({ name, logoUrl, size=32, radius=8 }) {
-  const initials = name ? name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2) : '?';
-  if (logoUrl) return <img src={logoUrl} alt={name} style={{ width:size, height:size, borderRadius:radius, objectFit:'cover', border:'1px solid rgba(61,170,106,0.2)' }} onError={e => { e.target.style.display='none'; }} />;
-  return <div style={{ width:size, height:size, borderRadius:radius, background:'linear-gradient(135deg,var(--green-d),var(--green-l))', display:'flex', alignItems:'center', justifyContent:'center', color:'#fff', fontFamily:'var(--font)', fontWeight:800, fontSize:size*0.36 }}>{initials}</div>;
-}
+/* ── AgencyUsersPanel ───────────────────────────────────────── */
+/* ── Panel voyages d'une agence (admin) ─────────────────────── */
+function AgencyTripsPanel({ agency, headers, onViewSeats }) {
+  const [trips,   setTrips]   = useState([]);
+  const [loading, setLoading] = useState(true);
 
-function SidebarLogo({ agencyName, logoUrl }) {
+  useEffect(() => {
+    setLoading(true);
+    axios.get(`${API}/admin/agencies/${agency.id}/trips`, { headers })
+      .then(r => setTrips(Array.isArray(r.data) ? r.data : []))
+      .catch(() => setTrips([]))
+      .finally(() => setLoading(false));
+  }, [agency.id]);
+
+  if (loading) return (
+    <div style={{ padding:'14px 0', color:'var(--muted)', fontSize:12 }}>Chargement des voyages…</div>
+  );
+  if (trips.length === 0) return (
+    <div style={{ padding:'14px 0', color:'var(--muted)', fontSize:12 }}>Aucun voyage enregistré pour cette agence.</div>
+  );
+
   return (
-    <div style={{ display:'flex', alignItems:'center', gap:9 }}>
-      <AgencyAvatar name={agencyName} logoUrl={logoUrl} size={30} radius={8} />
-      <div>
-        <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:'var(--text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', maxWidth:160 }}>{agencyName}</div>
-        <div style={{ fontSize:10, color:'var(--muted)' }}>Espace Agence · nzela</div>
+    <div style={{ marginTop:14, borderTop:'1px solid var(--border)', paddingTop:14 }}>
+      <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', marginBottom:8, textTransform:'uppercase', letterSpacing:'0.05em' }}>
+        Voyages ({trips.length})
+      </div>
+      <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+        {trips.map(t => (
+          <div key={t.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:8, padding:'8px 12px', background:'var(--card)', border:'1px solid var(--border)', borderRadius:8 }}>
+            <div style={{ fontSize:12 }}>
+              <span style={{ fontWeight:700 }}>{t.departure_city} → {t.arrival_city}</span>
+              <span style={{ color:'var(--muted)', marginLeft:8 }}>{t.departure_date} · {t.departure_time}</span>
+              {t.bus_name && <span style={{ marginLeft:8, color:'var(--muted)' }}>· {t.bus_name}</span>}
+            </div>
+            <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+              <span style={{ fontSize:11, color:'var(--muted)' }}>{t.available_seats}/{t.total_seats} places</span>
+              <span className={`badge ${t.is_active ? 'b-g' : 'b-r'}`} style={{ fontSize:10 }}>{t.is_active ? 'Actif' : 'Inactif'}</span>
+              <button
+                className="btn btn-ghost"
+                style={{ fontSize:11, padding:'4px 10px', display:'inline-flex', alignItems:'center', gap:5 }}
+                onClick={() => onViewSeats(t)}
+              >
+                <Bus size={11} /> Sièges
+              </button>
+            </div>
+          </div>
+        ))}
       </div>
     </div>
   );
 }
 
-function Inp({ label, children }) {
-  return <div className="input-group"><label className="input-label">{label}</label>{children}</div>;
-}
+function AgencyUsersPanel({ agency, headers, showToast }) {
+  const [users, setUsers]         = useState([]);
+  const [loading, setLoading]     = useState(true);
+  const [showForm, setShowForm]   = useState(false);
+  const [saving, setSaving]       = useState(false);
+  const [resetTarget, setResetTarget] = useState(null);
+  const [newPass, setNewPass]     = useState('');
+  const [form, setForm]           = useState({ username:'', password:'', full_name:'', city:'', role:'manager' });
 
-function Modal({ title, subtitle, onClose, onConfirm, confirmLabel='Sauvegarder', maxWidth=480, children }) {
-  return (
-    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth }}>
-        <div className="modal-header">
-          <div><h2>{title}</h2>{subtitle && <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{subtitle}</div>}</div>
-          <button className="modal-close" onClick={onClose}>×</button>
-        </div>
-        <div className="modal-body">{children}</div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:'7px 14px' }} onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" onClick={onConfirm}>{confirmLabel}</button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function LogoUploader({ currentLogo, agencyName, onChange }) {
-  const fileRef = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const handleFile = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (!file.type.startsWith('image/')) { alert('Sélectionnez une image (JPG, PNG, WebP…)'); return; }
-    if (file.size > 500 * 1024) { alert('Image trop lourde — maximum 500 Ko.'); return; }
-    setUploading(true);
-    const reader = new FileReader();
-    reader.onload = (ev) => { onChange(ev.target.result); setUploading(false); };
-    reader.onerror = () => { alert('Erreur de lecture du fichier'); setUploading(false); };
-    reader.readAsDataURL(file);
+  const load = async () => {
+    setLoading(true);
+    try { const r = await axios.get(`${API}/admin/agencies/${agency.id}/users`, { headers }); setUsers(Array.isArray(r.data) ? r.data : []); }
+    catch { setUsers([]); }
+    finally { setLoading(false); }
   };
-  return (
-    <div style={{ display:'flex', alignItems:'center', gap:16, marginBottom:14 }}>
-      <div style={{ position:'relative', flexShrink:0 }}>
-        <AgencyAvatar name={agencyName} logoUrl={currentLogo} size={80} radius={16} />
-        <button onClick={() => fileRef.current?.click()} style={{ position:'absolute', bottom:-4, right:-4, width:24, height:24, borderRadius:'50%', background:'var(--green-d)', border:'2px solid var(--night)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center' }} title="Changer le logo"><Camera size={11} color="#fff" /></button>
-      </div>
-      <div style={{ flex:1 }}>
-        <div style={{ fontSize:13, fontWeight:600, marginBottom:4 }}>{agencyName}</div>
-        <div style={{ fontSize:12, color:'var(--muted)', lineHeight:1.5, marginBottom:8, display:'flex', alignItems:'center', gap:5 }}>{currentLogo ? <><Check size={11} /> Logo personnalisé configuré</> : 'Aucun logo — initiales affichées par défaut'}</div>
-        <input ref={fileRef} type="file" accept="image/*" style={{ display:'none' }} onChange={handleFile} />
-        <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 12px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => fileRef.current?.click()} disabled={uploading}>{uploading ? <><Loader size={11} /> Chargement…</> : <><FolderOpen size={11} /> Choisir un fichier</>}</button>
-          {currentLogo && <button className="btn btn-danger" style={{ fontSize:12, padding:'6px 10px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => onChange('')}><Trash2 size={11} /> Supprimer</button>}
-        </div>
-        <div style={{ fontSize:11, color:'var(--muted)', marginTop:6 }}>JPG, PNG, WebP · Max 500 Ko</div>
-      </div>
-    </div>
-  );
-}
+  useEffect(() => { load(); }, [agency.id]);
 
-function buildDates(dateFrom, dateTo, activeDays) {
-  if (!dateFrom || !dateTo || activeDays.length === 0) return [];
-  const dates = [];
-  const cur = new Date(dateFrom + 'T12:00:00');
-  const end = new Date(dateTo + 'T12:00:00');
-  while (cur <= end) {
-    if (activeDays.includes(cur.getDay())) dates.push(cur.toISOString().split('T')[0]);
-    cur.setDate(cur.getDate() + 1);
-  }
-  return dates;
-}
-
-// ── Helpers colis ─────────────────────────────────────────────────────────────
-function fmtFC(n) { return Number(n || 0).toLocaleString('fr-FR'); }
-function fmtDateColis(d) {
-  if (!d) return '';
-  return new Date(d + 'T12:00').toLocaleDateString('fr-FR', { weekday:'short', day:'numeric', month:'long' });
-}
-function todayStr() { return new Date().toISOString().split('T')[0]; }
-
-function ColisPill({ status }) {
-  const ok = status === 'ok';
-  return (
-    <span style={{
-      display:'inline-flex', alignItems:'center', gap:4,
-      background: ok ? 'rgba(61,170,106,.15)' : 'rgba(232,168,56,.15)',
-      color: ok ? '#3DAA6A' : '#E8A838',
-      border:`1px solid ${ok ? 'rgba(61,170,106,.3)' : 'rgba(232,168,56,.3)'}`,
-      borderRadius:20, padding:'2px 10px', fontSize:11, fontWeight:800,
-    }}>
-      {ok ? <PackageCheck size={10}/> : <PackageOpen size={10}/>}
-      {ok ? 'OK — Soldé' : 'Reste à payer'}
-    </span>
-  );
-}
-
-function exportColisPDF({ colis, trip, agencyName, filterLabel }) {
-  const doc = new jsPDF({ orientation:'portrait', unit:'mm', format:'a4' });
-  doc.setFillColor(26, 61, 43);
-  doc.rect(0, 0, 210, 36, 'F');
-  doc.setTextColor(255, 255, 255);
-  doc.setFont('helvetica', 'bold');
-  doc.setFontSize(18);
-  doc.text('LISTE DES COLIS', 14, 14);
-  doc.setFontSize(9);
-  doc.setFont('helvetica', 'normal');
-  doc.text(agencyName || 'Agence', 14, 22);
-  if (trip) {
-    doc.text(`${trip.departure_city} → ${trip.arrival_city}  ·  ${fmtDateColis(trip.departure_date)}  ·  ${trip.departure_time}`, 14, 29);
-  } else {
-    doc.text(filterLabel || '', 14, 29);
-  }
-  doc.setFontSize(8);
-  doc.text(
-    `Imprimé le ${new Date().toLocaleDateString('fr-FR')} à ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}`,
-    196, 10, { align:'right' }
-  );
-  const head = [['#','Destinataire','Description','Total (FC)','Avance (FC)','Reste (FC)','Statut']];
-  const body = colis.map((c, i) => [
-    i+1, c.recipient_name, c.description,
-    fmtFC(c.total_amount), fmtFC(c.advance_paid), fmtFC(c.remaining),
-    c.payment_status === 'ok' ? 'OK ✓' : 'Reste à payer',
-  ]);
-  const totMontant = colis.reduce((s,c) => s+(c.total_amount||0), 0);
-  const totAvance  = colis.reduce((s,c) => s+(c.advance_paid||0), 0);
-  const totReste   = colis.reduce((s,c) => s+(c.remaining||0),    0);
-  autoTable(doc, {
-    head, body,
-    startY: 42,
-    styles: { fontSize:9, cellPadding:3, textColor:[30,30,30] },
-    headStyles: { fillColor:[61,170,106], textColor:255, fontStyle:'bold' },
-    alternateRowStyles: { fillColor:[245,252,248] },
-    columnStyles: {
-      0: { cellWidth:9,  halign:'center' },
-      3: { halign:'right', cellWidth:24 },
-      4: { halign:'right', cellWidth:24 },
-      5: { halign:'right', cellWidth:24 },
-      6: { cellWidth:28, halign:'center' },
-    },
-    foot: [['','',`TOTAL (${colis.length} colis)`, fmtFC(totMontant), fmtFC(totAvance), fmtFC(totReste),'']],
-    footStyles: { fillColor:[26,61,43], textColor:255, fontStyle:'bold' },
-  });
-  const finalY = doc.lastAutoTable.finalY + 6;
-  doc.setFontSize(8);
-  doc.setTextColor(120);
-  doc.text('Document généré par nzela · À transmettre au gestionnaire de la ville de destination', 14, finalY);
-  const filename = trip
-    ? `colis_${trip.departure_city}-${trip.arrival_city}_${trip.departure_date}.pdf`
-    : `colis_${new Date().toISOString().split('T')[0]}.pdf`;
-  doc.save(filename);
-}
-
-function ColisModal({ trips, initial, onClose, onSave }) {
-  const [form, setForm] = useState({
-    trip_id:        initial?.trip_id        || '',
-    recipient_name: initial?.recipient_name || '',
-    description:    initial?.description    || '',
-    total_amount:   initial?.total_amount   ?? '',
-    advance_paid:   initial?.advance_paid   ?? '',
-  });
-  const [saving, setSaving] = useState(false);
-  const [formErr, setFormErr] = useState('');
-
-  const total     = parseFloat(form.total_amount) || 0;
-  const advance   = parseFloat(form.advance_paid) || 0;
-  const remaining = Math.max(0, total - advance);
-  const payStatus = advance >= total && total > 0 ? 'ok' : 'partial';
-
-  const field = k => e => setForm(f => ({ ...f, [k]: e.target.value }));
-
-  const handleSave = async () => {
-    setFormErr('');
-    if (!form.trip_id)              return setFormErr('Sélectionnez un voyage');
-    if (!form.recipient_name.trim()) return setFormErr('Nom du destinataire requis');
-    if (!form.description.trim())    return setFormErr('Description requise');
-    if (total <= 0)                  return setFormErr('Montant total invalide');
-    if (advance < 0 || advance > total) return setFormErr("L'avance ne peut pas dépasser le total");
+  const doCreate = async () => {
+    if (!form.username || !form.password) return showToast('Identifiant et mot de passe requis', 'error');
+    if (form.password.length < 6) return showToast('Mot de passe trop court (min. 6)', 'error');
     setSaving(true);
     try {
-      await onSave({ ...form, total_amount: total, advance_paid: advance });
-      onClose();
-    } catch(e) {
-      setFormErr(e?.response?.data?.error || 'Erreur serveur');
-    } finally { setSaving(false); }
+      await axios.post(`${API}/admin/agencies/${agency.id}/users`, form, { headers });
+      showToast(`Gestionnaire "${form.username}" créé`, 'success');
+      setShowForm(false); setForm({ username:'', password:'', full_name:'', city:'', role:'manager' }); load();
+    } catch(e) { showToast(e.response?.data?.error || 'Erreur', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const doToggle = async (u) => {
+    try {
+      await axios.patch(`${API}/admin/agencies/${agency.id}/users/${u.id}`, { is_active: u.is_active ? 0 : 1 }, { headers });
+      showToast(u.is_active ? 'Compte désactivé' : 'Compte activé', 'info'); load();
+    } catch(e) { showToast(e.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const doDelete = async (u) => {
+    if (!confirm(`Supprimer "${u.full_name || u.username}" ?`)) return;
+    try { await axios.delete(`${API}/admin/agencies/${agency.id}/users/${u.id}`, { headers }); showToast('Compte supprimé', 'info'); load(); }
+    catch(e) { showToast(e.response?.data?.error || 'Erreur', 'error'); }
+  };
+
+  const doResetPass = async () => {
+    if (!newPass || newPass.length < 6) return showToast('Min. 6 caractères', 'error');
+    try {
+      await axios.post(`${API}/admin/agencies/${agency.id}/users/${resetTarget.id}/reset-password`, { password: newPass }, { headers });
+      showToast('Mot de passe réinitialisé', 'success'); setResetTarget(null); setNewPass('');
+    } catch(e) { showToast(e.response?.data?.error || 'Erreur', 'error'); }
   };
 
   return (
-    <div className="modal-overlay" onClick={e => e.target===e.currentTarget && onClose()}>
-      <div className="modal-box" style={{ maxWidth:500 }}>
-        <div className="modal-header">
-          <div>
-            <h2 style={{ display:'flex', alignItems:'center', gap:8 }}>
-              <Package size={16} color="var(--green-l)" />
-              {initial ? 'Modifier le colis' : 'Enregistrer un colis'}
-            </h2>
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Expédition sans voyageur</div>
-          </div>
-          <button className="modal-close" onClick={onClose}>×</button>
+    <div style={{ marginTop:16, borderTop:'1px solid var(--border)', paddingTop:16 }}>
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12 }}>
+        <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', display:'flex', alignItems:'center', gap:6 }}>
+          <Users size={13} /> Gestionnaires ({users.length})
         </div>
-        <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:13 }}>
-          {/* Voyage */}
-          <div className="input-group">
-            <label className="input-label">Voyage <span style={{ color:'var(--err)' }}>*</span></label>
-            <div style={{ position:'relative' }}>
-              <select className="input-field" value={form.trip_id} onChange={field('trip_id')} style={{ paddingRight:30 }}>
-                <option value="">— Sélectionner un voyage —</option>
-                {trips.map(t => (
-                  <option key={t.id} value={t.id}>
-                    {t.departure_city} → {t.arrival_city} · {fmtDateColis(t.departure_date)} {t.departure_time}
-                  </option>
-                ))}
+        <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 11px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => setShowForm(!showForm)}>
+          {showForm ? <><X size={11} /> Annuler</> : '+ Ajouter'}
+        </button>
+      </div>
+
+      {showForm && (
+        <div style={{ background:'rgba(61,170,106,0.04)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:10, padding:14, marginBottom:12, display:'flex', flexDirection:'column', gap:10 }}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:8 }}>
+            <Inp label="Identifiant *">
+              <input className="input-field" style={{ fontSize:12 }} placeholder="transdavid.boma"
+                value={form.username} onChange={e=>setForm({...form,username:e.target.value.toLowerCase().replace(/\s/g,'')})} />
+            </Inp>
+            <Inp label="Mot de passe *">
+              <input className="input-field" style={{ fontSize:12 }} type="password" placeholder="Min. 6 car."
+                value={form.password} onChange={e=>setForm({...form,password:e.target.value})} />
+            </Inp>
+            <Inp label="Nom complet">
+              <input className="input-field" style={{ fontSize:12 }} placeholder="Jean Mbeki"
+                value={form.full_name} onChange={e=>setForm({...form,full_name:e.target.value})} />
+            </Inp>
+            <Inp label="Ville assignée">
+              <select className="input-field" style={{ fontSize:12 }} value={form.city} onChange={e=>setForm({...form,city:e.target.value})}>
+                <option value="">— Toutes les villes —</option>
+                {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
-              <ChevronDown size={13} style={{ position:'absolute', right:9, top:'50%', transform:'translateY(-50%)', color:'var(--muted)', pointerEvents:'none' }} />
+            </Inp>
+            <Inp label="Rôle">
+              <select className="input-field" style={{ fontSize:12 }} value={form.role} onChange={e=>setForm({...form,role:e.target.value})}>
+                <option value="manager">Gestionnaire</option>
+                <option value="owner">Propriétaire</option>
+              </select>
+            </Inp>
+            <div style={{ display:'flex', alignItems:'flex-end' }}>
+              <button className="btn btn-primary" style={{ fontSize:12, width:'100%', justifyContent:'center', display:'flex', alignItems:'center', gap:6 }} onClick={doCreate} disabled={saving}>
+                {saving ? 'Création…' : <><Check size={12} /> Créer</>}
+              </button>
             </div>
           </div>
-          {/* Destinataire */}
-          <div className="input-group">
-            <label className="input-label">Nom du destinataire <span style={{ color:'var(--err)' }}>*</span></label>
-            <input className="input-field" placeholder="Jean Mukeba" value={form.recipient_name} onChange={field('recipient_name')} />
+          <div style={{ fontSize:11, color:'var(--muted)', padding:'6px 10px', background:'var(--card)', borderRadius:7, display:'flex', alignItems:'center', gap:6 }}>
+            <MapPin size={11} />
+            {form.city
+              ? <>Ce gestionnaire verra uniquement les voyages depuis <strong>{form.city}</strong>.</>
+              : <>Sans ville assignée → accès à toutes les villes (propriétaire).</>
+            }
           </div>
-          {/* Description */}
-          <div className="input-group">
-            <label className="input-label">Description du colis <span style={{ color:'var(--err)' }}>*</span></label>
-            <textarea className="input-field" placeholder="Ex: 2 cartons vêtements, pièces électroniques…"
-              value={form.description} onChange={field('description')}
-              style={{ resize:'vertical', minHeight:70, fontFamily:'inherit' }} />
-          </div>
-          {/* Montants */}
-          <div className="grid-2">
-            <div className="input-group">
-              <label className="input-label">Montant total (FC) <span style={{ color:'var(--err)' }}>*</span></label>
-              <input className="input-field" type="number" min="0" step="100" placeholder="0" value={form.total_amount} onChange={field('total_amount')} />
-            </div>
-            <div className="input-group">
-              <label className="input-label">Avance payée (FC)</label>
-              <input className="input-field" type="number" min="0" step="100" placeholder="0" value={form.advance_paid} onChange={field('advance_paid')} />
-            </div>
-          </div>
-          {/* Récap paiement */}
-          {total > 0 && (
-            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'12px 14px' }}>
-              {[
-                ['Total',         `${fmtFC(total)} FC`,     undefined],
-                ['Avance payée',  `${fmtFC(advance)} FC`,   undefined],
-                ['Reste à payer', `${fmtFC(remaining)} FC`, remaining > 0 ? '#E8A838' : '#3DAA6A'],
-              ].map(([l,v,color]) => (
-                <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:5 }}>
-                  <span style={{ color:'var(--muted)' }}>{l}</span>
-                  <span style={{ fontWeight:800, color: color || 'var(--text)', fontFamily:'monospace' }}>{v}</span>
-                </div>
-              ))}
-              <div style={{ display:'flex', justifyContent:'flex-end', paddingTop:8, borderTop:'1px solid var(--border)', marginTop:4 }}>
-                <ColisPill status={payStatus} />
-              </div>
-            </div>
-          )}
-          {formErr && (
-            <div style={{ background:'rgba(220,80,80,.1)', border:'1px solid rgba(220,80,80,.3)', borderRadius:8, padding:'9px 12px', fontSize:13, color:'var(--err)', display:'flex', alignItems:'center', gap:7 }}>
-              <AlertTriangle size={13} /> {formErr}
-            </div>
-          )}
         </div>
-        <div className="modal-footer">
-          <button className="btn btn-ghost" style={{ fontSize:12, padding:'7px 14px' }} onClick={onClose}>Annuler</button>
-          <button className="btn btn-primary" onClick={handleSave} disabled={saving}
-            style={{ display:'inline-flex', alignItems:'center', gap:7, opacity:saving?.7:1 }}>
-            {saving ? <><div className="spinner"/>Enregistrement…</> : <><Check size={13}/>Enregistrer</>}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+      )}
 
-// ── Composant : Sélecteur de voyage pour le manifeste ─────────────────────────
-function ManifestTripSelector({ trips, selectedId, onChange, userCity, isOwner }) {
-  const relevantTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
-  // Trier : les plus récents en premier
-  const sorted = [...relevantTrips].sort((a,b) => {
-    const da = new Date(`${a.departure_date}T${a.departure_time}`);
-    const db = new Date(`${b.departure_date}T${b.departure_time}`);
-    return db - da;
-  });
+      {loading
+        ? <div style={{ textAlign:'center', padding:16, color:'var(--muted)', fontSize:12 }}>Chargement…</div>
+        : users.length === 0
+          ? <div style={{ textAlign:'center', padding:16, color:'var(--muted)', fontSize:12 }}>Aucun gestionnaire — cliquez sur "+ Ajouter"</div>
+          : <div style={{ display:'flex', flexDirection:'column', gap:6 }}>
+              {users.map(u => {
+                const meta = u.city ? (CITY_META[u.city] || { color:'var(--muted)', bg:'var(--card)', Icon: MapPin }) : { color:'var(--gold)', bg:'rgba(245,166,35,0.08)', Icon: Crown };
+                return (
+                  <div key={u.id} style={{ display:'flex', alignItems:'center', justifyContent:'space-between', background: u.is_active ? meta.bg : 'var(--card)', border:`1px solid ${u.is_active ? meta.color+'30':'var(--border)'}`, borderRadius:8, padding:'9px 12px', opacity: u.is_active ? 1 : 0.6, flexWrap:'wrap', gap:8 }}>
+                    <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                      <meta.Icon size={16} color={meta.color} />
+                      <div>
+                        <div style={{ fontSize:13, fontWeight:700 }}>{u.full_name || u.username}</div>
+                        <div style={{ fontSize:11, color:'var(--muted)', display:'flex', alignItems:'center', gap:6, flexWrap:'wrap' }}>
+                          <code style={{ background:'var(--card)', padding:'0 4px', borderRadius:3, fontSize:10 }}>{u.username}</code>
+                          {u.city ? <CityBadge city={u.city} /> : <span style={{ color:'var(--gold)', fontWeight:700 }}>Toutes villes</span>}
+                          <span style={{ color: u.role==='owner' ? 'var(--gold)' : 'var(--muted)' }}>
+                            {u.role==='owner' ? 'Propriétaire' : 'Gestionnaire'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                    <div style={{ display:'flex', gap:5 }}>
+                      <button className="btn btn-ghost" style={{ fontSize:10, padding:'4px 8px', display:'inline-flex', alignItems:'center', gap:4 }} title="Réinitialiser le mot de passe"
+                        onClick={() => { setResetTarget(u); setNewPass(''); }}>
+                        <KeyRound size={11} />
+                      </button>
+                      <button className="btn btn-ghost" style={{ fontSize:10, padding:'4px 8px', color: u.is_active ? 'var(--gold)':'var(--ok)', display:'inline-flex', alignItems:'center' }}
+                        onClick={() => doToggle(u)} title={u.is_active ? 'Désactiver' : 'Activer'}>
+                        {u.is_active ? <Ban size={11} /> : <Check size={11} />}
+                      </button>
+                      <button className="btn btn-danger" style={{ fontSize:10, padding:'4px 8px', display:'inline-flex', alignItems:'center' }}
+                        onClick={() => doDelete(u)}>
+                        <Trash2 size={11} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+      }
 
-  // Grouper par date
-  const grouped = {};
-  sorted.forEach(t => {
-    const key = t.departure_date;
-    if (!grouped[key]) grouped[key] = [];
-    grouped[key].push(t);
-  });
-
-  return (
-    <div style={{ marginBottom:16 }}>
-      <div style={{ fontSize:12, fontWeight:700, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>
-        Sélectionner un voyage
-      </div>
-      <select
-        className="input-field"
-        value={selectedId}
-        onChange={e => onChange(e.target.value)}
-        style={{ width:'100%', fontSize:13 }}
-      >
-        <option value="">— Choisir un voyage pour voir son manifeste —</option>
-        {Object.entries(grouped).map(([date, dayTrips]) => (
-          <optgroup key={date} label={new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}>
-            {dayTrips.map(t => (
-              <option key={t.id} value={t.id}>
-                {t.departure_city} → {t.arrival_city} · {new Date(t.departure_date+'T12:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} · {t.available_seats}/{t.total_seats} places {t.bus_name ? `· ${t.bus_name}` : ''}
-              </option>
-            ))}
-          </optgroup>
-        ))}
-      </select>
-      {sorted.length === 0 && (
-        <div style={{ fontSize:12, color:'var(--muted)', marginTop:8, padding:'10px', background:'var(--card)', borderRadius:8, textAlign:'center' }}>
-          Aucun voyage créé. Créez des voyages depuis l'onglet Voyages.
-        </div>
+      {resetTarget && (
+        <Modal title="Réinitialiser le mot de passe" subtitle={resetTarget.full_name || resetTarget.username}
+          onClose={() => { setResetTarget(null); setNewPass(''); }}
+          onConfirm={doResetPass} confirmLabel="Mettre à jour →" maxWidth={380}>
+          <Inp label="Nouveau mot de passe (min. 6 caractères)">
+            <input className="input-field" type="password" placeholder="••••••••" value={newPass}
+              onChange={e=>setNewPass(e.target.value)} autoFocus />
+          </Inp>
+          <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 12px', background:'var(--card)', borderRadius:8, display:'flex', alignItems:'center', gap:7 }}>
+            <AlertTriangle size={13} color="var(--gold)" /> Le gestionnaire devra utiliser ce mot de passe dès sa prochaine connexion.
+          </div>
+        </Modal>
       )}
     </div>
   );
 }
 
-// ── Composant : Stats par ville (vue propriétaire) ─────────────────────────────
-function CityStatsGrid({ trips, bookings }) {
-  const cityData = CITIES.map(city => {
-    const cityTrips    = trips.filter(t => t.departure_city === city);
-    const cityBookings = bookings.filter(b => b.departure_city === city);
-    const confirmed    = cityBookings.filter(b => b.status === 'confirmed').length;
-    const pending      = cityBookings.filter(b => b.status === 'pending').length;
-    const revenue      = cityBookings.filter(b => b.status === 'confirmed').reduce((s,b) => s + Number(b.total_price||0), 0);
-    const fillRate     = cityTrips.length > 0
-      ? Math.round(cityBookings.filter(b=>b.status!=='cancelled').length / cityTrips.reduce((s,t) => s+(t.total_seats||0), 0) * 100)
-      : 0;
-    return { city, trips: cityTrips.length, bookings: cityBookings.length, confirmed, pending, revenue, fillRate };
-  }).filter(d => d.trips > 0 || d.bookings > 0);
-
-  if (cityData.length === 0) return null;
-
-  return (
-    <div className="glass p-16 fade-in fade-in-4" style={{ marginBottom:14 }}>
-      <div className="section-title" style={{ marginBottom:12, display:'flex', alignItems:'center', gap:7 }}><MapPin size={14} /> Performance par ville</div>
-      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill, minmax(200px,1fr))', gap:10 }}>
-        {cityData.map(d => {
-          const meta = CITY_META[d.city] || { color:'var(--green-l)', bg:'var(--green-bg)', Icon: MapPin };
-          return (
-            <div key={d.city} style={{ background:meta.bg, border:`1px solid ${meta.color}25`, borderRadius:12, padding:'14px 16px' }}>
-              <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
-                <meta.Icon size={20} color={meta.color} />
-                <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:meta.color }}>{d.city}</span>
-              </div>
-              <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:6 }}>
-                {[
-                  ['Voyages',  d.trips,     'var(--text)'],
-                  ['Réservés', d.confirmed, 'var(--ok)'],
-                  ['En attente', d.pending, 'var(--gold)'],
-                  ['Taux remplissage', `${d.fillRate}%`, meta.color],
-                ].map(([l,v,c]) => (
-                  <div key={l} style={{ background:'rgba(0,0,0,0.12)', borderRadius:8, padding:'8px 10px' }}>
-                    <div style={{ fontSize:16, fontWeight:800, color:c }}>{v}</div>
-                    <div style={{ fontSize:10, color:'var(--muted)', marginTop:2 }}>{l}</div>
-                  </div>
-                ))}
-              </div>
-              <div style={{ marginTop:10, padding:'7px 10px', background:'rgba(0,0,0,0.12)', borderRadius:8, display:'flex', justifyContent:'space-between', alignItems:'center' }}>
-                <span style={{ fontSize:11, color:'var(--muted)' }}>Revenus</span>
-                <span style={{ fontWeight:800, fontSize:13, color:'var(--gold)' }}>{d.revenue.toLocaleString('fr-FR')} FC</span>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
-// ── Composant : Tabs filtre ville (pour propriétaire) ─────────────────────────
-function CityFilterTabs({ value, onChange, trips, bookings }) {
-  const activeCities = CITIES.filter(c =>
-    trips.some(t => t.departure_city === c) || bookings.some(b => b.departure_city === c)
-  );
-  if (activeCities.length < 2) return null;
-  const tabs = [{ id:'all', label:'Toutes', Icon: Globe }, ...activeCities.map(c => ({ id:c, label:c, Icon: CITY_META[c]?.Icon || MapPin }))];
-  return (
-    <div style={{ display:'flex', gap:6, flexWrap:'wrap', marginBottom:14 }}>
-      {tabs.map(t => {
-        const meta = CITY_META[t.id];
-        const isActive = value === t.id;
-        return (
-          <button
-            key={t.id}
-            onClick={() => onChange(t.id)}
-            style={{
-              padding:'6px 14px', borderRadius:20, fontSize:12, fontWeight:700, cursor:'pointer', transition:'all 0.18s',
-              background: isActive ? (meta?.color || 'var(--green-d)') : 'var(--card)',
-              border: `1px solid ${isActive ? (meta?.color || 'var(--green-d)') : 'var(--border)'}`,
-              color: isActive ? '#fff' : 'var(--muted)',
-              display:'inline-flex', alignItems:'center', gap:5,
-            }}
-          >
-            <t.Icon size={11} /> {t.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
-export default function AgencyDashboard() {
+/* ══════════════════════════════════════════════════════════════
+   ADMIN DASHBOARD PRINCIPAL
+══════════════════════════════════════════════════════════════ */
+export default function AdminDashboard() {
   const navigate = useNavigate();
-  const { user, headers: _headers } = getAuth();
-  // useMemo pour stabiliser headers et éviter les boucles infinies dans useEffect
-  const token = user?.token || localStorage.getItem('token');
-  const headers = useMemo(() => ({ Authorization: `Bearer ${token}` }), [token]);
-  const [tab, setTab]             = useState('overview');
+  const headers  = getAdminHeaders();
+
+  const [tab, setTab]         = useState('overview');
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [stats, setStats]         = useState({});
-  const [withdrawBalance, setWithdrawBalance] = useState(0);
-  const [withdrawals, setWithdrawals]         = useState([]);
-  const [withdrawModal, setWithdrawModal]     = useState(false);
-  const [withdrawAmount, setWithdrawAmount]   = useState('');
-  const [withdrawLoading, setWithdrawLoading] = useState(false);
-  const [trips, setTrips]         = useState([]);
-  const [bookings, setBookings]   = useState([]);
-  const [buses, setBuses]         = useState([]);
-  const [settings, setSettings]   = useState({ cancel_rate:20, phone:'', email:'', address:'', logo_url:'', home_city:'' });
-  const [loading, setLoading]     = useState(true);
-  const [toast, setToast]         = useState(null);
-  const [savingSettings, setSavingSettings] = useState(false);
-  const [busModal, setBusModal]   = useState(false);
-  const [tripModal, setTripModal] = useState(false);
-  const [bulkModal, setBulkModal] = useState(false);
-  const [editBus, setEditBus]     = useState(null);
-  const [editTrip, setEditTrip]   = useState(null);
-  const [seatModal, setSeatModal] = useState(null); // { trip } — vue occupation sièges
-  const [cityFilter, setCityFilter] = useState('all');
-  const [manifestTripId, setManifestTripId] = useState('');
+  const [toast, setToast]     = useState(null);
+  const [loading, setLoading] = useState(true);
 
-  // ── Réservation sur place ────────────────────────────────────────────────────
-  const [onsiteModal,     setOnsiteModal]     = useState(false);
-  const [onsiteStep,      setOnsiteStep]      = useState(0); // 0=voyage 1=sièges 2=passager
-  const [onsiteTripId,    setOnsiteTripId]    = useState('');
-  const [onsiteSeats,     setOnsiteSeats]     = useState([]);
-  const [onsiteSeatsData, setOnsiteSeatsData] = useState(null);
-  const [onsiteSeatsLoad, setOnsiteSeatsLoad] = useState(false);
-  const [onsiteForm,      setOnsiteForm]      = useState({ name:'', phone:'', passengers:1 });
-  const [onsiteLoading,   setOnsiteLoading]   = useState(false);
-
-  const [busForm, setBusForm]     = useState({ bus_name:'', total_seats:50, layout:'2+3', description:'' });
-  const [tripForm, setTripForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' });
-  const [bulkForm, setBulkForm]   = useState({ bus_id:'', departure_city:'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
-  const [bulkPreview, setBulkPreview] = useState([]);
-  const [bulkLoading, setBulkLoading] = useState(false);
-
-  // ── État onglet Gestionnaires ─────────────────────────────────────────────────
-  const [agencyUsers, setAgencyUsers]       = useState([]);
-  const [usersLoading, setUsersLoading]     = useState(false);
-  const [userModal, setUserModal]           = useState(false);
-  const [editUser, setEditUser]             = useState(null);
-  const [resetPassModal, setResetPassModal] = useState(null);
-  const [newPass, setNewPass]               = useState('');
-  const [userForm, setUserForm]             = useState({ username:'', password:'', full_name:'', city:'', role:'manager' });
-
-  // ── État onglet Colis ─────────────────────────────────────────────────────────
-  const [colisList,     setColisList]     = useState([]);
-  const [colisLoading,  setColisLoading]  = useState(false);
-  const [colisModal,    setColisModal]    = useState(null);  // null | 'new' | colisObj
-  const [colisDeleting, setColisDeleting] = useState(null);
-  const [colisFilterType, setColisFilterType] = useState('date'); // 'date' | 'trip'
-  const [colisFilterDate, setColisFilterDate] = useState(todayStr());
-  const [colisFilterTrip, setColisFilterTrip] = useState('');
-  const [colisSearch,     setColisSearch]     = useState('');
+  const [stats, setStats]               = useState({});
+  const [agencies, setAgencies]         = useState([]);
+  const [bookings, setBookings]         = useState([]);
+  const [gallery, setGallery]           = useState([]);
+  const [settings, setSettings]         = useState({ commission_rate:10 });
+  const [contributions, setContributions] = useState([]);
+  const [withdrawals, setWithdrawals]      = useState([]);
 
   // ── État filtres finance / réservations (Vue d'ensemble) ─────────────────────
   const [financePeriod, setFinancePeriod] = useState('all');   // 'all' | 'day' | 'month'
-  const [financeDate,   setFinanceDate]   = useState(todayStr());        // YYYY-MM-DD
-  const [financeMonth,  setFinanceMonth]  = useState(todayStr().slice(0,7)); // YYYY-MM
+  const [financeDate,   setFinanceDate]   = useState(new Date().toISOString().split('T')[0]);
+  const [financeMonth,  setFinanceMonth]  = useState(new Date().toISOString().slice(0,7));
   const [financeStatus, setFinanceStatus] = useState('all');   // 'all' | 'confirmed' | 'cancelled' | 'pending'
+
+  const [agencyModal, setAgencyModal]   = useState(false);
+  const [editAgency, setEditAgency]     = useState(null);
+  const [expandedAgency, setExpandedAgency] = useState(null);
+  const [expandedTrips,  setExpandedTrips]  = useState(null); // agence dont on voit les voyages
+  const [seatModal,      setSeatModal]      = useState(null); // trip à afficher dans SeatMapModal
+  const [agencyForm, setAgencyForm]     = useState({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10 });
+
+  const [galleryModal, setGalleryModal] = useState(false);
+  const [editGallery, setEditGallery]   = useState(null);
+  const [galleryForm, setGalleryForm]   = useState({ title:'', description:'', image_url:'', category:'general', sort_order:0 });
+
+  // ── Reset Dashboard ──────────────────────────────────────────
+  const [resetModal,       setResetModal]       = useState(false);
+  const [backupXlsxDone,   setBackupXlsxDone]   = useState(false);
+  const [backupPdfDone,    setBackupPdfDone]     = useState(false);
+  const [resetConfirmText, setResetConfirmText]  = useState('');
+  const [resetting,        setResetting]         = useState(false);
 
   const ok  = msg => setToast({ msg, type:'success' });
   const err = msg => setToast({ msg, type:'error' });
   const inf = msg => setToast({ msg, type:'info' });
-  const goTab = (id) => { setTab(id); setSidebarOpen(false); };
   const showToast = (msg, type='info') => setToast({ msg, type });
+  const goTab = id => { setTab(id); setSidebarOpen(false); };
 
-  // ── Ville du gestionnaire connecté ───────────────────────────────────────────
-  // user.is_owner → vient du JWT signé par le serveur (infalsifiable)
-  // user.city     → ville filtrée, null si propriétaire
-  const isOwner  = user.is_owner === true;
-  const userCity = isOwner ? null : (user.city || null);
-
-  // ── Filtrage des voyages et réservations ──────────────────────────────────────
-  const filteredByCity = (arr, cityKey) => {
-    if (isOwner) return cityFilter === 'all' ? arr : arr.filter(x => x[cityKey] === cityFilter);
-    return arr.filter(x => x[cityKey] === userCity);
+  const load = async (silent=false) => {
+    if (!silent) setLoading(true);
+    try {
+      const [st, ag, gl, se, co, wd, bk] = await Promise.all([
+        axios.get(`${API}/admin/stats`,        { headers }).catch(()=>({data:{}})),
+        axios.get(`${API}/admin/agencies`,      { headers }),
+        axios.get(`${API}/admin/gallery`,       { headers }).catch(()=>({data:[]})),
+        axios.get(`${API}/admin/settings`,      { headers }).catch(()=>({data:{commission_rate:10}})),
+        axios.get(`${API}/admin/contributions`, { headers }).catch(()=>({data:[]})),
+        axios.get(`${API}/admin/withdrawals`,   { headers }).catch(()=>({data:[]})),
+        axios.get(`${API}/admin/bookings`,      { headers }).catch(()=>({data:[]})),
+      ]);
+      setStats(st.data || {}); setAgencies(Array.isArray(ag.data) ? ag.data : []);
+      setGallery(Array.isArray(gl.data) ? gl.data : []); setSettings(se.data || { commission_rate:10 });
+      setContributions(Array.isArray(co.data) ? co.data : []);
+      setWithdrawals(Array.isArray(wd.data) ? wd.data : []);
+      setBookings(Array.isArray(bk.data) ? bk.data : []);
+    } catch(e) {
+      if (e.response?.status===401) { localStorage.clear(); navigate('/admin/login'); }
+      else if (!silent) err('Erreur de chargement');
+    } finally { if (!silent) setLoading(false); }
   };
 
-  const visibleTrips    = filteredByCity(trips,    'departure_city');
-  const visibleBookings = filteredByCity(bookings, 'departure_city');
+  useEffect(() => { load(); const iv = setInterval(() => load(true), 15000); return () => clearInterval(iv); }, []);
 
-  // ── Filtre finance (Vue d'ensemble) : par jour/mois + par statut ──────────────
+  const doMarkPaid = async (id) => {
+    if (!confirm('Confirmer que le virement a bien été effectué à l\'agence ?')) return;
+    try { await axios.patch(`${API}/admin/withdrawals/${id}/pay`, {}, { headers }); ok('Retrait marqué comme payé'); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doCreateAgency = async () => {
+    const { agency_name, username, password } = agencyForm;
+    if (!agency_name || !username || !password) return err('Nom, identifiant et mot de passe requis');
+    if (password.length < 6) return err('Mot de passe trop court (min. 6 caractères)');
+    try {
+      await axios.post(`${API}/admin/agencies`, agencyForm, { headers });
+      ok(`Agence "${agency_name}" créée`); setAgencyModal(false);
+      setAgencyForm({ agency_name:'', username:'', password:'', email:'', phone:'', commission_rate:10 }); load();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doSaveAgency = async () => {
+    try { await axios.patch(`${API}/admin/agencies/${editAgency.id}`, editAgency, { headers }); ok('Agence mise à jour'); setEditAgency(null); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doToggleAgency = async (ag) => {
+    try { await axios.patch(`${API}/admin/agencies/${ag.id}`, { is_active: ag.is_active ? 0 : 1 }, { headers }); inf(ag.is_active ? `"${ag.agency_name}" désactivée` : `"${ag.agency_name}" activée`); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doDeleteAgency = async (ag) => {
+    if (!confirm(`Supprimer "${ag.agency_name}" ? Toutes les données seront perdues.`)) return;
+    try { await axios.delete(`${API}/admin/agencies/${ag.id}`, { headers }); inf(`Agence "${ag.agency_name}" supprimée`); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doSaveGallery = async () => {
+    if (!galleryForm.image_url) return err("URL de l'image requise");
+    try {
+      if (editGallery) { await axios.patch(`${API}/admin/gallery/${editGallery.id}`, galleryForm, { headers }); ok('Image mise à jour'); }
+      else { await axios.post(`${API}/admin/gallery`, galleryForm, { headers }); ok('Image ajoutée'); }
+      setGalleryModal(false); setEditGallery(null);
+      setGalleryForm({ title:'', description:'', image_url:'', category:'general', sort_order:0 }); load();
+    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doDeleteGallery = async id => {
+    if (!confirm('Supprimer cette image ?')) return;
+    try { await axios.delete(`${API}/admin/gallery/${id}`, { headers }); inf('Image supprimée'); load(); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doSaveSettings = async () => {
+    try { await axios.patch(`${API}/admin/settings`, settings, { headers }); ok('Paramètres sauvegardés'); }
+    catch(e) { err(e.response?.data?.error || 'Erreur'); }
+  };
+
+  const doExport = async () => {
+    try {
+      const r = await axios.get(`${API}/admin/export`, { headers });
+      const blob = new Blob([JSON.stringify(r.data, null, 2)], { type:'application/json' });
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+      a.download = `nzela_backup_${new Date().toISOString().split('T')[0]}.json`; a.click();
+      ok('Export téléchargé');
+    } catch { err('Erreur export'); }
+  };
+
+  const doImport = async e => {
+    const file = e.target.files[0]; if (!file) return;
+    if (!confirm('Importer remplacera TOUTES les données. Continuer ?')) return;
+    try {
+      const text = await file.text(); const data = JSON.parse(text);
+      await axios.post(`${API}/admin/import`, data, { headers }); ok('Import réussi — données restaurées'); load();
+    } catch { err('Erreur import — fichier invalide ?'); }
+    e.target.value = '';
+  };
+
+  /* ── Export Excel ──────────────────────────────────────────── */
+  const doExportExcel = () => {
+    try {
+      const wb = XLSX.utils.book_new();
+      const date = new Date().toLocaleDateString('fr-FR');
+
+      // Feuille 1 — Résumé global
+      const resumeData = [
+        ['NZELA RDC — Rapport de sauvegarde', '', date],
+        [],
+        ['Indicateur', 'Valeur'],
+        ['Nombre d\'agences', agencies.length],
+        ['Agences actives', agencies.filter(a => a.is_active).length],
+        ['Agences premium', agencies.filter(a => a.premium).length],
+        ['Revenus totaux (FC)', agencies.reduce((s, a) => s + Number(a.total_revenue || 0), 0)],
+        ['Commissions totales (FC)', agencies.reduce((s, a) => s + Number(a.total_commission || 0), 0)],
+        ['Total réservations', agencies.reduce((s, a) => s + Number(a.total_bookings || 0), 0)],
+        ['Total contributions', contributions.length],
+        ['Montant contributions CDF', contributions.filter(c => c.currency === 'CDF').reduce((s, c) => s + Number(c.amount || 0), 0)],
+        ['Montant contributions USD', contributions.filter(c => c.currency === 'USD').reduce((s, c) => s + Number(c.amount || 0), 0)],
+      ];
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(resumeData), 'Résumé');
+
+      // Feuille 2 — Agences
+      const agHeaders = ['ID', 'Nom', 'Identifiant', 'Email', 'Téléphone', 'Ville', 'Commission %', 'Premium', 'Actif', 'Note', 'Revenus (FC)', 'Commissions (FC)', 'Réservations', 'Date création'];
+      const agRows = agencies.map(a => [
+        a.id, a.agency_name, a.username, a.email || '', a.phone || '',
+        a.home_city || '', a.commission_rate || 10,
+        a.premium ? 'Oui' : 'Non', a.is_active ? 'Oui' : 'Non',
+        a.note || 3,
+        Number(a.total_revenue || 0), Number(a.total_commission || 0),
+        Number(a.total_bookings || 0),
+        a.created_at ? new Date(a.created_at).toLocaleDateString('fr-FR') : '',
+      ]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([agHeaders, ...agRows]), 'Agences');
+
+      // Feuille 3 — Contributions
+      const coHeaders = ['Référence', 'Contributeur', 'Téléphone', 'Opérateur', 'Montant', 'Devise', 'ID Transaction', 'Message', 'Date'];
+      const coRows = contributions.map(c => [
+        c.reference, c.contributor_name || 'Anonyme', c.phone || '',
+        c.operator || '', Number(c.amount || 0), c.currency || 'CDF',
+        c.transaction_id || '', c.message || '',
+        c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : '',
+      ]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([coHeaders, ...coRows]), 'Contributions');
+
+      XLSX.writeFile(wb, `nzela_backup_${new Date().toISOString().split('T')[0]}.xlsx`);
+      setBackupXlsxDone(true);
+      ok('Export Excel téléchargé');
+    } catch (e) { err('Erreur export Excel'); console.error(e); }
+  };
+
+  /* ── Export PDF ────────────────────────────────────────────── */
+  const doExportPdf = () => {
+    try {
+      const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'a4' });
+      const dateStr = new Date().toLocaleDateString('fr-FR', { year:'numeric', month:'long', day:'numeric' });
+      const totalRevenue    = agencies.reduce((s, a) => s + Number(a.total_revenue || 0), 0);
+      const totalCommission = agencies.reduce((s, a) => s + Number(a.total_commission || 0), 0);
+
+      // ── En-tête
+      doc.setFillColor(15, 23, 42);
+      doc.rect(0, 0, 210, 40, 'F');
+      doc.setTextColor(61, 170, 106);
+      doc.setFontSize(20); doc.setFont('helvetica', 'bold');
+      doc.text('NZELA RDC', 14, 16);
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(11); doc.setFont('helvetica', 'normal');
+      doc.text('Rapport de sauvegarde — Super Admin', 14, 25);
+      doc.setFontSize(9); doc.setTextColor(150, 160, 180);
+      doc.text(`Généré le ${dateStr}`, 14, 33);
+      doc.setTextColor(245, 158, 11);
+      doc.text(`${agencies.length} agences · ${contributions.length} contributions`, 140, 33);
+
+      // ── Résumé stats
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('Vue globale', 14, 52);
+
+      autoTable(doc, {
+        startY: 56,
+        head: [['Indicateur', 'Valeur']],
+        body: [
+          ['Agences enregistrées', `${agencies.length} (${agencies.filter(a=>a.is_active).length} actives)`],
+          ['Agences premium', agencies.filter(a=>a.premium).length.toString()],
+          ['Revenus totaux', `${totalRevenue.toLocaleString('fr-FR')} FC`],
+          ['Commissions totales', `${totalCommission.toLocaleString('fr-FR')} FC`],
+          ['Total réservations', agencies.reduce((s,a)=>s+Number(a.total_bookings||0),0).toLocaleString('fr-FR')],
+          ['Contributions CDF', `${contributions.filter(c=>c.currency==='CDF').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')} FC`],
+          ['Contributions USD', `$${contributions.filter(c=>c.currency==='USD').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')}`],
+        ],
+        styles: { fontSize: 10 },
+        headStyles: { fillColor: [61, 170, 106], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [245, 250, 247] },
+        margin: { left: 14, right: 14 },
+      });
+
+      // ── Tableau agences
+      const afterStats = doc.lastAutoTable.finalY + 10;
+      doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+      doc.text('Liste des agences', 14, afterStats);
+
+      autoTable(doc, {
+        startY: afterStats + 4,
+        head: [['Agence', 'Ville', 'Comm.', 'Statut', 'Revenus (FC)', 'Réservations']],
+        body: agencies.map(a => [
+          a.agency_name,
+          a.home_city || '—',
+          `${a.commission_rate || 10}%`,
+          a.is_active ? 'Actif' : 'Inactif',
+          Number(a.total_revenue || 0).toLocaleString('fr-FR'),
+          Number(a.total_bookings || 0).toString(),
+        ]),
+        styles: { fontSize: 9 },
+        headStyles: { fillColor: [15, 23, 42], textColor: 255, fontStyle: 'bold' },
+        alternateRowStyles: { fillColor: [248, 250, 252] },
+        columnStyles: { 4: { halign: 'right' }, 5: { halign: 'center' } },
+        margin: { left: 14, right: 14 },
+      });
+
+      // ── Tableau contributions (nouvelle page si nécessaire)
+      if (contributions.length > 0) {
+        const afterAgencies = doc.lastAutoTable.finalY + 10;
+        const remainingSpace = 297 - afterAgencies - 20;
+        if (remainingSpace < 40) doc.addPage();
+        const yContrib = remainingSpace < 40 ? 20 : afterAgencies;
+
+        doc.setFontSize(12); doc.setFont('helvetica', 'bold');
+        doc.setTextColor(30, 30, 30);
+        doc.text('Contributions', 14, yContrib);
+
+        autoTable(doc, {
+          startY: yContrib + 4,
+          head: [['Référence', 'Contributeur', 'Opérateur', 'Montant', 'Devise', 'Date']],
+          body: contributions.map(c => [
+            c.reference,
+            c.contributor_name || 'Anonyme',
+            c.operator || '—',
+            Number(c.amount || 0).toLocaleString('fr-FR'),
+            c.currency || 'CDF',
+            c.created_at ? new Date(c.created_at).toLocaleDateString('fr-FR') : '—',
+          ]),
+          styles: { fontSize: 9 },
+          headStyles: { fillColor: [245, 158, 11], textColor: 255, fontStyle: 'bold' },
+          alternateRowStyles: { fillColor: [255, 252, 245] },
+          margin: { left: 14, right: 14 },
+        });
+      }
+
+      // ── Pied de page sur chaque page
+      const pageCount = doc.internal.getNumberOfPages();
+      for (let i = 1; i <= pageCount; i++) {
+        doc.setPage(i);
+        doc.setFontSize(8); doc.setTextColor(150, 160, 180);
+        doc.text(`Nzela RDC · Document confidentiel · Page ${i}/${pageCount}`, 14, 290);
+      }
+
+      doc.save(`nzela_backup_${new Date().toISOString().split('T')[0]}.pdf`);
+      setBackupPdfDone(true);
+      ok('Export PDF téléchargé');
+    } catch (e) { err('Erreur export PDF'); console.error(e); }
+  };
+
+  /* ── Reset complet ─────────────────────────────────────────── */
+  const doResetAll = async () => {
+    if (!backupXlsxDone || !backupPdfDone) return err('Veuillez d\'abord télécharger les deux sauvegardes');
+    if (resetConfirmText !== 'SUPPRIMER') return err('Saisissez exactement "SUPPRIMER"');
+    setResetting(true);
+    try {
+      await axios.delete(`${API}/admin/reset`, { headers });
+      ok('Dashboard réinitialisé — toutes les agences supprimées');
+      setResetModal(false);
+      setBackupXlsxDone(false); setBackupPdfDone(false); setResetConfirmText('');
+      load();
+    } catch (e) { err(e.response?.data?.error || 'Erreur lors de la réinitialisation'); }
+    finally { setResetting(false); }
+  };
+
+  const TABS = [
+    { id:'overview',      Icon: LayoutDashboard, label:'Vue globale' },
+    { id:'agencies',      Icon: Building2,       label:'Agences' },
+    { id:'withdrawals',   Icon: Wallet,          label:'Retraits' },
+    { id:'gallery',       Icon: ImageIcon,        label:'Galerie' },
+    { id:'contributions', Icon: HeartHandshake,   label:'Contributions' },
+    { id:'settings',      Icon: Settings,         label:'Paramètres' },
+  ];
+
+  const totalRevenue    = agencies.reduce((s,a) => s + Number(a.total_revenue||0), 0);
+  const totalCommission = agencies.reduce((s,a) => s + Number(a.total_commission||0), 0);
+
+  // ── Filtre finance (Vue d'ensemble admin) : par jour/mois + par statut ────────
   const financeFilteredBookings = useMemo(() => {
-    return visibleBookings.filter(b => {
+    return bookings.filter(b => {
       if (financeStatus !== 'all' && b.status !== financeStatus) return false;
       if (financePeriod === 'day'   && (b.created_at || '').slice(0,10) !== financeDate) return false;
       if (financePeriod === 'month' && !(b.created_at || '').startsWith(financeMonth)) return false;
       return true;
     });
-  }, [visibleBookings, financeStatus, financePeriod, financeDate, financeMonth]);
+  }, [bookings, financeStatus, financePeriod, financeDate, financeMonth]);
 
   const financeSummary = useMemo(() => {
     const confirmed = financeFilteredBookings.filter(b => b.status === 'confirmed');
     const totalAmount = financeFilteredBookings.reduce((s,b) => s + Number(b.total_price||0), 0);
     const netRevenue  = confirmed.reduce((s,b) => s + Number(b.total_price||0) - Number(b.commission_amount||0), 0);
-    return { count: financeFilteredBookings.length, totalAmount, netRevenue };
+    const commission  = confirmed.reduce((s,b) => s + Number(b.commission_amount||0), 0);
+    return { count: financeFilteredBookings.length, totalAmount, netRevenue, commission };
   }, [financeFilteredBookings]);
 
-  // Voyages disponibles pour le sélecteur de manifeste (filtrés par ville du gestionnaire)
-  const manifestTrips = isOwner ? trips : trips.filter(t => t.departure_city === userCity);
-
-  const prevPendingRef = useRef(null);
-
-  const load = async (silent = false) => {
-    if (!silent) setLoading(true);
-    try {
-      const [s,t,b,bs,se,wb,wl] = await Promise.all([
-        axios.get(`${API}/agency/stats`,    { headers }),
-        axios.get(`${API}/agency/trips`,    { headers }),
-        axios.get(`${API}/agency/bookings`, { headers }),
-        axios.get(`${API}/agency/buses`,    { headers }),
-        axios.get(`${API}/agency/settings`, { headers }),
-        axios.get(`${API}/agency/withdrawals/balance`, { headers }).catch(()=>({data:{balance:0}})),
-        axios.get(`${API}/agency/withdrawals`,         { headers }).catch(()=>({data:[]})),
-      ]);
-      setStats(s.data);
-      setTrips(Array.isArray(t.data) ? t.data : []);
-      const newBookings = Array.isArray(b.data) ? b.data : [];
-      setBookings(newBookings);
-      setBuses(Array.isArray(bs.data) ? bs.data : []);
-      setSettings(prev => ({ ...prev, ...se.data }));
-      setWithdrawBalance(wb.data?.balance || 0);
-      setWithdrawals(Array.isArray(wl.data) ? wl.data : []);
-      const newPending = newBookings.filter(b => b.status === 'pending').length;
-      if (prevPendingRef.current !== null && newPending > prevPendingRef.current) {
-        const diff = newPending - prevPendingRef.current;
-        inf(`${diff} nouvelle${diff > 1 ? 's' : ''} réservation${diff > 1 ? 's' : ''} en attente !`);
-      }
-      prevPendingRef.current = newPending;
-    } catch(e) {
-      if (e.response?.status===401) { localStorage.clear(); navigate('/login'); }
-      else if (!silent) err('Erreur de chargement');
-    } finally { if (!silent) setLoading(false); }
-  };
-
-  useEffect(() => {
-    load();
-    const interval = setInterval(() => load(true), 10000);
-    return () => clearInterval(interval);
-  }, []);
-
-  useEffect(() => {
-    setBulkPreview(buildDates(bulkForm.date_from, bulkForm.date_to, bulkForm.active_days));
-  }, [bulkForm.date_from, bulkForm.date_to, bulkForm.active_days]);
-
-  // Pré-remplir la ville de départ dès que userCity est connu
-  useEffect(() => {
-    if (userCity) {
-      setTripForm(f => ({ ...f, departure_city: userCity }));
-      setBulkForm(f => ({ ...f, departure_city: userCity }));
-    }
-  }, [userCity]);
-
-  const doCreateBus = async () => {
-    if (!busForm.bus_name) return err('Nom du bus requis');
-    try { await axios.post(`${API}/agency/buses`, busForm, { headers }); ok('Bus ajouté'); setBusModal(false); setBusForm({ bus_name:'', total_seats:50, layout:'2+3', description:'' }); load(); }
-    catch(e) { err(e.response?.data?.error||'Erreur'); }
-  };
-  const doSaveBus = async () => {
-    try { await axios.patch(`${API}/agency/buses/${editBus.id}`, editBus, { headers }); ok('Bus mis à jour'); setEditBus(null); load(); }
-    catch(e) { err(e.response?.data?.error||'Erreur'); }
-  };
-  const doDeleteBus = async id => {
-    if (!confirm('Désactiver ce bus ?')) return;
-    try { await axios.delete(`${API}/agency/buses/${id}`, { headers }); inf('Bus désactivé'); load(); }
-    catch(e) { err(e.response?.data?.error||'Erreur'); }
-  };
-  const doCreateTrip = async () => {
-    const { departure_city, arrival_city, departure_date, departure_time, price } = tripForm;
-    if (!departure_city||!arrival_city||!departure_date||!departure_time||!price) return err('Champs obligatoires manquants');
-    if (departure_city === arrival_city) return err('Départ et arrivée doivent être différents');
-    try { await axios.post(`${API}/agency/trips`, tripForm, { headers }); ok('Voyage créé'); setTripModal(false); setTripForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_date:'', departure_time:'', price:'', description:'' }); load(); }
-    catch(e) { err(e.response?.data?.error||'Erreur'); }
-  };
-  const doSaveTrip = async () => {
-    try { await axios.patch(`${API}/agency/trips/${editTrip.id}`, editTrip, { headers }); ok('Voyage modifié'); setEditTrip(null); load(); }
-    catch(e) { err(e.response?.data?.error||'Erreur'); }
-  };
-  const doDeleteTrip = async id => {
-    if (!confirm('Supprimer ce voyage ?')) return;
-    try { await axios.delete(`${API}/agency/trips/${id}`, { headers }); inf('Voyage supprimé'); load(); }
-    catch(e) { err(e.response?.data?.error||'Impossible : réservations actives sur ce voyage'); }
-  };
-  const doCreateBulk = async () => {
-    const { departure_city, arrival_city, departure_time, price, date_from, date_to, bus_id, description } = bulkForm;
-    if (!departure_city || !arrival_city)   return err('Départ et arrivée requis');
-    if (departure_city === arrival_city)    return err('Départ et arrivée doivent être différents');
-    if (!departure_time || !price)          return err('Heure et prix requis');
-    if (!date_from || !date_to)             return err('Période requise');
-    if (new Date(date_from) > new Date(date_to)) return err('Date début doit être avant date fin');
-    if (bulkPreview.length === 0)           return err('Aucune date générée — vérifiez la période et les jours');
-    setBulkLoading(true);
-    try {
-      const res = await axios.post(`${API}/agency/trips/bulk`, { bus_id: bus_id || null, departure_city, arrival_city, departure_time, price: parseFloat(price), description: description || null, dates: bulkPreview }, { headers });
-      ok(`${res.data.created} voyage${res.data.created > 1 ? 's' : ''} créé${res.data.created > 1 ? 's' : ''} !`);
-      setBulkModal(false);
-      setBulkForm({ bus_id:'', departure_city: userCity||'', arrival_city:'', departure_time:'', price:'', description:'', date_from:'', date_to:'', active_days:[1,2,3,4,5] });
-      load();
-    } catch(e) { err(e.response?.data?.error||'Erreur'); }
-    finally { setBulkLoading(false); }
-  };
-  const doConfirm = async id => {
-    try { await axios.patch(`${API}/agency/bookings/${id}/confirm`, {}, { headers }); ok('Confirmée'); load(); }
-    catch { err('Erreur'); }
-  };
-  const doCancel = async (id, amount) => {
-    if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés de vos revenus.`)) return;
-    try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
-    catch { err('Erreur'); }
-  };
-  const doWithdraw = async () => {
-    const amount = parseFloat(withdrawAmount);
-    if (!amount || amount <= 0) return err('Montant invalide');
-    if (amount > withdrawBalance) return err(`Solde insuffisant (disponible : ${withdrawBalance.toLocaleString('fr-FR')} FC)`);
-    setWithdrawLoading(true);
-    try {
-      await axios.post(`${API}/agency/withdrawals`, { amount }, { headers });
-      ok('Retrait lancé — en attente de virement par l\'administration');
-      setWithdrawModal(false);
-      setWithdrawAmount('');
-      load();
-    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
-    finally { setWithdrawLoading(false); }
-  };
-
-  // ── Réservation sur place — ouverture directe depuis le Manifeste ────────────
-  // Reprend exactement la logique du bouton "Choisir les sièges →" (step 0),
-  // mais avec le trip_id déjà connu (celui du manifeste affiché).
-  const openOnsiteForTrip = async (tripId) => {
-    setOnsiteTripId(tripId);
-    setOnsiteSeats([]);
-    setOnsiteForm({ name:'', phone:'', passengers:1 });
-    setOnsiteModal(true);
-    setOnsiteSeatsData(null);
-    setOnsiteSeatsLoad(true);
-    try {
-      const r = await axios.get(`${API}/trips/${tripId}/seats`);
-      setOnsiteSeatsData(r.data);
-      setOnsiteStep(1);
-    } catch {
-      err('Impossible de charger le plan des sièges');
-      setOnsiteStep(0);
-    } finally { setOnsiteSeatsLoad(false); }
-  };
-
-  // ── Réservation sur place ─────────────────────────────────────────────────────
-  const doCreateOnsite = async () => {
-    if (!onsiteForm.name.trim()) return err('Nom requis');
-    if (!onsiteForm.phone.trim()) return err('Téléphone requis');
-    if (onsiteSeats.length !== onsiteForm.passengers)
-      return err(`Sélectionnez exactement ${onsiteForm.passengers} siège(s)`);
-    setOnsiteLoading(true);
-    try {
-      const r = await axios.post(`${API}/agency/bookings`, {
-        trip_id:         onsiteTripId,
-        passenger_name:  onsiteForm.name,
-        passenger_phone: onsiteForm.phone,
-        passengers:      onsiteForm.passengers,
-        seat_numbers:    onsiteSeats,
-      }, { headers });
-      ok(`Réservation ${r.data.reference} enregistrée`);
-      setOnsiteModal(false);
-      setOnsiteStep(0); setOnsiteTripId(''); setOnsiteSeats([]);
-      setOnsiteForm({ name:'', phone:'', passengers:1 });
-      load();
-    } catch(e) { err(e.response?.data?.error || 'Erreur lors de la réservation'); }
-    finally { setOnsiteLoading(false); }
-  };
-
-  // ── Export PDF manifeste ──────────────────────────────────────────────────────
-  const printManifest = () => {
-    const trip = trips.find(t => String(t.id) === String(manifestTripId));
-    if (!trip) return;
-    const tripBookings = bookings.filter(b =>
-      String(b.trip_id) === String(manifestTripId) && b.status !== 'cancelled'
-    );
-    const w = window.open('', '_blank');
-    w.document.write(`<!DOCTYPE html><html lang="fr"><head>
-      <meta charset="UTF-8"/>
-      <title>Manifeste — ${trip.departure_city} → ${trip.arrival_city}</title>
-      <style>
-        * { margin:0; padding:0; box-sizing:border-box; }
-        body { font-family: Arial, sans-serif; font-size:12px; color:#000; background:#fff; padding:24px; }
-        h1 { font-size:20px; font-weight:bold; margin-bottom:4px; }
-        .sub { font-size:12px; color:#555; margin-bottom:20px; }
-        .info-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:12px; margin-bottom:22px; border:1.5px solid #000; padding:14px; border-radius:4px; }
-        .info-item label { font-size:10px; text-transform:uppercase; letter-spacing:.06em; color:#666; display:block; margin-bottom:3px; }
-        .info-item span { font-weight:bold; font-size:14px; }
-        table { width:100%; border-collapse:collapse; }
-        thead tr { background:#000; color:#fff; }
-        th { padding:9px 10px; text-align:left; font-size:11px; text-transform:uppercase; letter-spacing:.04em; }
-        td { padding:8px 10px; border-bottom:1px solid #ddd; font-size:12px; vertical-align:middle; }
-        tr:nth-child(even) td { background:#f5f5f5; }
-        .seat { font-family:monospace; font-weight:bold; background:#e8e8e8; padding:1px 6px; border-radius:3px; margin-right:3px; }
-        .ref { font-family:monospace; font-size:11px; }
-        .badge { display:inline-block; padding:2px 7px; border-radius:3px; font-size:10px; font-weight:bold; border:1px solid #999; }
-        .footer { margin-top:22px; padding-top:12px; border-top:1px solid #aaa; display:flex; justify-content:space-between; font-size:10px; color:#666; }
-        @media print { body { padding:10px; } }
-      </style>
-    </head><body>
-      <h1>Manifeste des passagers</h1>
-      <div class="sub">
-        Généré le ${new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
-        à ${new Date().toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'})}
-        — ${agencyName}
-      </div>
-      <div class="info-grid">
-        <div class="info-item"><label>Trajet</label><span>${trip.departure_city} → ${trip.arrival_city}</span></div>
-        <div class="info-item"><label>Date</label><span>${new Date(trip.departure_date+'T12:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'long'})}</span></div>
-        <div class="info-item"><label>Départ</label><span>${trip.departure_time}</span></div>
-        <div class="info-item"><label>Passagers</label><span>${tripBookings.length} / ${trip.total_seats}</span></div>
-      </div>
-      <table>
-        <thead><tr><th>#</th><th>Référence</th><th>Nom</th><th>Téléphone</th><th>Sièges</th><th>Montant (FC)</th><th>Paiement</th><th>Statut</th></tr></thead>
-        <tbody>
-          ${tripBookings.length === 0
-            ? `<tr><td colspan="8" style="text-align:center;padding:30px;color:#888;">Aucun passager enregistré</td></tr>`
-            : tripBookings.map((b, i) => {
-                // seat_numbers a 2 formats selon l'origine : JSON.stringify (résa guichet)
-                // ou chaîne "1A,1B" (résa en ligne) — on gère les deux, sinon les sièges
-                // des clients en ligne n'apparaissaient jamais sur le manifeste imprimé.
-                const seats = (() => {
-                  const raw = b.seat_numbers;
-                  try {
-                    const parsed = JSON.parse(raw || '[]');
-                    return Array.isArray(parsed) ? parsed : String(raw).split(',').map(x=>x.trim()).filter(Boolean);
-                  } catch {
-                    return String(raw || '').split(',').map(x=>x.trim()).filter(Boolean);
-                  }
-                })();
-                return `<tr>
-                  <td style="font-weight:bold">${i+1}</td>
-                  <td class="ref">${b.reference}</td>
-                  <td style="font-weight:600">${b.passenger_name}</td>
-                  <td>${b.passenger_phone || '—'}</td>
-                  <td>${seats.length ? seats.map(s=>`<span class="seat">${s}</span>`).join('') : '—'}</td>
-                  <td style="font-weight:700">${Number(b.total_price).toLocaleString('fr-FR')}</td>
-                  <td><span class="badge">${b.payment_method==='cash'?'Espèces':'Mobile Money'}</span></td>
-                  <td><span class="badge">${b.status==='confirmed'?'Confirmé':b.status==='pending'?'En attente':'—'}</span></td>
-                </tr>`;
-              }).join('')
-          }
-        </tbody>
-      </table>
-      <div class="footer">
-        <span>Nzela — Système de réservation · nzela.cd</span>
-        <span>${trip.bus_name ? 'Bus : ' + trip.bus_name : ''} · Total : ${tripBookings.reduce((s,b)=>s+Number(b.total_price||0),0).toLocaleString('fr-FR')} FC</span>
-      </div>
-      <script>window.onload = () => { window.print(); }<\/script>
-    </body></html>`);
-    w.document.close();
-  };
-  const toggleDay = (day) => setBulkForm(f => ({ ...f, active_days: f.active_days.includes(day) ? f.active_days.filter(d => d !== day) : [...f.active_days, day].sort() }));
-
-  // ── CRUD Gestionnaires ────────────────────────────────────────────────────────
-  const loadUsers = async () => {
-    if (!isOwner) return;
-    setUsersLoading(true);
-    try {
-      const r = await axios.get(`${API}/agency/users`, { headers });
-      setAgencyUsers(Array.isArray(r.data) ? r.data : []);
-    } catch { err('Erreur chargement gestionnaires'); }
-    finally { setUsersLoading(false); }
-  };
-
-  useEffect(() => { if (tab === 'users') loadUsers(); }, [tab]);
-
-  const doCreateUser = async () => {
-    const { username, password, full_name, city, role } = userForm;
-    if (!username || !password) return err('Identifiant et mot de passe requis');
-    if (password.length < 6)   return err('Mot de passe trop court (min. 6 caractères)');
-    try {
-      await axios.post(`${API}/agency/users`, { username, password, full_name, city: city||null, role }, { headers });
-      ok(`Gestionnaire "${username}" créé`);
-      setUserModal(false);
-      setUserForm({ username:'', password:'', full_name:'', city:'', role:'manager' });
-      loadUsers();
-    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
-  };
-
-  const doSaveUser = async () => {
-    try {
-      await axios.patch(`${API}/agency/users/${editUser.id}`, {
-        full_name: editUser.full_name,
-        city:      editUser.city || null,
-        role:      editUser.role,
-        is_active: editUser.is_active,
-      }, { headers });
-      ok('Gestionnaire mis à jour');
-      setEditUser(null);
-      loadUsers();
-    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
-  };
-
-  const doDeleteUser = async (id, username) => {
-    if (!confirm(`Supprimer le compte "${username}" ? Cette action est irréversible.`)) return;
-    try {
-      await axios.delete(`${API}/agency/users/${id}`, { headers });
-      inf(`Compte "${username}" supprimé`);
-      loadUsers();
-    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
-  };
-
-  const doResetPassword = async () => {
-    if (!newPass || newPass.length < 6) return err('Mot de passe trop court (min. 6 caractères)');
-    try {
-      await axios.post(`${API}/agency/users/${resetPassModal.id}/reset-password`, { password: newPass }, { headers });
-      ok(`Mot de passe de "${resetPassModal.username}" réinitialisé`);
-      setResetPassModal(null);
-      setNewPass('');
-    } catch(e) { err(e.response?.data?.error || 'Erreur'); }
-  };
-
-  // ── CRUD Colis ────────────────────────────────────────────────────────────────
-  const loadColis = useCallback(async (silent = false) => {
-    if (!silent) setColisLoading(true);
-    try {
-      const params = colisFilterType === 'trip' && colisFilterTrip
-        ? { trip_id: colisFilterTrip }
-        : { date: colisFilterDate };
-      const r = await axios.get(`${API}/agency/colis`, { headers, params });
-      setColisList(Array.isArray(r.data) ? r.data : []);
-    } catch(e) {
-      if (!silent) err(e?.response?.data?.error || 'Impossible de charger les colis');
-    } finally { if (!silent) setColisLoading(false); }
-  }, [headers, colisFilterType, colisFilterDate, colisFilterTrip]);
-
-  useEffect(() => { if (tab === 'colis') loadColis(); }, [tab, colisFilterType, colisFilterDate, colisFilterTrip]); // eslint-disable-line
-
-  const doSaveColis = async (formData) => {
-    if (colisModal && colisModal.id) {
-      await axios.patch(`${API}/agency/colis/${colisModal.id}`, formData, { headers });
-      ok('Colis modifié');
-    } else {
-      await axios.post(`${API}/agency/colis`, formData, { headers });
-      ok('Colis enregistré');
-    }
-    loadColis();
-  };
-
-  const doDeleteColis = async (id, name) => {
-    if (!confirm(`Supprimer le colis de ${name} ?`)) return;
-    setColisDeleting(id);
-    try {
-      await axios.delete(`${API}/agency/colis/${id}`, { headers });
-      ok('Colis supprimé');
-      loadColis();
-    } catch(e) { err(e?.response?.data?.error || 'Erreur lors de la suppression'); }
-    finally { setColisDeleting(null); }
-  };
-
-  // ── Villes d'arrivée disponibles (exclut la ville de départ) ─────────────────
-  const arrivalCities = (depCity) => CITIES.filter(c => c !== depCity);
-
-  const TABS = [
-    { id:'overview',  Icon: BarChart2,     label:"Vue d'ensemble" },
-    { id:'buses',     Icon: Bus,           label:'Mes bus' },
-    { id:'trips',     Icon: Map,           label:'Voyages' },
-    { id:'bookings',  Icon: Ticket,        label:'Réservations' },
-    { id:'manifest',  Icon: ClipboardList, label:'Manifeste' },
-    { id:'colis',     Icon: Package,       label:'Colis' },
-    ...(isOwner ? [{ id:'users', Icon: Users, label:'Gestionnaires' }] : []),
-    { id:'settings',  Icon: Settings,      label:'Paramètres' },
-  ];
-
-  const pending = visibleBookings.filter(b => b.status==='pending').length;
-  const agencyName = settings.agency_name || user.agency_name || user.username;
+  const currentTab      = TABS.find(t => t.id === tab);
 
   return (
     <div style={{ display:'flex', minHeight:'100vh', background:'var(--night)' }}>
-      {toast && <Toast {...toast} onClose={() => setToast(null)} />}
-      <button className="hamburger" onClick={() => setSidebarOpen(true)} aria-label="Ouvrir le menu"><Menu size={20} /></button>
-      <div className={`sidebar-overlay ${sidebarOpen ? 'open' : ''}`} onClick={() => setSidebarOpen(false)} />
+      {toast && <Toast {...toast} onClose={()=>setToast(null)} />}
 
-      <aside className={`sidebar ${sidebarOpen ? 'open' : ''}`}>
-        <div className="sidebar-logo"><SidebarLogo agencyName={agencyName} logoUrl={settings.logo_url} /></div>
+      <button className="hamburger" onClick={()=>setSidebarOpen(true)} aria-label="Menu" style={{ display:'inline-flex', alignItems:'center', justifyContent:'center' }}>
+        <Menu size={20} />
+      </button>
+      <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.5)', zIndex:49, display:sidebarOpen?'block':'none' }} onClick={()=>setSidebarOpen(false)} />
 
-        {/* Indicateur de ville du gestionnaire */}
-        <div style={{ padding:'10px', borderBottom:'1px solid var(--border)' }}>
-          <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:10, padding:'10px 12px' }}>
-            <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom: userCity ? 8 : 0 }}>
-              <AgencyAvatar name={agencyName} logoUrl={settings.logo_url} size={38} radius={10} />
-              <div>
-                <div style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:13 }}>{agencyName}</div>
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:1 }}>
-                  {isOwner ? <><Crown size={11} /> Propriétaire — toutes villes</> : 'Agence partenaire · RDC'}
-                </div>
-              </div>
+      {/* ── SIDEBAR ─────────────────────────────────────────── */}
+      <aside className={`sidebar ${sidebarOpen?'open':''}`}>
+        <div className="sidebar-logo">
+          <div style={{ display:'flex', alignItems:'center', gap:9 }}>
+            <div style={{ width:30, height:30, borderRadius:8, background:'rgba(245,158,11,0.15)', border:'1px solid rgba(245,158,11,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+              <Crown size={15} color="rgba(245,158,11,0.9)" />
             </div>
-            {userCity && (
-              <div style={{ display:'flex', alignItems:'center', gap:6, marginTop:4 }}>
-                <span style={{ fontSize:11, color:'var(--muted)' }}>Ville :</span>
-                <CityBadge city={userCity} />
-              </div>
-            )}
+            <div>
+              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:'var(--text)' }}>Super Admin</div>
+              <div style={{ fontSize:10, color:'var(--muted)' }}>Nzela RDC · Panneau central</div>
+            </div>
+          </div>
+        </div>
+
+        <div style={{ padding:10, borderBottom:'1px solid var(--border)' }}>
+          <div style={{ background:'rgba(245,158,11,0.08)', border:'1px solid rgba(245,158,11,0.18)', borderRadius:10, padding:'10px 12px' }}>
+            <div style={{ fontSize:11, color:'var(--gold)', fontWeight:700, marginBottom:4, display:'flex', alignItems:'center', gap:5 }}>
+              <Crown size={11} /> ADMINISTRATEUR
+            </div>
+            <div style={{ fontSize:12, color:'var(--muted)' }}>Accès complet — toutes agences, données et paramètres.</div>
           </div>
         </div>
 
         <nav className="sidebar-nav">
           {TABS.map(t => (
-            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
-              <span className="nav-icon"><t.Icon size={15} /></span><span>{t.label}</span>
-              {t.id==='bookings' && pending>0 && <span style={{ marginLeft:'auto', background:'var(--gold)', color:'#000', borderRadius:99, padding:'1px 6px', fontSize:10, fontWeight:700 }}>{pending}</span>}
+            <div key={t.id} className={`nav-item ${tab===t.id?'active':''}`} onClick={()=>goTab(t.id)}>
+              <span className="nav-icon"><t.Icon size={15} /></span>
+              <span>{t.label}</span>
+              {t.id==='agencies' && (
+                <span style={{ marginLeft:'auto', background:'var(--green-bg)', color:'var(--green-l)', borderRadius:99, padding:'1px 7px', fontSize:10, fontWeight:700 }}>
+                  {agencies.length}
+                </span>
+              )}
             </div>
           ))}
         </nav>
+
         <div className="sidebar-footer">
-          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px', display:'inline-flex', alignItems:'center', gap:7 }} onClick={() => { localStorage.clear(); navigate('/login'); }}><LogOut size={13} /> Déconnexion</button>
+          <a href="/" target="_blank" style={{ display:'flex', alignItems:'center', justifyContent:'center', gap:7, textAlign:'center', fontSize:12, color:'var(--muted)', textDecoration:'none', marginBottom:8, padding:'6px', borderRadius:8, border:'1px solid var(--border)' }}>
+            <Globe size={13} /> Voir le site public
+          </a>
+          <button className="btn btn-ghost" style={{ width:'100%', justifyContent:'center', fontSize:12, padding:'8px', display:'flex', alignItems:'center', gap:7 }}
+            onClick={()=>{ localStorage.clear(); navigate('/admin/login'); }}>
+            <LogOut size={14} /> Déconnexion
+          </button>
           <div style={{ fontSize:10, color:'var(--muted)', textAlign:'center', marginTop:8 }}>© 2026 Nzela RDC</div>
         </div>
       </aside>
 
+      {/* ── MAIN ────────────────────────────────────────────── */}
       <main style={{ flex:1, padding:'24px 28px', overflowY:'auto', overflowX:'hidden' }}>
-        <div className="dash-header" style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:20 }}>
+        <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:22, flexWrap:'wrap', gap:10 }}>
           <div>
-            <div style={{ display:'flex', alignItems:'center', gap:10, flexWrap:'wrap' }}>
-              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800, display:'flex', alignItems:'center', gap:8 }}>{(() => { const T = TABS.find(t=>t.id===tab); return T ? <T.Icon size={20} /> : null; })()} {TABS.find(t=>t.id===tab)?.label}</h1>
-              {userCity && <CityBadge city={userCity} />}
-              {isOwner && <span style={{ fontSize:11, background:'rgba(255,200,0,0.12)', color:'var(--gold)', border:'1px solid rgba(255,200,0,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}><Crown size={10} /> Vue globale</span>}
+            <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+              <h1 style={{ fontFamily:'var(--font)', fontSize:20, fontWeight:800, margin:0, display:'flex', alignItems:'center', gap:8 }}>
+                {currentTab && <currentTab.Icon size={20} />} {currentTab?.label}
+              </h1>
+              <span style={{ fontSize:11, background:'rgba(245,158,11,0.1)', color:'var(--gold)', border:'1px solid rgba(245,158,11,0.25)', borderRadius:6, padding:'2px 8px', fontWeight:700, display:'inline-flex', alignItems:'center', gap:4 }}>
+                <Crown size={10} /> Super Admin
+              </span>
             </div>
-            <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>{new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}</div>
+            <div style={{ color:'var(--muted)', fontSize:12, marginTop:2 }}>
+              {new Date().toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}
+            </div>
           </div>
-          <div style={{ display:'flex', gap:8, flexWrap:'wrap' }}>
-            {tab==='buses' && <button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Bus</button>}
-            {tab==='trips' && <>
-              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(true)}><Calendar size={12} style={{ marginRight:5 }} />En masse</button>
-              <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Voyage</button>
-            </>}
-            {tab==='bookings' && (
-              <button className="btn btn-primary" style={{ display:'inline-flex', alignItems:'center', gap:6 }}
-                onClick={() => { setOnsiteModal(true); setOnsiteStep(0); setOnsiteTripId(''); setOnsiteSeats([]); setOnsiteSeatsData(null); setOnsiteForm({ name:'', phone:'', passengers:1 }); }}>
-                <Ticket size={13} /> + Réservation sur place
-              </button>
-            )}
-            {tab==='colis' && (
-              <button className="btn btn-primary" style={{ display:'inline-flex', alignItems:'center', gap:6 }}
-                onClick={() => setColisModal('new')}>
-                <Package size={13} /> + Nouveau colis
-              </button>
-            )}
-            {tab==='users' && isOwner && <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Gestionnaire</button>}
-            <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px', display:'inline-flex', alignItems:'center' }} onClick={() => { localStorage.clear(); navigate('/login'); }}><LogOut size={14} /></button>
+          <div style={{ display:'flex', gap:8 }}>
+            {tab==='agencies' && <button className="btn btn-primary" onClick={()=>setAgencyModal(true)}>+ Agence</button>}
+            {tab==='gallery'  && <button className="btn btn-primary" onClick={()=>{ setEditGallery(null); setGalleryForm({ title:'',description:'',image_url:'',category:'general',sort_order:0 }); setGalleryModal(true); }}>+ Image</button>}
+            <button className="btn btn-ghost mobile-logout" style={{ fontSize:12, padding:'7px 11px', display:'inline-flex', alignItems:'center' }}
+              onClick={()=>{ localStorage.clear(); navigate('/admin/login'); }}><LogOut size={14} /></button>
           </div>
         </div>
 
-        {tab === 'manifest'
-          ? (
-            <div>
-              {/* Sélecteur de voyage pour le manifeste */}
-              <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
-                <div className="section-title" style={{ marginBottom:4, display:'flex', alignItems:'center', justifyContent:'space-between' }}>
-                  <span style={{ display:'flex', alignItems:'center', gap:7 }}><ClipboardList size={14} /> Manifeste passagers</span>
-                  {manifestTripId && (
-                    <button className="btn btn-ghost" style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:5 }} onClick={printManifest}>
-                      🖨️ Exporter PDF
-                    </button>
-                  )}
-                </div>
-                <div style={{ fontSize:12, color:'var(--muted)', marginBottom:14 }}>
-                  Choisissez un voyage pour voir la liste des passagers — disponible dès la création du voyage.
-                </div>
-                <ManifestTripSelector
-                  trips={trips}
-                  selectedId={manifestTripId}
-                  onChange={setManifestTripId}
-                  userCity={userCity}
-                  isOwner={isOwner}
-                />
-                {manifestTripId && (() => {
-                  const trip = trips.find(t => String(t.id) === String(manifestTripId));
-                  if (!trip) return null;
-                  return (
-                    <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                      <CityBadge city={trip.departure_city} />
-                      <span style={{ color:'var(--muted)', fontSize:16 }}>→</span>
-                      <CityBadge city={trip.arrival_city} />
-                      <span style={{ fontSize:13, fontWeight:700 }}>{trip.departure_time}</span>
-                      <span style={{ fontSize:12, color:'var(--muted)' }}>{new Date(trip.departure_date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long'})}</span>
-                      <span className={`badge ${trip.available_seats>0?'b-g':'b-r'}`}>{trip.available_seats}/{trip.total_seats} places</span>
-                      {trip.bus_name && <span className="badge b-b">{trip.bus_name}</span>}
-                    </div>
-                  );
-                })()}
-              </div>
-              {/* ManifestTab reçoit le tripId sélectionné */}
-              <ManifestTab
-                agencyName={agencyName}
-                showToast={showToast}
-                tripId={manifestTripId || undefined}
-                onOpenOnsiteBooking={openOnsiteForTrip}
-              />
-            </div>
-          )
-          : tab === 'colis'
-            ? (() => {
-                // Calculs locaux
-                const colisDisplayed = colisList.filter(c => {
-                  if (!colisSearch) return true;
-                  const q = colisSearch.toLowerCase();
-                  return c.recipient_name.toLowerCase().includes(q) || c.description.toLowerCase().includes(q);
-                });
-                const colisSelectedTrip = colisFilterType === 'trip' && colisFilterTrip
-                  ? trips.find(t => String(t.id) === String(colisFilterTrip))
-                  : null;
-                const colisTotMontant = colisDisplayed.reduce((s,c) => s+(c.total_amount||0), 0);
-                const colisTotReste   = colisDisplayed.reduce((s,c) => s+(c.remaining||0),    0);
-                const colisNbOk       = colisDisplayed.filter(c => c.payment_status==='ok').length;
+        {loading
+          ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
+          : <>
 
-                return (
-                  <div style={{ paddingBottom:40 }}>
-                    {/* Filtres */}
-                    <div className="glass p-16 fade-in" style={{ marginBottom:14, display:'flex', flexWrap:'wrap', alignItems:'center', gap:12 }}>
-                      {/* Toggle date / voyage */}
-                      <div style={{ display:'flex', background:'var(--night)', borderRadius:8, padding:3, gap:2 }}>
-                        {[{ id:'date', label:'Par date' },{ id:'trip', label:'Par voyage' }].map(({ id, label }) => (
-                          <button key={id}
-                            onClick={() => { setColisFilterType(id); setColisSearch(''); }}
-                            style={{ background:colisFilterType===id?'var(--green-d)':'none', border:'none', borderRadius:6, padding:'5px 12px', fontSize:12, color:colisFilterType===id?'#fff':'var(--muted)', cursor:'pointer', fontWeight:colisFilterType===id?700:400, transition:'all .15s' }}>
-                            {label}
-                          </button>
-                        ))}
-                      </div>
-                      {/* Filtre date ou voyage */}
-                      {colisFilterType === 'date'
-                        ? <input type="date" value={colisFilterDate}
-                            onChange={e => setColisFilterDate(e.target.value)}
-                            className="input-field" style={{ width:'auto', fontSize:12 }} />
-                        : (
-                          <div style={{ position:'relative' }}>
-                            <select value={colisFilterTrip} onChange={e => setColisFilterTrip(e.target.value)}
-                              className="input-field" style={{ paddingRight:28, fontSize:12, minWidth:240 }}>
-                              <option value="">— Tous les voyages —</option>
-                              {trips.map(t => (
-                                <option key={t.id} value={t.id}>
-                                  {t.departure_city} → {t.arrival_city} · {fmtDateColis(t.departure_date)} {t.departure_time}
-                                </option>
-                              ))}
-                            </select>
-                            <ChevronDown size={12} style={{ position:'absolute', right:9, top:'50%', transform:'translateY(-50%)', color:'var(--muted)', pointerEvents:'none' }} />
-                          </div>
-                        )
-                      }
-                      {/* Recherche */}
-                      <div style={{ position:'relative', flex:1, minWidth:160 }}>
-                        <Search size={12} style={{ position:'absolute', left:10, top:'50%', transform:'translateY(-50%)', color:'var(--muted)' }} />
-                        <input className="input-field" placeholder="Rechercher destinataire ou colis…"
-                          value={colisSearch} onChange={e => setColisSearch(e.target.value)}
-                          style={{ paddingLeft:30, fontSize:12 }} />
-                        {colisSearch && (
-                          <button onClick={() => setColisSearch('')}
-                            style={{ position:'absolute', right:8, top:'50%', transform:'translateY(-50%)', background:'none', border:'none', color:'var(--muted)', cursor:'pointer', display:'flex', padding:0 }}>
-                            <X size={12} />
-                          </button>
-                        )}
-                      </div>
-                      {/* Export PDF */}
-                      <button onClick={() => exportColisPDF({ colis:colisDisplayed, trip:colisSelectedTrip, agencyName, filterLabel:`Date : ${fmtDateColis(colisFilterDate)}` })}
-                        disabled={colisDisplayed.length===0}
-                        className="btn btn-ghost"
-                        style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, opacity:colisDisplayed.length?1:.5 }}>
-                        <Printer size={13} /> Exporter PDF
-                      </button>
-                      {/* Rafraîchir */}
-                      <button onClick={() => loadColis()} className="btn btn-ghost" style={{ padding:'7px 10px', display:'inline-flex', alignItems:'center' }} title="Rafraîchir">
-                        <RefreshCw size={13} />
-                      </button>
-                    </div>
-
-                    {/* Stats rapides */}
-                    {colisDisplayed.length > 0 && (
-                      <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(140px,1fr))', gap:10, marginBottom:14 }}>
-                        {[
-                          { label:'Colis total',         value: colisDisplayed.length,       color:'var(--text)' },
-                          { label:'Montant total',        value:`${fmtFC(colisTotMontant)} FC`, color:'#4A90D9' },
-                          { label:'Reste à percevoir',    value:`${fmtFC(colisTotReste)} FC`,  color:'#E8A838' },
-                          { label:`Soldés`,               value:`${colisNbOk} / ${colisDisplayed.length}`, color:'#3DAA6A' },
-                        ].map(s => (
-                          <div key={s.label} className="glass p-16" style={{ padding:'11px 14px' }}>
-                            <div style={{ fontSize:10, color:'var(--muted)', marginBottom:4, textTransform:'uppercase', letterSpacing:'.06em' }}>{s.label}</div>
-                            <div style={{ fontSize:15, fontWeight:800, color:s.color }}>{s.value}</div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-
-                    {/* Tableau */}
-                    {colisLoading
-                      ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34, height:34, margin:'0 auto', borderWidth:2.5 }}/></div>
-                      : colisDisplayed.length === 0
-                        ? (
-                          <div className="glass" style={{ textAlign:'center', padding:'60px 24px' }}>
-                            <Package size={36} style={{ margin:'0 auto 12px', display:'block', opacity:.2 }} />
-                            <div style={{ fontWeight:700, fontSize:15, marginBottom:6 }}>Aucun colis</div>
-                            <div style={{ fontSize:13, color:'var(--muted)', marginBottom:18 }}>
-                              {colisSearch ? `Aucun résultat pour « ${colisSearch} »` : 'Aucun colis enregistré pour ce filtre'}
-                            </div>
-                            <button className="btn btn-primary" onClick={() => setColisModal('new')}
-                              style={{ display:'inline-flex', alignItems:'center', gap:7 }}>
-                              <Package size={13} /> Enregistrer un colis
-                            </button>
-                          </div>
-                        )
-                        : (
-                          <div className="glass" style={{ overflow:'hidden' }}>
-                            <div style={{ overflowX:'auto' }}>
-                              <table className="data-table">
-                                <thead>
-                                  <tr>
-                                    <th>#</th><th>Destinataire</th><th>Description</th>
-                                    <th>Voyage</th><th style={{ textAlign:'right' }}>Total</th>
-                                    <th style={{ textAlign:'right' }}>Avance</th>
-                                    <th style={{ textAlign:'right' }}>Reste</th>
-                                    <th>Statut</th><th></th>
-                                  </tr>
-                                </thead>
-                                <tbody>
-                                  {colisDisplayed.map((c, i) => (
-                                    <tr key={c.id}>
-                                      <td style={{ fontSize:12, color:'var(--muted)', fontWeight:700 }}>{i+1}</td>
-                                      <td style={{ fontWeight:700 }}>{c.recipient_name}</td>
-                                      <td style={{ maxWidth:180, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap', fontSize:12, color:'var(--muted)' }} title={c.description}>{c.description}</td>
-                                      <td>
-                                        <div style={{ display:'flex', alignItems:'center', gap:4 }}>
-                                          <CityBadge city={c.departure_city} />
-                                          <span style={{ color:'var(--muted)', fontSize:12 }}>→</span>
-                                          <span style={{ fontSize:12, fontWeight:600 }}>{c.arrival_city}</span>
-                                        </div>
-                                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>{fmtDateColis(c.departure_date)} · {c.departure_time}</div>
-                                      </td>
-                                      <td style={{ textAlign:'right', fontWeight:800, fontFamily:'monospace' }}>{fmtFC(c.total_amount)}</td>
-                                      <td style={{ textAlign:'right', fontFamily:'monospace', color:'#3DAA6A' }}>{fmtFC(c.advance_paid)}</td>
-                                      <td style={{ textAlign:'right', fontFamily:'monospace', fontWeight:800, color: c.remaining>0 ? '#E8A838' : '#3DAA6A' }}>{fmtFC(c.remaining)}</td>
-                                      <td><ColisPill status={c.payment_status} /></td>
-                                      <td>
-                                        <div style={{ display:'flex', gap:5, justifyContent:'flex-end' }}>
-                                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 8px', display:'inline-flex', alignItems:'center' }}
-                                            onClick={() => setColisModal(c)} title="Modifier">
-                                            <Edit2 size={11} />
-                                          </button>
-                                          <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 8px', display:'inline-flex', alignItems:'center', opacity:colisDeleting===c.id?.5:1 }}
-                                            disabled={colisDeleting===c.id}
-                                            onClick={() => doDeleteColis(c.id, c.recipient_name)} title="Supprimer">
-                                            {colisDeleting===c.id ? <div className="spinner" style={{ width:11, height:11 }}/> : <Trash2 size={11} />}
-                                          </button>
-                                        </div>
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )
-                    }
-                  </div>
-                );
-              })()
-          : loading
-            ? <div style={{ textAlign:'center', padding:'60px' }}><div className="spinner" style={{ width:34,height:34,margin:'0 auto',borderWidth:2.5 }}/></div>
-            : <>
-
+          {/* ── VUE GLOBALE ─────────────────────────────────── */}
           {tab==='overview' && <>
-            <div className="grid-4" style={{ marginBottom:16 }}>
-              {[
-                { Icon: Wallet,  label:'Revenus nets', value:`${Number(stats.total_revenue||0).toLocaleString('fr-FR')} FC`, cls:'gold' },
-                { Icon: Gem,     label:`Majoration en ligne (${settings.commission_rate||10}%)`, value:`${Number(stats.total_commission||0).toLocaleString('fr-FR')} FC`, cls:'green' },
-                { Icon: Bus,     label:'Bus actifs', value:stats.total_buses||0, cls:'navy' },
-                { Icon: Clock,   label:'En attente', value:pending, cls:'purple' },
-              ].map((s,i) => (
-                <div key={i} className={`stat-card ${s.cls} fade-in fade-in-${i+1}`}>
-                  <div className="stat-icon"><s.Icon size={22} /></div><div className="stat-value">{s.value}</div><div className="stat-label">{s.label}</div>
-                </div>
-              ))}
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(190px,1fr))', gap:12, marginBottom:20 }}>
+              <StatCard Icon={Building2}    label="Agences actives"   value={agencies.filter(a=>a.is_active).length} sub={`${agencies.length} total`} color="var(--green-l)" />
+              <StatCard Icon={Wallet}       label="Revenus totaux"    value={`${totalRevenue.toLocaleString('fr-FR')} FC`} color="var(--gold)" />
+              <StatCard Icon={Gem}          label="Commissions Nzela" value={`${totalCommission.toLocaleString('fr-FR')} FC`} color="#9B59B6" />
+              <StatCard Icon={Ticket}       label="Réservations"      value={stats.total_bookings || 0} color="var(--green-l)" />
+              <StatCard Icon={Bus}          label="Voyages actifs"    value={stats.total_trips || 0} color="#4A90D9" />
+              <StatCard Icon={HeartHandshake} label="Contributions"   value={contributions.length} sub={`${contributions.reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--ok)" />
             </div>
 
-            <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:16, display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
-              <div>
-                <div className="section-title" style={{ margin:0 }}>Solde disponible au retrait</div>
-                <div style={{ fontSize:22, fontWeight:800, color:'var(--gold)', marginTop:4 }}>{withdrawBalance.toLocaleString('fr-FR')} FC</div>
-              </div>
-              <button className="btn btn-primary" onClick={()=>setWithdrawModal(true)} disabled={withdrawBalance<=0}>💸 Lancer un retrait</button>
-            </div>
-
-            {withdrawals.length > 0 && (
-              <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:16 }}>
-                <div className="section-title" style={{ marginBottom:12 }}>Historique des retraits</div>
-                <div style={{ overflowX:'auto' }}>
-                  <table className="data-table">
-                    <thead><tr><th>Date</th><th>Montant</th><th>Statut</th></tr></thead>
-                    <tbody>{withdrawals.map(w=>(
-                      <tr key={w.id}>
-                        <td style={{ fontSize:12, color:'var(--muted)' }}>{new Date(w.requested_at).toLocaleDateString('fr-FR')}</td>
-                        <td style={{ fontWeight:700 }}>{Number(w.amount).toLocaleString('fr-FR')} FC</td>
-                        <td><span className={`badge ${w.status==='paid' ? 'b-g' : 'b-y'}`}>{w.status==='paid' ? 'Payé' : 'En attente'}</span></td>
-                      </tr>
-                    ))}</tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* Stats par ville — visible uniquement pour le propriétaire */}
-            {isOwner && <CityStatsGrid trips={trips} bookings={bookings} />}
-
-            <div className="glass p-16 fade-in fade-in-3">
-              <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:12, flexWrap:'wrap', gap:10 }}>
-                <div className="section-title" style={{ margin:0 }}>Réservations & revenus {userCity && <CityBadge city={userCity} />}</div>
-                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px' }} onClick={() => setTab('bookings')}>Voir tout →</button>
+            {/* ── Filtre finance & réservations (toutes agences) ─────────────── */}
+            <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
+              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:14, display:'flex', alignItems:'center', gap:7 }}>
+                <Wallet size={15} color="var(--gold)" /> Finance & réservations — toutes agences
               </div>
 
-              {/* ── Barre de filtres : période + statut ─────────────────────── */}
               <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap', marginBottom:14 }}>
                 <div style={{ display:'flex', background:'var(--card)', border:'1px solid var(--border)', borderRadius:8, padding:3 }}>
                   {[
@@ -1338,7 +812,6 @@ export default function AgencyDashboard() {
                 </select>
               </div>
 
-              {/* ── Résumé chiffré du filtre actif ──────────────────────────── */}
               <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:14 }}>
                 <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
                   <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Réservations</div>
@@ -1349,846 +822,580 @@ export default function AgencyDashboard() {
                   <div style={{ fontSize:16, fontWeight:800, color:'var(--gold)' }}>{financeSummary.totalAmount.toLocaleString('fr-FR')} FC</div>
                 </div>
                 <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
-                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Revenus nets (réussies)</div>
+                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Revenus nets agences (réussies)</div>
                   <div style={{ fontSize:16, fontWeight:800, color:'var(--green-l)' }}>{financeSummary.netRevenue.toLocaleString('fr-FR')} FC</div>
+                </div>
+                <div style={{ background:'var(--card)', border:'1px solid var(--border)', borderRadius:9, padding:'8px 14px' }}>
+                  <div style={{ fontSize:10, color:'var(--muted)', textTransform:'uppercase', letterSpacing:'.05em' }}>Commission Nzela (réussies)</div>
+                  <div style={{ fontSize:16, fontWeight:800, color:'#9B59B6' }}>{financeSummary.commission.toLocaleString('fr-FR')} FC</div>
                 </div>
               </div>
 
               {financeFilteredBookings.length===0
-                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13, display:'flex', alignItems:'center', justifyContent:'center', gap:7 }}><Inbox size={15} /> Aucune réservation pour ce filtre</div>
+                ? <div style={{ textAlign:'center', padding:'28px', color:'var(--muted)', fontSize:13 }}>Aucune réservation pour ce filtre</div>
                 : <div style={{ overflowX:'auto', maxHeight:420, overflowY:'auto' }}><table className="data-table">
-                    <thead><tr><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
+                    <thead><tr><th>Référence</th><th>Agence</th><th>Passager</th><th>Trajet</th><th>Montant</th><th>Statut</th></tr></thead>
                     <tbody>{financeFilteredBookings.map(b => (
                       <tr key={b.id}>
+                        <td><code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
+                        <td style={{ fontSize:12 }}>{b.agency_name}</td>
                         <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
-                        <td>
-                          <div style={{ display:'flex', alignItems:'center', gap:6 }}>
-                            <CityBadge city={b.departure_city} />
-                            <span style={{ color:'var(--muted)' }}>→</span>
-                            <span style={{ fontWeight:600 }}>{b.arrival_city}</span>
-                          </div>
-                        </td>
+                        <td style={{ fontSize:12 }}>{b.departure_city} → {b.arrival_city}</td>
                         <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
-                        <td><StatusBadge status={b.status}/></td>
+                        <td><span className={`badge ${b.status==='confirmed'?'b-g':b.status==='cancelled'?'b-r':'b-y'}`}>{b.status==='confirmed'?'Confirmée':b.status==='cancelled'?'Annulée':'En attente'}</span></td>
                       </tr>
                     ))}</tbody>
                   </table></div>}
             </div>
+
+            <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
+              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:14, display:'flex', alignItems:'center', gap:7 }}>
+                <Trophy size={15} color="var(--gold)" /> Classement des agences
+              </div>
+              <div style={{ overflowX:'auto' }}>
+                <table className="data-table">
+                  <thead><tr><th>#</th><th>Agence</th><th>Voyages</th><th>Réservations</th><th>Revenus</th><th>Commission</th><th>Statut</th></tr></thead>
+                  <tbody>
+                    {[...agencies].sort((a,b) => Number(b.total_revenue||0) - Number(a.total_revenue||0)).map((ag, i) => (
+                      <tr key={ag.id}>
+                        <td style={{ fontFamily:'var(--font)', fontWeight:800, color:'var(--muted)' }}>#{i+1}</td>
+                        <td>
+                          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                            <AgencyAvatar name={ag.agency_name} logoUrl={ag.logo_url} size={28} />
+                            <div>
+                              <div style={{ fontWeight:700, fontSize:13 }}>{ag.agency_name}</div>
+                              <div style={{ fontSize:11, color:'var(--muted)' }}>{ag.username}</div>
+                            </div>
+                          </div>
+                        </td>
+                        <td>{ag.total_trips||0}</td>
+                        <td>{ag.total_bookings||0}</td>
+                        <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(ag.total_revenue||0).toLocaleString('fr-FR')} FC</td>
+                        <td style={{ color:'#9B59B6', fontWeight:700 }}>{Number(ag.total_commission||0).toLocaleString('fr-FR')} FC</td>
+                        <td><span className={`badge ${ag.is_active?'b-g':'b-r'}`}>{ag.is_active?'Actif':'Inactif'}</span></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="glass p-16 fade-in fade-in-2">
+              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:14, display:'flex', alignItems:'center', gap:7 }}>
+                <MapPin size={15} color="var(--green-l)" /> Activité par ville
+              </div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(170px,1fr))', gap:10 }}>
+                {CITIES.map(city => {
+                  const meta = CITY_META[city];
+                  const d = (stats.by_city || {})[city] || {};
+                  return (
+                    <div key={city} style={{ background:meta.bg, border:`1px solid ${meta.color}25`, borderRadius:12, padding:14 }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:10 }}>
+                        <meta.Icon size={18} color={meta.color} />
+                        <span style={{ fontFamily:'var(--font)', fontWeight:800, color:meta.color }}>{city}</span>
+                      </div>
+                      {[['Voyages', d.trips||'—'],['Réservations', d.bookings||'—'],['Revenus (FC)', d.revenue ? Number(d.revenue).toLocaleString('fr-FR') : '—']].map(([l,v]) => (
+                        <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
+                          <span style={{ color:'var(--muted)' }}>{l}</span>
+                          <span style={{ fontWeight:700 }}>{v}</span>
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </>}
 
-          {tab==='buses' && <div style={{ display:'grid', gap:10 }}>
-            {buses.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}><div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><Bus size={44} style={{ opacity:.2 }} /></div><h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:8 }}>Aucun bus enregistré</h3><button className="btn btn-primary" onClick={() => setBusModal(true)}>+ Ajouter un bus</button></div>
-              : buses.map((bus,i) => (
-                <div key={bus.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'13px 18px' }}>
-                  <div className="bus-card-row">
-                    <div style={{ display:'flex', alignItems:'center', gap:13 }}>
-                      <div style={{ width:40, height:40, borderRadius:10, background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.18)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}><Bus size={20} color="var(--green-l)" /></div>
-                      <div><div style={{ fontFamily:'var(--font)', fontSize:15, fontWeight:700 }}>{bus.bus_name}</div><div style={{ fontSize:12, color:'var(--muted)', marginTop:1 }}>{bus.total_seats} sièges{bus.description&&` · ${bus.description}`}</div></div>
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                      <span className={`badge ${bus.is_active?'b-g':'b-r'}`} style={{ display:'inline-flex', alignItems:'center', gap:4 }}>{bus.is_active?<><Check size={10}/> Actif</>:<><Ban size={10}/> Inactif</>}</span>
-                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => setEditBus({...bus})}><Pencil size={11} /> Modifier</button>
-                      <button className="btn btn-danger" style={{ padding:'6px 10px', display:'inline-flex', alignItems:'center' }} onClick={() => doDeleteBus(bus.id)}><Trash2 size={11} /></button>
-                    </div>
+          {/* ── AGENCES ─────────────────────────────────────── */}
+          {tab==='agencies' && (
+            <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
+              {agencies.length===0
+                ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
+                    <div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><Building2 size={44} style={{ opacity:.2 }} /></div>
+                    <h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:8 }}>Aucune agence</h3>
+                    <button className="btn btn-primary" onClick={()=>setAgencyModal(true)}>+ Créer la première agence</button>
                   </div>
-                </div>
-              ))}
-          </div>}
-
-          {tab==='trips' && <div style={{ display:'grid', gap:10 }}>
-            {/* Filtre ville pour propriétaire */}
-            {isOwner && <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />}
-
-            {/* Bandeau informatif pour les gestionnaires */}
-            {!isOwner && userCity && (
-              <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'10px 14px', display:'flex', alignItems:'center', gap:10, marginBottom:4 }}>
-                <MapPin size={14} color="var(--green-l)" />
-                <span style={{ fontSize:13 }}>Vous gérez les départs depuis <strong>{userCity}</strong> — seuls les voyages partant de votre ville sont affichés.</span>
-              </div>
-            )}
-
-            {visibleTrips.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
-                  <h3 style={{ fontFamily:'var(--font)', fontSize:17, marginBottom:12 }}>
-                    Aucun voyage{userCity ? ` depuis ${userCity}` : ''}
-                  </h3>
-                  <div style={{ display:'flex', gap:8, justifyContent:'center', flexWrap:'wrap' }}>
-                    <button className="btn btn-ghost" onClick={() => setBulkModal(true)} style={{ display:'inline-flex', alignItems:'center', gap:5 }}><Calendar size={12} /> Générer en masse</button>
-                    <button className="btn btn-primary" onClick={() => setTripModal(true)}>+ Nouveau voyage</button>
-                  </div>
-                </div>
-              : visibleTrips.map((t,i) => (
-                <div key={t.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'12px 18px' }}>
-                  <div className="trip-card-row">
-                    <div style={{ display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                      {/* Ville départ */}
-                      <div style={{ textAlign:'center', minWidth:70 }}>
-                        <CityBadge city={t.departure_city} />
-                        <div style={{ fontSize:15, fontWeight:700, color:'var(--green-l)', marginTop:4 }}>{t.departure_time}</div>
-                      </div>
-                      <div style={{ color:'var(--muted)', fontSize:18 }}>→</div>
-                      {/* Ville arrivée */}
-                      <div style={{ textAlign:'center', minWidth:70 }}>
-                        <CityBadge city={t.arrival_city} />
-                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:4 }}>{new Date(t.departure_date).toLocaleDateString('fr-FR',{day:'numeric',month:'short',year:'numeric'})}</div>
-                      </div>
-                      {t.bus_name && <span className="badge b-b" style={{ fontSize:11, display:'inline-flex', alignItems:'center', gap:4 }}><Bus size={10} /> {t.bus_name}</span>}
-                      <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:800, color:'var(--gold)' }}>{Number(t.price).toLocaleString('fr-FR')} <span style={{ fontSize:11, fontWeight:500 }}>FC</span></div>
-                    </div>
-                    <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                      <div style={{ textAlign:'right' }}><div style={{ fontWeight:700, fontSize:12 }}>{t.available_seats}/{t.total_seats}</div><div style={{ fontSize:11, color:'var(--muted)' }}>places</div></div>
-                      <span className={`badge ${t.available_seats>0?'b-g':'b-r'}`} style={{ display:'inline-flex', alignItems:'center', gap:4 }}>{t.available_seats>0?<><Check size={10}/> Actif</>:<><Ban size={10}/> Complet</>}</span>
-                      {/* Bouton manifeste rapide */}
-                      <button
-                        className="btn btn-ghost"
-                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)', display:'inline-flex', alignItems:'center' }}
-                        title="Voir le plan des sièges"
-                        onClick={() => setSeatModal(t)}
-                      >
-                        <Bus size={11} />
-                      </button>
-                      <button
-                        className="btn btn-ghost"
-                        style={{ fontSize:11, padding:'5px 9px', color:'var(--muted)', display:'inline-flex', alignItems:'center' }}
-                        title="Voir le manifeste de ce voyage"
-                        onClick={() => { setManifestTripId(String(t.id)); goTab('manifest'); }}
-                      >
-                        <ClipboardList size={11} />
-                      </button>
-                      <button className="btn btn-ghost" style={{ fontSize:12, padding:'6px 11px', display:'inline-flex', alignItems:'center' }} onClick={() => setEditTrip({...t})}><Pencil size={11} /></button>
-                      <button className="btn btn-danger" style={{ padding:'6px 10px', display:'inline-flex', alignItems:'center' }} onClick={() => doDeleteTrip(t.id)}><Trash2 size={11} /></button>
-                    </div>
-                  </div>
-                </div>
-              ))}
-          </div>}
-
-          {tab==='bookings' && <div className="glass" style={{ overflow:'hidden' }}>
-            {/* Filtre ville pour propriétaire */}
-            {isOwner && (
-              <div style={{ padding:'12px 16px', borderBottom:'1px solid var(--border)' }}>
-                <CityFilterTabs value={cityFilter} onChange={setCityFilter} trips={trips} bookings={bookings} />
-              </div>
-            )}
-            {visibleBookings.length===0
-              ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)', display:'flex', alignItems:'center', justifyContent:'center', gap:8 }}><Inbox size={16} /> Aucune réservation{userCity ? ` depuis ${userCity}` : ''}</div>
-              : <div style={{ overflowX:'auto' }}><table className="data-table">
-                  <thead><tr><th>Référence</th><th>Passager</th><th>Trajet</th><th>Bus</th><th>Total</th><th>Commission</th><th>Paiement</th><th>Statut</th><th>Actions</th></tr></thead>
-                  <tbody>{visibleBookings.map(b => (
-                    <tr key={b.id}>
-                      <td><code style={{ background:'var(--green-bg)', padding:'2px 7px', borderRadius:5, fontSize:11, color:'var(--green-l)' }}>{b.reference}</code></td>
-                      <td><div style={{ fontWeight:600 }}>{b.passenger_name}</div><div style={{ fontSize:11, color:'var(--muted)' }}>{b.passenger_phone}</div></td>
-                      <td>
-                        <div style={{ display:'flex', alignItems:'center', gap:5, flexWrap:'wrap' }}>
-                          <CityBadge city={b.departure_city} />
-                          <span style={{ color:'var(--muted)', fontSize:12 }}>→</span>
-                          <span style={{ fontSize:12, fontWeight:600 }}>{b.arrival_city}</span>
+                : agencies.map((ag, i) => (
+                    <div key={ag.id} className="glass fade-in" style={{ animationDelay:`${i*0.05}s`, padding:'16px 20px', opacity: ag.is_active ? 1 : 0.65 }}>
+                      <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:12 }}>
+                        <div style={{ display:'flex', alignItems:'center', gap:14 }}>
+                          <AgencyAvatar name={ag.agency_name} logoUrl={ag.logo_url} size={44} />
+                          <div>
+                            <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
+                              <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15 }}>{ag.agency_name}</span>
+                              <span className={`badge ${ag.is_active?'b-g':'b-r'}`}>{ag.is_active?'Actif':'Inactif'}</span>
+                              {ag.premium ? <span style={{ fontSize:11, background:'rgba(245,166,35,0.12)', color:'var(--gold)', border:'1px solid rgba(245,166,35,0.25)', borderRadius:6, padding:'1px 7px', fontWeight:700, display:'inline-flex', alignItems:'center', gap:3 }}><Star size={9} fill="currentColor" /> Premium</span> : null}
+                            </div>
+                            <div style={{ fontSize:12, color:'var(--muted)', marginTop:3, display:'flex', gap:12, flexWrap:'wrap', alignItems:'center' }}>
+                              <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><User size={11} /> {ag.username}</span>
+                              {ag.email && <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Mail size={11} /> {ag.email}</span>}
+                              {ag.phone && <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Phone size={11} /> {ag.phone}</span>}
+                              <span style={{ color:'var(--green-l)', fontWeight:700 }}>Commission : {ag.commission_rate||10}%</span>
+                            </div>
+                          </div>
                         </div>
-                        <div style={{ fontSize:11, color:'var(--muted)', marginTop:3 }}>{new Date(b.departure_date).toLocaleDateString('fr-FR')} · {b.departure_time}</div>
-                      </td>
-                      <td>{b.bus_name?<span className="badge b-b" style={{ fontSize:11 }}>{b.bus_name}</span>:<span style={{ color:'var(--muted)' }}>—</span>}</td>
-                      <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(b.total_price).toLocaleString('fr-FR')} FC</td>
-                      <td style={{ color:'var(--err)', fontSize:12 }}>{b.commission_amount>0?`-${Number(b.commission_amount).toLocaleString('fr-FR')} FC`:'—'}</td>
-                      <td><span className="badge b-b" style={{ fontSize:11, display:'inline-flex', alignItems:'center', gap:4 }}>{b.payment_method==='cash'?<><Banknote size={10}/> Espèces</>:<><Smartphone size={10}/> Mobile</>}</span></td>
-                      <td><StatusBadge status={b.status}/></td>
-                      <td><div style={{ display:'flex', gap:5 }}>
-                        {b.status==='pending'&&<button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 9px', color:'var(--ok)', borderColor:'rgba(61,170,106,0.2)', display:'inline-flex', alignItems:'center' }} onClick={() => doConfirm(b.id)}><Check size={11} /></button>}
-                        {(b.status==='pending'||b.status==='confirmed')&&<button className="btn btn-danger" style={{ fontSize:11, padding:'5px 9px', display:'inline-flex', alignItems:'center' }} onClick={() => doCancel(b.id,b.total_price)}><X size={11} /></button>}
-                      </div></td>
-                    </tr>
-                  ))}</tbody>
-                </table></div>}
-          </div>}
 
-          {tab==='settings' && <div style={{ maxWidth:540 }}>
-            <div className="glass p-16 fade-in" style={{ marginBottom:12 }}>
-              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><ImageIcon size={14} /> Logo de l'agence</div>
-              <LogoUploader currentLogo={settings.logo_url} agencyName={agencyName} onChange={val => setSettings({...settings, logo_url: val})} />
-            </div>
-            <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
-              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><Building size={14} /> Informations</div>
-              <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-                <Inp label="Email"><input className="input-field" placeholder="contact@agence.cd" value={settings.email||''} onChange={e=>setSettings({...settings,email:e.target.value})} /></Inp>
-                <Inp label="Téléphone"><input className="input-field" placeholder="+243 81 000 0000" value={settings.phone||''} onChange={e=>setSettings({...settings,phone:e.target.value})} /></Inp>
-                <Inp label="Adresse"><input className="input-field" placeholder="Avenue du Commerce, Kinshasa" value={settings.address||''} onChange={e=>setSettings({...settings,address:e.target.value})} /></Inp>
-              </div>
-            </div>
+                        <div style={{ display:'flex', gap:16, flexWrap:'wrap' }}>
+                          {[['Voyages',ag.total_trips||0,'var(--text)'],['Réserv.',ag.total_bookings||0,'var(--green-l)'],['Revenus',`${Number(ag.total_revenue||0).toLocaleString('fr-FR')} FC`,'var(--gold)'],['Commiss.',`${Number(ag.total_commission||0).toLocaleString('fr-FR')} FC`,'#9B59B6']].map(([l,v,c]) => (
+                            <div key={l} style={{ textAlign:'center' }}>
+                              <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, color:c }}>{v}</div>
+                              <div style={{ fontSize:10, color:'var(--muted)' }}>{l}</div>
+                            </div>
+                          ))}
+                        </div>
 
-            {/* Ville principale du gestionnaire (si pas définie dans le JWT) */}
-            {!user.city && (
-              <div className="glass p-16 fade-in fade-in-2" style={{ marginBottom:12 }}>
-              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><MapPin size={14} /> Ville principale de départ</div>
-                <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>
-                  Définit les voyages que vous gérez. Vous ne verrez que les départs depuis cette ville.
-                  Laissez vide pour voir toutes les villes (propriétaire).
-                </p>
-                <Inp label="Ville de départ">
-                  <select className="input-field" value={settings.home_city||''} onChange={e=>setSettings({...settings,home_city:e.target.value})}>
-                    <option value="">— Toutes les villes (propriétaire) —</option>
-                    {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                </Inp>
-                {settings.home_city && (
-                  <div style={{ marginTop:8, padding:'8px 12px', background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:8, fontSize:12, color:'var(--green-l)', display:'flex', alignItems:'center', gap:6 }}>
-                    <Check size={12} /> Vous gérerez uniquement les voyages partant de <strong>{settings.home_city}</strong>.
+                        <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
+                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }}
+                            onClick={()=>setExpandedAgency(expandedAgency===ag.id ? null : ag.id)}>
+                            {expandedAgency===ag.id ? <><ChevronUp size={12} /> Fermer</> : <><Users size={12} /> Gestionnaires</>}
+                          </button>
+                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }}
+                            onClick={()=>setExpandedTrips(expandedTrips===ag.id ? null : ag.id)}>
+                            {expandedTrips===ag.id ? <><ChevronUp size={12} /> Fermer</> : <><Bus size={12} /> Voyages</>}
+                          </button>
+                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', display:'inline-flex', alignItems:'center', gap:5 }}
+                            onClick={()=>setEditAgency({...ag})}><Pencil size={12} /> Modifier</button>
+                          <button className="btn btn-ghost" style={{ fontSize:11, padding:'6px 11px', color: ag.is_active ? 'var(--gold)':'var(--ok)', display:'inline-flex', alignItems:'center', gap:5 }}
+                            onClick={()=>doToggleAgency(ag)}>
+                            {ag.is_active ? <><Ban size={12} /> Désactiver</> : <><Check size={12} /> Activer</>}
+                          </button>
+                          <button className="btn btn-danger" style={{ fontSize:11, padding:'6px 9px', display:'inline-flex', alignItems:'center' }}
+                            onClick={()=>doDeleteAgency(ag)}><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+
+                      {expandedAgency===ag.id && (
+                        <AgencyUsersPanel agency={ag} headers={headers} showToast={showToast} />
+                      )}
+                      {expandedTrips===ag.id && (
+                        <AgencyTripsPanel agency={ag} headers={headers} onViewSeats={t => setSeatModal(t)} />
+                      )}
+                    </div>
+                  ))
+              }
+            </div>
+          )}
+
+          {/* ── GALERIE ─────────────────────────────────────── */}
+          {tab==='gallery' && (
+            <div>
+              {gallery.length===0
+                ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
+                    <div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><ImageIcon size={44} style={{ opacity:.2 }} /></div>
+                    <p style={{ marginBottom:16 }}>Aucune image dans la galerie</p>
+                    <button className="btn btn-primary" onClick={()=>setGalleryModal(true)}>+ Ajouter une image</button>
                   </div>
-                )}
-              </div>
-            )}
+                : <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(260px,1fr))', gap:14 }}>
+                    {gallery.map((img, i) => (
+                      <div key={img.id} className="glass fade-in" style={{ animationDelay:`${i*0.05}s`, overflow:'hidden', opacity: img.is_active?1:0.5 }}>
+                        {img.image_url && (
+                          <div style={{ height:160, background:'var(--card)' }}>
+                            <img src={img.image_url} alt={img.title} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>{e.target.style.display='none'}} />
+                          </div>
+                        )}
+                        <div style={{ padding:'12px 14px' }}>
+                          <div style={{ fontWeight:700, fontSize:13, marginBottom:4 }}>{img.title||'(sans titre)'}</div>
+                          {img.description && <div style={{ fontSize:12, color:'var(--muted)', marginBottom:8 }}>{img.description}</div>}
+                          <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between' }}>
+                            <div style={{ display:'flex', gap:6 }}>
+                              <span style={{ fontSize:11, background:'var(--card)', border:'1px solid var(--border)', borderRadius:6, padding:'2px 7px' }}>{img.category}</span>
+                              <span className={`badge ${img.is_active?'b-g':'b-r'}`} style={{ fontSize:10 }}>{img.is_active?'Visible':'Caché'}</span>
+                            </div>
+                            <div style={{ display:'flex', gap:5 }}>
+                              <button className="btn btn-ghost" style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center' }}
+                                onClick={()=>{ setEditGallery(img); setGalleryForm({...img}); setGalleryModal(true); }}><Pencil size={11} /></button>
+                              <button className="btn btn-danger" style={{ fontSize:11, padding:'4px 9px', display:'inline-flex', alignItems:'center' }}
+                                onClick={()=>doDeleteGallery(img.id)}><Trash2 size={11} /></button>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+              }
+            </div>
+          )}
 
-            <div className="glass p-16 fade-in fade-in-3" style={{ marginBottom:12 }}>
-              <div className="section-title" style={{ display:'flex', alignItems:'center', gap:7 }}><Percent size={14} /> Politique d'annulation</div>
-              <p style={{ color:'var(--muted)', fontSize:12, marginBottom:12, lineHeight:1.6 }}>Pourcentage retenu quand un client annule.</p>
-              <div style={{ marginBottom:12 }}>
-                <Inp label="Taux de rétention (%)"><input className="input-field" type="number" min="0" max="100" step="5" value={settings.cancel_rate||20} onChange={e=>setSettings({...settings,cancel_rate:Number(e.target.value)})} /></Inp>
+          {/* ── RETRAITS ─────────────────────────────────────── */}
+          {tab==='withdrawals' && (
+            <div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:12, marginBottom:16 }}>
+                <StatCard Icon={Wallet} label="En attente de virement" value={withdrawals.filter(w=>w.status==='pending').length} sub={`${withdrawals.filter(w=>w.status==='pending').reduce((s,w)=>s+Number(w.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--gold)" />
+                <StatCard Icon={Check}   label="Payés" value={withdrawals.filter(w=>w.status==='paid').length} sub={`${withdrawals.filter(w=>w.status==='paid').reduce((s,w)=>s+Number(w.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--ok)" />
               </div>
-              <div style={{ background:'rgba(61,170,106,0.05)', border:'1px solid rgba(61,170,106,0.12)', borderRadius:9, padding:'11px 13px' }}>
-                <div style={{ fontSize:10, color:'var(--muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'0.07em', marginBottom:8 }}>Simulation sur 45 000 FC</div>
-                {[
-                  ['Majoration en ligne ('+(settings.commission_rate||10)+'%)', (45000*(settings.commission_rate||10)/100).toLocaleString('fr-FR'), 'var(--err)'],
-                  ['Rétention agence ('+(settings.cancel_rate||20)+'%)', (45000*(settings.cancel_rate||20)/100).toLocaleString('fr-FR'), 'var(--gold)'],
-                  ['Remboursement client', Math.max(0,45000*(1-(settings.commission_rate||10)/100-(settings.cancel_rate||20)/100)).toLocaleString('fr-FR'), 'var(--ok)'],
-                ].map(([l,v,c]) => (
-                  <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:12, marginBottom:4 }}>
-                    <span style={{ color:'var(--muted)' }}>{l}</span><span style={{ fontWeight:700, color:c }}>{v} FC</span>
+              <div className="glass" style={{ overflow:'hidden' }}>
+                {withdrawals.length===0
+                  ? <div style={{ textAlign:'center', padding:40, color:'var(--muted)', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                      <Wallet size={32} style={{ opacity:.25 }} /> Aucun retrait pour l'instant
+                    </div>
+                  : <div style={{ overflowX:'auto' }}>
+                      <table className="data-table">
+                        <thead><tr><th>Agence</th><th>Téléphone</th><th>Montant</th><th>Statut</th><th>Demandé le</th><th>Payé le</th><th></th></tr></thead>
+                        <tbody>{withdrawals.map(w=>(
+                          <tr key={w.id}>
+                            <td style={{ fontWeight:600 }}>{w.agency_name}</td>
+                            <td style={{ color:'var(--muted)', fontSize:12 }}>{w.agency_phone||'—'}</td>
+                            <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(w.amount).toLocaleString('fr-FR')} FC</td>
+                            <td><span className={`badge ${w.status==='paid' ? 'b-g' : 'b-y'}`}>{w.status==='paid' ? 'Payé' : 'En attente'}</span></td>
+                            <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(w.requested_at).toLocaleDateString('fr-FR')}</td>
+                            <td style={{ fontSize:11, color:'var(--muted)' }}>{w.processed_at ? new Date(w.processed_at).toLocaleDateString('fr-FR') : '—'}</td>
+                            <td>{w.status!=='paid' && <button className="btn btn-primary" style={{ fontSize:11, padding:'5px 10px' }} onClick={()=>doMarkPaid(w.id)}>Marquer payé</button>}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                }
+              </div>
+            </div>
+          )}
+
+          {/* ── CONTRIBUTIONS ───────────────────────────────── */}
+          {tab==='contributions' && (
+            <div>
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fill,minmax(200px,1fr))', gap:12, marginBottom:16 }}>
+                <StatCard Icon={HeartHandshake} label="Total contributions" value={contributions.length} color="var(--ok)" />
+                <StatCard Icon={Wallet}         label="Total CDF" value={`${contributions.filter(c=>c.currency==='CDF').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')} FC`} color="var(--gold)" />
+                <StatCard Icon={Gem}            label="Total USD" value={`$${contributions.filter(c=>c.currency==='USD').reduce((s,c)=>s+Number(c.amount||0),0).toLocaleString('fr-FR')}`} color="var(--green-l)" />
+              </div>
+              <div className="glass" style={{ overflow:'hidden' }}>
+                {contributions.length===0
+                  ? <div style={{ textAlign:'center', padding:40, color:'var(--muted)', display:'flex', flexDirection:'column', alignItems:'center', gap:8 }}>
+                      <HeartHandshake size={32} style={{ opacity:.25 }} /> Aucune contribution pour l'instant
+                    </div>
+                  : <div style={{ overflowX:'auto' }}>
+                      <table className="data-table">
+                        <thead><tr><th>Référence</th><th>Contributeur</th><th>Téléphone</th><th>Opérateur</th><th>Montant</th><th>Message</th><th>Date</th></tr></thead>
+                        <tbody>{contributions.map(c=>(
+                          <tr key={c.id}>
+                            <td><code style={{ background:'var(--green-bg)', padding:'2px 6px', borderRadius:4, fontSize:11, color:'var(--green-l)' }}>{c.reference}</code></td>
+                            <td style={{ fontWeight:600 }}>{c.contributor_name}</td>
+                            <td style={{ color:'var(--muted)', fontSize:12 }}>{c.phone||'—'}</td>
+                            <td><span className="badge b-b" style={{ fontSize:11 }}>{c.operator||'—'}</span></td>
+                            <td style={{ color:'var(--gold)', fontWeight:700 }}>{Number(c.amount).toLocaleString('fr-FR')} {c.currency}</td>
+                            <td style={{ fontSize:12, color:'var(--muted)', maxWidth:180 }}>{c.message||'—'}</td>
+                            <td style={{ fontSize:11, color:'var(--muted)' }}>{new Date(c.created_at).toLocaleDateString('fr-FR')}</td>
+                          </tr>
+                        ))}</tbody>
+                      </table>
+                    </div>
+                }
+              </div>
+            </div>
+          )}
+
+          {/* ── PARAMÈTRES ──────────────────────────────────── */}
+          {tab==='settings' && (
+            <div style={{ maxWidth:560, display:'flex', flexDirection:'column', gap:12 }}>
+              <div className="glass p-16 fade-in">
+                <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:12, display:'flex', alignItems:'center', gap:7 }}>
+                  <Gem size={15} /> Commission Nzela (globale)
+                </div>
+                <p style={{ fontSize:13, color:'var(--muted)', marginBottom:14, lineHeight:1.7 }}>
+                  Majoration appliquée uniquement sur les billets vendus EN LIGNE (le prix du guichet reste inchangé). Chaque agence peut avoir son propre taux modifiable dans sa fiche.
+                </p>
+                <Inp label="Majoration en ligne par défaut (%)">
+                  <input className="input-field" type="number" min="0" max="50" step="1"
+                    value={settings.commission_rate||10}
+                    onChange={e=>setSettings({...settings,commission_rate:Number(e.target.value)})} />
+                </Inp>
+              </div>
+
+              <div className="glass p-16 fade-in fade-in-2">
+                <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:8, display:'flex', alignItems:'center', gap:7 }}>
+                  <Database size={15} /> Sauvegarde de la base de données
+                </div>
+                <p style={{ fontSize:13, color:'var(--muted)', marginBottom:14, lineHeight:1.7 }}>
+                  Exportez toutes les données en JSON. Importez pour restaurer une sauvegarde.
+                </p>
+                <div style={{ display:'flex', gap:10, flexWrap:'wrap', marginBottom:12 }}>
+                  <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExport}>
+                    <Download size={13} /> Exporter JSON
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExportExcel}>
+                    <FileSpreadsheet size={13} /> Exporter Excel
+                  </button>
+                  <button className="btn btn-ghost" style={{ fontSize:13, display:'inline-flex', alignItems:'center', gap:7 }} onClick={doExportPdf}>
+                    <FileText size={13} /> Exporter PDF
+                  </button>
+                  <label className="btn btn-ghost" style={{ fontSize:13, cursor:'pointer', display:'inline-flex', alignItems:'center', gap:7 }}>
+                    <Upload size={13} /> Importer JSON
+                    <input type="file" accept=".json" style={{ display:'none' }} onChange={doImport} />
+                  </label>
+                </div>
+                <div style={{ padding:'10px 13px', background:'rgba(240,80,80,0.06)', border:'1px solid rgba(240,80,80,0.15)', borderRadius:8, fontSize:12, color:'var(--err)', display:'flex', alignItems:'center', gap:7 }}>
+                  <AlertTriangle size={13} /> L'import remplace <strong>toutes</strong> les données existantes. Faites d'abord un export.
+                </div>
+              </div>
+
+              <div className="glass p-16 fade-in fade-in-3">
+                <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, marginBottom:14, display:'flex', alignItems:'center', gap:7 }}>
+                  <Info size={15} /> Plateforme
+                </div>
+                {[['Version','2.1 — Nzela RDC'],['Agences',`${agencies.length} enregistrées (${agencies.filter(a=>a.is_active).length} actives)`],['API', API],['Base','SQLite WAL · Railway']].map(([l,v]) => (
+                  <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:13, padding:'8px 0', borderBottom:'1px solid var(--border)' }}>
+                    <span style={{ color:'var(--muted)' }}>{l}</span>
+                    <span style={{ fontWeight:600 }}>{v}</span>
                   </div>
                 ))}
               </div>
-            </div>
-            <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13 }} disabled={savingSettings}
-              onClick={async () => {
-                setSavingSettings(true);
-                try { await axios.patch(`${API}/agency/settings`, settings, { headers }); ok('Paramètres sauvegardés'); }
-                catch(e) { err(e.response?.data?.error||'Erreur'); }
-                finally { setSavingSettings(false); }
-              }}>
-              {savingSettings ? <><div className="spinner"/>Sauvegarde…</> : <><Save size={13} style={{ marginRight:5 }} />Sauvegarder</>}
-            </button>
-          </div>}
 
-          {tab==='users' && isOwner && (
-            <div>
-              {/* Bandeau expliquant le système */}
-              <div className="glass p-16 fade-in" style={{ marginBottom:14 }}>
-                <div style={{ display:'flex', alignItems:'flex-start', gap:14 }}>
-                  <div style={{ flexShrink:0, display:'flex', alignItems:'center', justifyContent:'center', width:48, height:48, background:'var(--green-bg)', borderRadius:12, border:'1px solid rgba(61,170,106,0.2)' }}><Users size={26} color="var(--green-l)" /></div>
-                  <div>
-                    <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:15, marginBottom:6 }}>Gestion des accès par ville</div>
-                    <p style={{ fontSize:13, color:'var(--muted)', lineHeight:1.7, margin:0 }}>
-                      Créez un compte par ville pour chaque chef d'agence.
-                      Chaque gestionnaire se connecte avec ses propres identifiants et ne voit que les voyages partant de <strong>sa ville</strong>.
-                      Un gestionnaire sans ville assignée voit tout (rôle Propriétaire).
-                    </p>
-                    <div style={{ display:'flex', gap:8, flexWrap:'wrap', marginTop:12 }}>
-                      {CITIES.map(c => {
-                        const meta = CITY_META[c];
-                        const hasManager = agencyUsers.some(u => u.city === c && u.is_active);
-                        return (
-                          <div key={c} style={{ display:'flex', alignItems:'center', gap:6, background: hasManager ? meta.bg : 'var(--card)', border:`1px solid ${hasManager ? meta.color+'40' : 'var(--border)'}`, borderRadius:8, padding:'5px 10px' }}>
-                            <meta.Icon size={13} color={hasManager ? meta.color : 'var(--muted)'} />
-                            <span style={{ fontSize:12, fontWeight:700, color: hasManager ? meta.color : 'var(--muted)' }}>{c}</span>
-                            <span style={{ fontSize:10, color: hasManager ? meta.color : 'var(--muted)' }}>{hasManager ? <Check size={10} /> : '—'}</span>
-                          </div>
-                        );
-                      })}
-                    </div>
+              <button className="btn btn-primary" style={{ width:'100%', justifyContent:'center', height:42, fontSize:13, display:'flex', alignItems:'center', gap:8 }} onClick={doSaveSettings}>
+                <Settings size={14} /> Sauvegarder les paramètres
+              </button>
+
+              {/* ── Zone Danger ───────────────────────────────── */}
+              <div style={{ marginTop:8, border:'1.5px solid rgba(220,50,50,0.35)', borderRadius:14, overflow:'hidden' }}>
+                <div style={{ background:'rgba(220,50,50,0.08)', padding:'14px 18px', borderBottom:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', gap:9 }}>
+                  <ShieldAlert size={16} color="var(--err)" />
+                  <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:14, color:'var(--err)' }}>Zone Danger</span>
+                </div>
+                <div style={{ padding:'16px 18px', display:'flex', flexDirection:'column', gap:12 }}>
+                  <p style={{ fontSize:13, color:'var(--muted)', lineHeight:1.7, margin:0 }}>
+                    La réinitialisation supprime <strong style={{ color:'var(--text)' }}>toutes les agences</strong>, leurs bus, voyages, réservations et gestionnaires.
+                    Les contributions et paramètres sont conservés.
+                    <br/>Cette action est <strong style={{ color:'var(--err)' }}>irréversible</strong>.
+                  </p>
+                  <div style={{ display:'flex', alignItems:'center', gap:10, padding:'10px 14px', background:'rgba(220,50,50,0.06)', border:'1px solid rgba(220,50,50,0.15)', borderRadius:10, fontSize:12, color:'var(--muted)' }}>
+                    <Flame size={13} color="var(--err)" style={{ flexShrink:0 }} />
+                    <span>Avant toute réinitialisation, un export <strong>Excel</strong> ET <strong>PDF</strong> sera obligatoire pour garder une trace de toutes vos données.</span>
                   </div>
+                  <button
+                    className="btn"
+                    style={{ background:'rgba(220,50,50,0.1)', border:'1.5px solid rgba(220,50,50,0.4)', color:'var(--err)', fontSize:13, display:'inline-flex', alignItems:'center', gap:8, padding:'10px 18px', borderRadius:10, cursor:'pointer', fontWeight:700, width:'fit-content' }}
+                    onClick={() => { setResetModal(true); setBackupXlsxDone(false); setBackupPdfDone(false); setResetConfirmText(''); }}
+                  >
+                    <RotateCcw size={14} /> Réinitialiser le dashboard
+                  </button>
                 </div>
               </div>
-
-              {/* Liste des gestionnaires */}
-              {usersLoading
-                ? <div style={{ textAlign:'center', padding:40 }}><div className="spinner" style={{ width:32,height:32,margin:'0 auto',borderWidth:2.5 }}/></div>
-                : agencyUsers.length === 0
-                  ? <div style={{ textAlign:'center', padding:'60px', color:'var(--muted)' }}>
-                      <div style={{ display:'flex', justifyContent:'center', marginBottom:12 }}><User size={44} style={{ opacity:.2 }} /></div>
-                      <div style={{ fontFamily:'var(--font)', fontSize:16, fontWeight:700, marginBottom:8 }}>Aucun gestionnaire créé</div>
-                      <p style={{ fontSize:13, marginBottom:16 }}>Créez un compte pour chaque chef d'agence de ville.</p>
-                      <button className="btn btn-primary" onClick={() => setUserModal(true)}>+ Créer le premier gestionnaire</button>
-                    </div>
-                  : <div style={{ display:'grid', gap:10 }}>
-                      {agencyUsers.map((u, i) => {
-                        const meta = u.city ? (CITY_META[u.city] || { color:'var(--muted)', bg:'var(--card)', Icon: MapPin }) : { color:'var(--gold)', bg:'rgba(245,166,35,0.1)', Icon: Crown };
-                        return (
-                          <div key={u.id} className="glass fade-in" style={{ animationDelay:`${i*0.06}s`, padding:'14px 18px', borderLeft:`3px solid ${u.is_active ? meta.color : 'var(--border)'}`, opacity: u.is_active ? 1 : 0.55 }}>
-                            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
-                              <div style={{ display:'flex', alignItems:'center', gap:12 }}>
-                                {/* Avatar */}
-                                <div style={{ width:42, height:42, borderRadius:10, background:meta.bg, border:`1px solid ${meta.color}30`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
-                                  <meta.Icon size={20} color={meta.color} />
-                                </div>
-                                <div>
-                                  <div style={{ display:'flex', alignItems:'center', gap:8, flexWrap:'wrap' }}>
-                                    <span style={{ fontFamily:'var(--font)', fontWeight:700, fontSize:14 }}>{u.full_name || u.username}</span>
-                                    {u.full_name && <code style={{ fontSize:11, color:'var(--muted)', background:'var(--card)', padding:'1px 6px', borderRadius:4 }}>{u.username}</code>}
-                                    <span style={{ fontSize:11, background: u.role==='owner' ? 'rgba(245,166,35,0.12)' : 'var(--green-bg)', color: u.role==='owner' ? 'var(--gold)' : 'var(--green-l)', border:`1px solid ${u.role==='owner' ? 'rgba(245,166,35,0.25)' : 'rgba(61,170,106,0.25)'}`, borderRadius:6, padding:'1px 7px', fontWeight:700 }}>
-                                    {u.role === 'owner' ? <><Crown size={9} /> Propriétaire</> : <><Wrench size={9} /> Gestionnaire</>}
-                                    </span>
-                                  </div>
-                                  <div style={{ display:'flex', alignItems:'center', gap:8, marginTop:5, flexWrap:'wrap' }}>
-                                    {u.city
-                                      ? <><span style={{ fontSize:11, color:'var(--muted)' }}>Ville :</span><CityBadge city={u.city} /></>
-                                      : <span style={{ fontSize:11, color:'var(--gold)' }}>Accès toutes villes</span>
-                                    }
-                                    <span className={`badge ${u.is_active ? 'b-g' : 'b-r'}`} style={{ fontSize:10 }}>{u.is_active ? 'Actif' : 'Désactivé'}</span>
-                                  </div>
-                                </div>
-                              </div>
-                              <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center', gap:4 }}
-                                  onClick={() => setResetPassModal({ id: u.id, username: u.full_name || u.username })}>
-                                  <KeyRound size={11} /> MDP
-                                </button>
-                                <button className="btn btn-ghost" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center', gap:4 }}
-                                  onClick={() => setEditUser({ ...u })}>
-                                  <Pencil size={11} /> Modifier
-                                </button>
-                                <button className="btn btn-danger" style={{ fontSize:11, padding:'5px 10px', display:'inline-flex', alignItems:'center' }}
-                                  onClick={() => doDeleteUser(u.id, u.full_name || u.username)}>
-                                  <Trash2 size={11} />
-                                </button>
-                              </div>
-                            </div>
-                          </div>
-                        );
-                      })}
-                    </div>
-              }
             </div>
           )}
         </>}
       </main>
 
-      <nav className="mobile-bottom-nav">
-        {TABS.map(t => (
-          <button key={t.id} className={`mobile-tab-btn ${tab===t.id?'active':''}`} onClick={() => goTab(t.id)}>
-          <span className="mobile-tab-icon"><t.Icon size={20} /></span>
-            <span className="mobile-tab-label">{t.label}</span>
-            {t.id==='bookings' && pending>0 && <span className="mobile-tab-badge">{pending}</span>}
-          </button>
-        ))}
-      </nav>
-
-      {/* ── MODALS ─────────────────────────────────────────────────────────────── */}
-
-      {withdrawModal && (
-        <Modal title={<>💸 Lancer un retrait</>} onClose={() => setWithdrawModal(false)} onConfirm={doWithdraw} confirmLabel={withdrawLoading ? 'Envoi…' : 'Confirmer le retrait →'}>
-          <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-            <div style={{ fontSize:13, color:'var(--muted)' }}>
-              Solde disponible : <strong style={{ color:'var(--gold)' }}>{withdrawBalance.toLocaleString('fr-FR')} FC</strong>
+      {/* ── MODAL Créer agence ───────────────────────────────── */}
+      {agencyModal && (
+        <Modal title="Nouvelle agence" subtitle="Crée un accès agence sur la plateforme"
+          onClose={()=>setAgencyModal(false)} onConfirm={doCreateAgency} confirmLabel="Créer →" maxWidth={520}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Inp label="Nom de l'agence *">
+                <input className="input-field" placeholder="Trans David SARL" value={agencyForm.agency_name}
+                  onChange={e=>setAgencyForm({...agencyForm,agency_name:e.target.value})} />
+              </Inp>
             </div>
-            <Inp label="Montant à retirer (FC) *">
-              <input
-                className="input-field" type="number" min="1" max={withdrawBalance}
-                placeholder="Ex : 50000"
-                value={withdrawAmount}
-                onChange={e=>setWithdrawAmount(e.target.value)}
-              />
+            <Inp label="Identifiant *">
+              <input className="input-field" placeholder="transdavid" value={agencyForm.username}
+                onChange={e=>setAgencyForm({...agencyForm,username:e.target.value.toLowerCase().replace(/\s/g,'')})} />
             </Inp>
-            <div style={{ fontSize:12, color:'var(--muted)' }}>
-              Le retrait est enregistré immédiatement et transmis à l'administration pour exécution du virement — aucune demande d'approbation préalable n'est nécessaire de votre côté.
+            <Inp label="Mot de passe * (min. 6)">
+              <input className="input-field" type="password" placeholder="••••••••" value={agencyForm.password}
+                onChange={e=>setAgencyForm({...agencyForm,password:e.target.value})} />
+            </Inp>
+            <Inp label="Email">
+              <input className="input-field" type="email" placeholder="contact@agence.cd" value={agencyForm.email||''}
+                onChange={e=>setAgencyForm({...agencyForm,email:e.target.value})} />
+            </Inp>
+            <Inp label="Téléphone">
+              <input className="input-field" placeholder="+243 81 000 0000" value={agencyForm.phone||''}
+                onChange={e=>setAgencyForm({...agencyForm,phone:e.target.value})} />
+            </Inp>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Inp label="Majoration en ligne (%)" hint={`Taux global actuel : ${settings.commission_rate||10}% — s'applique uniquement aux ventes en ligne`}>
+                <input className="input-field" type="number" min="0" max="50" step="1" value={agencyForm.commission_rate}
+                  onChange={e=>setAgencyForm({...agencyForm,commission_rate:Number(e.target.value)})} />
+              </Inp>
             </div>
           </div>
         </Modal>
       )}
 
-      {busModal && <Modal title={<><Bus size={14} style={{ marginRight:6 }} />Ajouter un bus</>} onClose={() => setBusModal(false)} onConfirm={doCreateBus} confirmLabel="Ajouter →">
-        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-          <Inp label="Nom du bus *"><input className="input-field" placeholder="Bus 1, Minibus A…" value={busForm.bus_name} onChange={e=>setBusForm({...busForm,bus_name:e.target.value})} /></Inp>
-          <div className="grid-2">
-            <Inp label="Sièges"><input className="input-field" type="number" min="6" max="200" value={busForm.total_seats} onChange={e=>setBusForm({...busForm,total_seats:parseInt(e.target.value)})} /></Inp>
-            <Inp label="Disposition des sièges">
-              <select className="input-field" value={busForm.layout} onChange={e=>setBusForm({...busForm,layout:e.target.value})}>
-                <option value="2+3">2+3 — Bus standard</option>
-                <option value="2+2">2+2 — Minibus</option>
-                <option value="2">2 — Coach</option>
-              </select>
-            </Inp>
-          </div>
-          <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={busForm.description} onChange={e=>setBusForm({...busForm,description:e.target.value})} /></Inp>
-        </div>
-      </Modal>}
-
-      {editBus && <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier — {editBus.bus_name}</>} onClose={() => setEditBus(null)} onConfirm={doSaveBus} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>}>
-        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-          <Inp label="Nom"><input className="input-field" value={editBus.bus_name} onChange={e=>setEditBus({...editBus,bus_name:e.target.value})} /></Inp>
-          <div className="grid-2">
-            <Inp label="Sièges"><input className="input-field" type="number" min="6" max="200" value={editBus.total_seats} onChange={e=>setEditBus({...editBus,total_seats:parseInt(e.target.value)})} /></Inp>
-            <Inp label="Disposition des sièges">
-              <select className="input-field" value={editBus.layout||'2+3'} onChange={e=>setEditBus({...editBus,layout:e.target.value})}>
-                <option value="2+3">2+3 — Bus standard</option>
-                <option value="2+2">2+2 — Minibus</option>
-                <option value="2">2 — Coach</option>
-              </select>
-            </Inp>
-          </div>
-          <Inp label="Description"><input className="input-field" value={editBus.description||''} onChange={e=>setEditBus({...editBus,description:e.target.value})} /></Inp>
-          <div>
-            <label className="input-label" style={{ display:'block', marginBottom:6 }}>Statut</label>
-            <div style={{ display:'flex', gap:8 }}>
-              {[['Actif',1],['Inactif',0]].map(([l,v]) => (
-                <button key={v} className={`btn ${editBus.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px', display:'inline-flex', alignItems:'center', gap:5 }} onClick={() => setEditBus({...editBus,is_active:v})}>
-                  {v===1 ? <Check size={11} /> : <Ban size={11} />} {l}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-      </Modal>}
-
-      {tripModal && <Modal title={<><Map size={14} style={{ marginRight:6 }} />Nouveau voyage</>} onClose={() => setTripModal(false)} onConfirm={doCreateTrip} confirmLabel="Créer →" maxWidth={500}>
-        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-          <Inp label="Bus (optionnel)">
-            <select className="input-field" value={tripForm.bus_id} onChange={e=>setTripForm({...tripForm,bus_id:e.target.value})}>
-              <option value="">Sans bus spécifique</option>
-              {buses.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.bus_name} — {b.total_seats} sièges</option>)}
-            </select>
-          </Inp>
-          <div className="grid-2">
-            <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
-              <select
-                className="input-field"
-                value={tripForm.departure_city}
-                onChange={e => setTripForm({...tripForm, departure_city:e.target.value, arrival_city:''})}
-                disabled={!isOwner}
-                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
-              >
-                <option value="">Ville</option>
-                {CITIES.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </Inp>
-            <Inp label="Arrivée *">
-              <select
-                className="input-field"
-                value={tripForm.arrival_city}
-                onChange={e=>setTripForm({...tripForm,arrival_city:e.target.value})}
-              >
-                <option value="">Ville</option>
-                {arrivalCities(tripForm.departure_city).map(c=><option key={c}>{c}</option>)}
-              </select>
-            </Inp>
-          </div>
-          {!isOwner && (
-            <div style={{ fontSize:11, color:'var(--muted)', marginTop:-6, padding:'6px 10px', background:'var(--card)', borderRadius:7, display:'flex', alignItems:'center', gap:5 }}>
-              <MapPin size={11} /> Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
-            </div>
-          )}
-          <div className="grid-2">
-            <Inp label="Date *"><input className="input-field" type="date" min={new Date().toISOString().split('T')[0]} value={tripForm.departure_date} onChange={e=>setTripForm({...tripForm,departure_date:e.target.value})} /></Inp>
-            <Inp label="Heure départ *"><input className="input-field" type="time" value={tripForm.departure_time} onChange={e=>setTripForm({...tripForm,departure_time:e.target.value})} /></Inp>
-          </div>
-          <Inp label="Prix par siège (FC) *"><input className="input-field" type="number" placeholder="45000" value={tripForm.price} onChange={e=>setTripForm({...tripForm,price:e.target.value})} /></Inp>
-          <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={tripForm.description} onChange={e=>setTripForm({...tripForm,description:e.target.value})} /></Inp>
-        </div>
-      </Modal>}
-
-      {editTrip && <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier le voyage</>} subtitle={`${editTrip.departure_city} → ${editTrip.arrival_city}`} onClose={() => setEditTrip(null)} onConfirm={doSaveTrip} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>} maxWidth={500}>
-        <div style={{ display:'flex', flexDirection:'column', gap:11 }}>
-          <div className="grid-2">
-            <Inp label="Départ">
-              <select
-                className="input-field"
-                value={editTrip.departure_city}
-                onChange={e=>setEditTrip({...editTrip,departure_city:e.target.value})}
-                disabled={!isOwner}
-                style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
-              >
-                {CITIES.map(c=><option key={c}>{c}</option>)}
-              </select>
-            </Inp>
-            <Inp label="Arrivée">
-              <select className="input-field" value={editTrip.arrival_city} onChange={e=>setEditTrip({...editTrip,arrival_city:e.target.value})}>
-                {arrivalCities(editTrip.departure_city).map(c=><option key={c}>{c}</option>)}
-              </select>
-            </Inp>
-          </div>
-          <div className="grid-2">
-            <Inp label="Date"><input className="input-field" type="date" value={editTrip.departure_date} onChange={e=>setEditTrip({...editTrip,departure_date:e.target.value})} /></Inp>
-            <Inp label="Heure"><input className="input-field" type="time" value={editTrip.departure_time} onChange={e=>setEditTrip({...editTrip,departure_time:e.target.value})} /></Inp>
-          </div>
-          <Inp label="Prix (FC)"><input className="input-field" type="number" value={editTrip.price} onChange={e=>setEditTrip({...editTrip,price:e.target.value})} /></Inp>
-          <div className="grid-2">
-            <Inp label="Places totales"><input className="input-field" type="number" min="1" value={editTrip.total_seats} onChange={e=>setEditTrip({...editTrip,total_seats:parseInt(e.target.value)})} /></Inp>
-            <div>
-              <Inp label="Places disponibles"><input className="input-field" type="number" min="0" max={editTrip.total_seats} value={editTrip.available_seats} onChange={e=>setEditTrip({...editTrip,available_seats:parseInt(e.target.value)})} /></Inp>
-              <div style={{ fontSize:10, color:'var(--muted)', marginTop:3 }}>Réduction manuelle possible</div>
-            </div>
-          </div>
-          <Inp label="Description"><input className="input-field" value={editTrip.description||''} onChange={e=>setEditTrip({...editTrip,description:e.target.value})} /></Inp>
-        </div>
-      </Modal>}
-
-      {bulkModal && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setBulkModal(false)}>
-          <div className="modal-box" style={{ maxWidth:540 }}>
-            <div className="modal-header">
-              <div>
-                <h2 style={{ display:'flex', alignItems:'center', gap:7 }}><Calendar size={16} /> Générer des voyages en masse</h2>
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Configure une liaison + une période → tous les voyages créés en un clic</div>
-              </div>
-              <button className="modal-close" onClick={() => setBulkModal(false)}>×</button>
-            </div>
-            <div className="modal-body" style={{ display:'flex', flexDirection:'column', gap:13 }}>
-              <div className="grid-2">
-                <Inp label={`Départ *${!isOwner ? ` (${userCity})` : ''}`}>
-                  <select
-                    className="input-field"
-                    value={bulkForm.departure_city}
-                    onChange={e => setBulkForm({...bulkForm, departure_city:e.target.value, arrival_city:''})}
-                    disabled={!isOwner}
-                    style={!isOwner ? { opacity:0.7, cursor:'not-allowed' } : {}}
-                  >
-                    <option value="">Ville</option>
-                    {CITIES.map(c=><option key={c}>{c}</option>)}
-                  </select>
-                </Inp>
-                <Inp label="Arrivée *">
-                  <select
-                    className="input-field"
-                    value={bulkForm.arrival_city}
-                    onChange={e=>setBulkForm({...bulkForm,arrival_city:e.target.value})}
-                  >
-                    <option value="">Ville</option>
-                    {arrivalCities(bulkForm.departure_city).map(c=><option key={c}>{c}</option>)}
-                  </select>
-                </Inp>
-              </div>
-              {!isOwner && (
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:-8, padding:'6px 10px', background:'var(--card)', borderRadius:7, display:'flex', alignItems:'center', gap:5 }}>
-                  <MapPin size={11} /> Départ verrouillé sur votre ville : <strong style={{ color:'var(--green-l)' }}>{userCity}</strong>
-                </div>
-              )}
-              <Inp label="Bus (optionnel)">
-                <select className="input-field" value={bulkForm.bus_id} onChange={e=>setBulkForm({...bulkForm,bus_id:e.target.value})}>
-                  <option value="">Sans bus spécifique</option>
-                  {buses.filter(b=>b.is_active).map(b=><option key={b.id} value={b.id}>{b.bus_name} — {b.total_seats} sièges</option>)}
-                </select>
+      {/* ── MODAL Modifier agence ───────────────────────────── */}
+      {editAgency && (
+        <Modal title={`Modifier — ${editAgency.agency_name}`}
+          onClose={()=>setEditAgency(null)} onConfirm={doSaveAgency} confirmLabel="Sauvegarder" maxWidth={520}>
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:12 }}>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Inp label="Nom de l'agence">
+                <input className="input-field" value={editAgency.agency_name}
+                  onChange={e=>setEditAgency({...editAgency,agency_name:e.target.value})} />
               </Inp>
-              <div className="grid-2">
-                <Inp label="Heure de départ *"><input className="input-field" type="time" value={bulkForm.departure_time} onChange={e=>setBulkForm({...bulkForm,departure_time:e.target.value})} /></Inp>
-                <Inp label="Prix / siège (FC) *"><input className="input-field" type="number" placeholder="45000" value={bulkForm.price} onChange={e=>setBulkForm({...bulkForm,price:e.target.value})} /></Inp>
-              </div>
-              <div className="grid-2">
-                <Inp label="Du *"><input className="input-field" type="date" value={bulkForm.date_from} onChange={e=>setBulkForm({...bulkForm,date_from:e.target.value})} /></Inp>
-                <Inp label="Au *"><input className="input-field" type="date" min={bulkForm.date_from||''} value={bulkForm.date_to} onChange={e=>setBulkForm({...bulkForm,date_to:e.target.value})} /></Inp>
-              </div>
-              <div>
-                <div className="input-label" style={{ marginBottom:8 }}>Jours de départ</div>
-                <div style={{ display:'flex', gap:6, flexWrap:'wrap' }}>
-                  {DAYS_FR.map((day, idx) => (
-                    <button key={idx} onClick={() => toggleDay(idx)} style={{ padding:'6px 12px', borderRadius:8, fontSize:12, fontWeight:600, cursor:'pointer', transition:'var(--ease)', background:bulkForm.active_days.includes(idx)?'var(--green-d)':'var(--card)', border:`1px solid ${bulkForm.active_days.includes(idx)?'var(--green)':'var(--border)'}`, color:bulkForm.active_days.includes(idx)?'#fff':'var(--muted)' }}>
-                      {day}
-                    </button>
+            </div>
+            <Inp label="Email"><input className="input-field" type="email" value={editAgency.email||''} onChange={e=>setEditAgency({...editAgency,email:e.target.value})} /></Inp>
+            <Inp label="Téléphone"><input className="input-field" value={editAgency.phone||''} onChange={e=>setEditAgency({...editAgency,phone:e.target.value})} /></Inp>
+            <Inp label="Majoration en ligne (%)"><input className="input-field" type="number" min="0" max="50" value={editAgency.commission_rate||10} onChange={e=>setEditAgency({...editAgency,commission_rate:Number(e.target.value)})} /></Inp>
+            <Inp label="Note (1-5)"><input className="input-field" type="number" min="1" max="5" value={editAgency.note||3} onChange={e=>setEditAgency({...editAgency,note:Number(e.target.value)})} /></Inp>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Inp label="Statut">
+                <div style={{ display:'flex', gap:8 }}>
+                  {[['Actif',1],['Inactif',0]].map(([l,v])=>(
+                    <button key={v} className={`btn ${editAgency.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }}
+                      onClick={()=>setEditAgency({...editAgency,is_active:v})}>{l}</button>
                   ))}
                 </div>
-              </div>
-              <Inp label="Description (optionnel)"><input className="input-field" placeholder="Climatisé, bagages inclus…" value={bulkForm.description} onChange={e=>setBulkForm({...bulkForm,description:e.target.value})} /></Inp>
-              {bulkPreview.length > 0 && (
-                <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,.2)', borderRadius:10, padding:'11px 13px' }}>
-                  <div style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', marginBottom:8, display:'flex', alignItems:'center', gap:6 }}><CheckCircle size={13} /> {bulkPreview.length} voyage{bulkPreview.length > 1 ? 's' : ''} seront créés</div>
-                  <div style={{ display:'flex', flexWrap:'wrap', gap:5 }}>
-                    {bulkPreview.slice(0,14).map(d => (
-                      <span key={d} style={{ background:'rgba(61,170,106,.1)', border:'1px solid rgba(61,170,106,.2)', borderRadius:6, padding:'2px 8px', fontSize:11, color:'var(--text)' }}>
-                        {new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'short'})}
-                      </span>
-                    ))}
-                    {bulkPreview.length > 14 && <span style={{ fontSize:11, color:'var(--muted)', alignSelf:'center' }}>+{bulkPreview.length - 14} autres</span>}
-                  </div>
+              </Inp>
+            </div>
+            <div style={{ gridColumn:'1/-1' }}>
+              <Inp label="Premium">
+                <div style={{ display:'flex', gap:8 }}>
+                  {[['Premium',1],['Standard',0]].map(([l,v])=>(
+                    <button key={v} className={`btn ${editAgency.premium===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px' }}
+                      onClick={()=>setEditAgency({...editAgency,premium:v})}>{l}</button>
+                  ))}
                 </div>
-              )}
-              {bulkForm.date_from && bulkForm.date_to && bulkPreview.length === 0 && (
-                <div style={{ background:'rgba(240,80,80,0.08)', border:'1px solid rgba(240,80,80,0.2)', borderRadius:10, padding:'10px 13px', fontSize:12, color:'var(--err)', display:'flex', alignItems:'center', gap:6 }}>
-                  <AlertTriangle size={12} /> Aucune date générée — vérifiez les jours cochés et la période.
-                </div>
-              )}
-            </div>
-            <div className="modal-footer">
-              <button className="btn btn-ghost" style={{ fontSize:12 }} onClick={() => setBulkModal(false)}>Annuler</button>
-              <button className="btn btn-primary" onClick={doCreateBulk} disabled={bulkLoading || bulkPreview.length === 0}>
-                {bulkLoading ? <><div className="spinner"/>Création…</> : <><Rocket size={12} style={{ marginRight:5 }} />Créer {bulkPreview.length > 0 ? bulkPreview.length + ' voyage' + (bulkPreview.length > 1 ? 's' : '') : ''}</>}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── MODAL Créer gestionnaire ─────────────────────────────────────────────── */}
-      {userModal && (
-        <Modal title={<><User size={14} style={{ marginRight:6 }} />Nouveau gestionnaire</>} subtitle="Le gestionnaire se connectera avec ces identifiants" onClose={() => setUserModal(false)} onConfirm={doCreateUser} confirmLabel="Créer →" maxWidth={460}>
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <div className="grid-2">
-              <Inp label="Identifiant *">
-                <input className="input-field" placeholder="transdavid.boma" value={userForm.username}
-                  onChange={e=>setUserForm({...userForm,username:e.target.value.toLowerCase().replace(/\s/g,'')})} />
               </Inp>
-              <Inp label="Mot de passe * (min. 6 car.)">
-                <input className="input-field" type="password" placeholder="••••••••" value={userForm.password}
-                  onChange={e=>setUserForm({...userForm,password:e.target.value})} />
-              </Inp>
-            </div>
-            <Inp label="Nom complet (optionnel)">
-              <input className="input-field" placeholder="Jean Mbeki" value={userForm.full_name}
-                onChange={e=>setUserForm({...userForm,full_name:e.target.value})} />
-            </Inp>
-            <div className="grid-2">
-              <Inp label="Ville assignée">
-                <select className="input-field" value={userForm.city} onChange={e=>setUserForm({...userForm,city:e.target.value})}>
-                  <option value="">— Toutes les villes —</option>
-                  {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </Inp>
-              <Inp label="Rôle">
-                <select className="input-field" value={userForm.role} onChange={e=>setUserForm({...userForm,role:e.target.value})}>
-                  <option value="manager">Gestionnaire</option>
-                  <option value="owner">Propriétaire</option>
-                </select>
-              </Inp>
-            </div>
-            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'10px 13px', fontSize:12, lineHeight:1.6 }}>
-              {userForm.city
-                ? <><strong style={{ color:'var(--green-l)' }}>{userForm.city}</strong> → Verra uniquement les voyages et réservations <strong>partant de {userForm.city}</strong>.</>
-                : <>Sans ville → Accès à <strong>toutes les villes</strong> (vue propriétaire).</>
-              }
             </div>
           </div>
         </Modal>
       )}
 
-      {/* ── MODAL Modifier gestionnaire ──────────────────────────────────────────── */}
-      {editUser && (
-        <Modal title={<><Pencil size={14} style={{ marginRight:6 }} />Modifier — {editUser.full_name || editUser.username}</>} onClose={() => setEditUser(null)} onConfirm={doSaveUser} confirmLabel={<><Save size={12} style={{ marginRight:4 }} />Sauvegarder</>} maxWidth={460}>
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <Inp label="Nom complet">
-              <input className="input-field" value={editUser.full_name||''} onChange={e=>setEditUser({...editUser,full_name:e.target.value})} />
+      {/* ── MODAL Galerie ───────────────────────────────────── */}
+      {galleryModal && (
+        <Modal title={editGallery ? "Modifier l'image" : 'Ajouter une image'}
+          onClose={()=>{ setGalleryModal(false); setEditGallery(null); }}
+          onConfirm={doSaveGallery} confirmLabel={editGallery ? 'Sauvegarder' : 'Ajouter →'} maxWidth={480}>
+          <Inp label="URL de l'image *">
+            <input className="input-field" placeholder="https://…" value={galleryForm.image_url}
+              onChange={e=>setGalleryForm({...galleryForm,image_url:e.target.value})} />
+          </Inp>
+          {galleryForm.image_url && (
+            <div style={{ height:120, borderRadius:10, overflow:'hidden', background:'var(--card)' }}>
+              <img src={galleryForm.image_url} style={{ width:'100%', height:'100%', objectFit:'cover' }} onError={e=>{e.target.style.display='none'}} alt="preview" />
+            </div>
+          )}
+          <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:10 }}>
+            <Inp label="Titre"><input className="input-field" placeholder="Vue de Boma" value={galleryForm.title} onChange={e=>setGalleryForm({...galleryForm,title:e.target.value})} /></Inp>
+            <Inp label="Catégorie">
+              <select className="input-field" value={galleryForm.category} onChange={e=>setGalleryForm({...galleryForm,category:e.target.value})}>
+                {['general','ville','bus','route','agence'].map(c=><option key={c} value={c}>{c}</option>)}
+              </select>
             </Inp>
-            <div className="grid-2">
-              <Inp label="Ville assignée">
-                <select className="input-field" value={editUser.city||''} onChange={e=>setEditUser({...editUser,city:e.target.value})}>
-                  <option value="">— Toutes les villes —</option>
-                  {CITIES.map(c => <option key={c} value={c}>{c}</option>)}
-                </select>
-              </Inp>
-              <Inp label="Rôle">
-                <select className="input-field" value={editUser.role} onChange={e=>setEditUser({...editUser,role:e.target.value})}>
-                  <option value="manager">Gestionnaire</option>
-                  <option value="owner">Propriétaire</option>
-                </select>
-              </Inp>
-            </div>
-            <div>
-              <div className="input-label" style={{ marginBottom:8 }}>Statut du compte</div>
-              <div style={{ display:'flex', gap:8 }}>
-                {[['Actif', 1], ['Désactivé', 0]].map(([l, v]) => (
-                  <button key={v} className={`btn ${editUser.is_active===v?'btn-primary':'btn-ghost'}`} style={{ fontSize:12, padding:'7px 14px', display:'inline-flex', alignItems:'center', gap:5 }}
-                    onClick={() => setEditUser({...editUser,is_active:v})}>
-                    {v===1 ? <Check size={11} /> : <Ban size={11} />} {l}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'10px 13px', fontSize:12 }}>
-              <code style={{ color:'var(--green-l)' }}>{editUser.username}</code> →&nbsp;
-              {editUser.city ? <>voyages depuis <strong>{editUser.city}</strong> uniquement</> : <strong>toutes les villes</strong>}
-            </div>
           </div>
+          <Inp label="Description"><input className="input-field" placeholder="Description courte…" value={galleryForm.description} onChange={e=>setGalleryForm({...galleryForm,description:e.target.value})} /></Inp>
+          <Inp label="Ordre d'affichage"><input className="input-field" type="number" min="0" value={galleryForm.sort_order} onChange={e=>setGalleryForm({...galleryForm,sort_order:Number(e.target.value)})} /></Inp>
         </Modal>
       )}
 
-      {/* ── MODAL Réinitialiser mot de passe ─────────────────────────────────────── */}
-      {resetPassModal && (
-        <Modal title={<><KeyRound size={14} style={{ marginRight:6 }} />Nouveau mot de passe</>} subtitle={`Compte : ${resetPassModal.username}`}
-          onClose={() => { setResetPassModal(null); setNewPass(''); }}
-          onConfirm={doResetPassword} confirmLabel="Mettre à jour →" maxWidth={400}>
-          <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-            <Inp label="Nouveau mot de passe (min. 6 caractères)">
-              <input className="input-field" type="password" placeholder="••••••••" value={newPass}
-                onChange={e=>setNewPass(e.target.value)} autoFocus />
-            </Inp>
-            <div style={{ fontSize:12, color:'var(--muted)', padding:'8px 12px', background:'var(--card)', borderRadius:8, display:'flex', alignItems:'center', gap:7 }}>
-              <AlertTriangle size={12} color="var(--gold)" /> Le gestionnaire devra utiliser ce nouveau mot de passe dès sa prochaine connexion.
-            </div>
-          </div>
-        </Modal>
-      )}
+      {/* ── MODAL Réinitialisation Dashboard ────────────────── */}
+      {resetModal && (
+        <div style={{ position:'fixed', inset:0, background:'rgba(0,0,0,0.85)', backdropFilter:'blur(6px)', zIndex:300, display:'flex', alignItems:'center', justifyContent:'center', padding:16 }}>
+          <div style={{ background:'var(--night)', border:'1.5px solid rgba(220,50,50,0.4)', borderRadius:18, width:'100%', maxWidth:500, maxHeight:'92vh', overflowY:'auto', boxShadow:'0 32px 80px rgba(200,0,0,0.25)' }}>
 
-      {/* ── MODAL Réservation sur place ──────────────────────────────────────────── */}
-      {onsiteModal && (
-        <div className="modal-overlay" onClick={e => e.target===e.currentTarget && setOnsiteModal(false)}>
-          <div className="modal-box" style={{ maxWidth:520 }}>
-            <div className="modal-header">
-              <div>
-                <h2 style={{ display:'flex', alignItems:'center', gap:7 }}><Ticket size={16} /> Réservation sur place</h2>
-                <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>
-                  {['Choisir le voyage','Sélectionner les sièges','Infos passager'][onsiteStep]} — étape {onsiteStep+1}/3
+            {/* Header */}
+            <div style={{ background:'rgba(220,50,50,0.1)', padding:'18px 22px', borderBottom:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', justifyContent:'space-between', position:'sticky', top:0, zIndex:1 }}>
+              <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                <div style={{ width:34, height:34, borderRadius:9, background:'rgba(220,50,50,0.15)', border:'1px solid rgba(220,50,50,0.3)', display:'flex', alignItems:'center', justifyContent:'center' }}>
+                  <ShieldAlert size={17} color="var(--err)" />
                 </div>
-              </div>
-              <button className="modal-close" onClick={() => setOnsiteModal(false)}>×</button>
-            </div>
-
-            <div className="modal-body">
-
-              {/* STEP 0 — Voyage */}
-              {onsiteStep === 0 && (
-                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                  <Inp label="Voyage *">
-                    <select className="input-field" value={onsiteTripId}
-                      onChange={e => { setOnsiteTripId(e.target.value); setOnsiteSeats([]); setOnsiteSeatsData(null); }}>
-                      <option value="">— Sélectionner un voyage —</option>
-                      {(isOwner ? trips : trips.filter(t => t.departure_city === userCity))
-                        .filter(t => t.available_seats > 0)
-                        .map(t => (
-                          <option key={t.id} value={t.id}>
-                            {t.departure_city} → {t.arrival_city} · {new Date(t.departure_date+'T12:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} {t.departure_time} · {t.available_seats} place{t.available_seats>1?'s':''}
-                          </option>
-                        ))}
-                    </select>
-                  </Inp>
-                  <Inp label="Nombre de passagers">
-                    <input className="input-field" type="number" min="1"
-                      max={trips.find(t=>String(t.id)===String(onsiteTripId))?.available_seats||1}
-                      value={onsiteForm.passengers}
-                      onChange={e => { setOnsiteForm({...onsiteForm, passengers:Math.max(1,parseInt(e.target.value)||1)}); setOnsiteSeats([]); }} />
-                  </Inp>
-                  {onsiteTripId && (() => {
-                    const t = trips.find(t => String(t.id) === String(onsiteTripId));
-                    if (!t) return null;
-                    return (
-                      <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'11px 14px', display:'flex', alignItems:'center', gap:12, flexWrap:'wrap' }}>
-                        <CityBadge city={t.departure_city} />
-                        <span style={{ color:'var(--muted)' }}>→</span>
-                        <CityBadge city={t.arrival_city} />
-                        <span style={{ fontWeight:700 }}>{t.departure_time}</span>
-                        <span style={{ color:'var(--gold)', fontWeight:800, fontFamily:'var(--font)' }}>
-                          {Number(t.price * onsiteForm.passengers).toLocaleString('fr-FR')} FC
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
-              )}
-
-              {/* STEP 1 — Sièges */}
-              {onsiteStep === 1 && (
                 <div>
-                  <div style={{ fontSize:12, color:'var(--muted)', marginBottom:12 }}>
-                    Sélectionnez <strong style={{ color:'var(--text)' }}>{onsiteForm.passengers} siège{onsiteForm.passengers>1?'s':''}</strong>
-                  </div>
-                  {onsiteSeatsLoad
-                    ? <div style={{ textAlign:'center', padding:30 }}><div className="spinner" style={{ width:28, height:28, margin:'0 auto' }}/></div>
-                    : onsiteSeatsData
-                      ? <SeatPicker
-                          layout={onsiteSeatsData.layout}
-                          totalSeats={onsiteSeatsData.total_seats}
-                          occupiedSeats={onsiteSeatsData.seats.filter(s => s.status==='reserved'||s.status==='confirmed'||s.status==='pending').map(s=>s.seat_number)}
-                          pendingSeats={[]}
-                          selectedSeats={onsiteSeats}
-                          onSelect={setOnsiteSeats}
-                          maxSelect={onsiteForm.passengers}
-                        />
-                      : <div style={{ textAlign:'center', padding:20, color:'var(--muted)' }}>Chargement…</div>
-                  }
-                  <div style={{ marginTop:10, display:'flex', gap:6, flexWrap:'wrap', alignItems:'center' }}>
-                    {onsiteSeats.map(s => (
-                      <span key={s} style={{ background:'rgba(61,170,106,0.2)', border:'1px solid rgba(61,170,106,0.4)', borderRadius:5, padding:'2px 9px', fontSize:12, fontWeight:800, color:'var(--green-l)', fontFamily:'monospace' }}>{s}</span>
-                    ))}
-                    {onsiteSeats.length < onsiteForm.passengers && (
-                      <span style={{ fontSize:12, color:'var(--muted)' }}>
-                        {onsiteForm.passengers - onsiteSeats.length} siège{onsiteForm.passengers - onsiteSeats.length>1?'s':''} restant{onsiteForm.passengers - onsiteSeats.length>1?'s':''}
-                      </span>
-                    )}
-                  </div>
+                  <div style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:16 }}>Réinitialisation du dashboard</div>
+                  <div style={{ fontSize:11, color:'var(--err)', marginTop:1 }}>Action irréversible · Toutes les agences seront supprimées</div>
                 </div>
-              )}
-
-              {/* STEP 2 — Passager */}
-              {onsiteStep === 2 && (
-                <div style={{ display:'flex', flexDirection:'column', gap:12 }}>
-                  <Inp label="Nom du passager principal *">
-                    <input className="input-field" placeholder="Jean Mukeba" autoFocus
-                      value={onsiteForm.name} onChange={e => setOnsiteForm({...onsiteForm, name:e.target.value})} />
-                  </Inp>
-                  <Inp label="Téléphone *">
-                    <input className="input-field" placeholder="+243 81 000 0000"
-                      value={onsiteForm.phone} onChange={e => setOnsiteForm({...onsiteForm, phone:e.target.value})} />
-                  </Inp>
-                  {/* Récap */}
-                  {(() => {
-                    const t = trips.find(t => String(t.id) === String(onsiteTripId));
-                    if (!t) return null;
-                    return (
-                      <div style={{ background:'var(--green-bg)', border:'1px solid rgba(61,170,106,0.2)', borderRadius:10, padding:'12px 14px' }}>
-                        <div style={{ fontSize:11, color:'var(--muted)', fontWeight:700, textTransform:'uppercase', letterSpacing:'.07em', marginBottom:10 }}>Récapitulatif</div>
-                        {[
-                          ['Trajet', `${t.departure_city} → ${t.arrival_city}`],
-                          ['Date', `${new Date(t.departure_date+'T12:00').toLocaleDateString('fr-FR',{weekday:'short',day:'numeric',month:'long'})} · ${t.departure_time}`],
-                          ['Sièges', onsiteSeats.join(', ')],
-                        ].map(([l,v]) => (
-                          <div key={l} style={{ display:'flex', justifyContent:'space-between', fontSize:13, marginBottom:5 }}>
-                            <span style={{ color:'var(--muted)' }}>{l}</span>
-                            <span style={{ fontWeight:700, fontFamily: l==='Sièges' ? 'monospace' : 'inherit', color: l==='Sièges' ? 'var(--green-l)' : 'var(--text)' }}>{v}</span>
-                          </div>
-                        ))}
-                        <div style={{ display:'flex', justifyContent:'space-between', fontSize:14, marginTop:8, paddingTop:8, borderTop:'1px solid var(--border)' }}>
-                          <span style={{ fontWeight:700 }}>Total</span>
-                          <span style={{ fontFamily:'var(--font)', fontWeight:800, color:'var(--gold)' }}>{Number(t.price * onsiteForm.passengers).toLocaleString('fr-FR')} FC</span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  <div style={{ display:'flex', alignItems:'center', gap:7, background:'rgba(61,170,106,0.07)', border:'1px solid rgba(61,170,106,0.15)', borderRadius:9, padding:'9px 12px', fontSize:12, color:'var(--green-l)' }}>
-                    <Banknote size={13} /> Paiement : <strong>Espèces sur place</strong>
-                  </div>
-                </div>
-              )}
+              </div>
+              <button onClick={()=>setResetModal(false)} style={{ width:30, height:30, borderRadius:8, background:'var(--card)', border:'1px solid var(--border)', cursor:'pointer', display:'flex', alignItems:'center', justifyContent:'center', color:'var(--muted)' }}><X size={14} /></button>
             </div>
 
-            <div className="modal-footer">
-              {onsiteStep > 0
-                ? <button className="btn btn-ghost" onClick={() => setOnsiteStep(s => s-1)}>← Retour</button>
-                : <button className="btn btn-ghost" onClick={() => setOnsiteModal(false)}>Annuler</button>
-              }
-              {onsiteStep === 0 && (
-                <button className="btn btn-primary" disabled={!onsiteTripId || onsiteSeatsLoad}
-                  onClick={async () => {
-                    setOnsiteSeatsLoad(true);
-                    try {
-                      const r = await axios.get(`${API}/trips/${onsiteTripId}/seats`);
-                      setOnsiteSeatsData(r.data);
-                      setOnsiteStep(1);
-                    } catch { err('Impossible de charger le plan des sièges'); }
-                    finally { setOnsiteSeatsLoad(false); }
-                  }}>
-                  {onsiteSeatsLoad ? <><div className="spinner"/>Chargement…</> : 'Choisir les sièges →'}
-                </button>
-              )}
-              {onsiteStep === 1 && (
-                <button className="btn btn-primary"
-                  disabled={onsiteSeats.length !== onsiteForm.passengers}
-                  style={{ opacity: onsiteSeats.length === onsiteForm.passengers ? 1 : 0.5 }}
-                  onClick={() => setOnsiteStep(2)}>
-                  {onsiteSeats.length}/{onsiteForm.passengers} — Continuer →
-                </button>
-              )}
-              {onsiteStep === 2 && (
-                <button className="btn btn-primary" onClick={doCreateOnsite} disabled={onsiteLoading}
-                  style={{ display:'inline-flex', alignItems:'center', gap:6 }}>
-                  {onsiteLoading ? <><div className="spinner"/>Enregistrement…</> : <><Banknote size={13}/>Confirmer & encaisser</>}
-                </button>
-              )}
+            <div style={{ padding:'20px 22px', display:'flex', flexDirection:'column', gap:16 }}>
+
+              {/* Warning */}
+              <div style={{ background:'rgba(220,50,50,0.07)', border:'1px solid rgba(220,50,50,0.2)', borderRadius:10, padding:'12px 15px', fontSize:13, lineHeight:1.7 }}>
+                <div style={{ display:'flex', alignItems:'center', gap:7, fontWeight:700, color:'var(--err)', marginBottom:6 }}><AlertTriangle size={14} /> Avant de continuer, lisez attentivement</div>
+                Ceci supprimera définitivement <strong>toutes les agences</strong> ({agencies.length}), leurs bus, voyages, réservations et gestionnaires.<br/>
+                Les <strong>contributions</strong> et <strong>paramètres</strong> seront conservés.<br/>
+                <span style={{ color:'var(--err)', fontWeight:700 }}>Cette action est irréversible.</span>
+              </div>
+
+              {/* Étape 1 — Excel */}
+              <div style={{ border:`1.5px solid ${backupXlsxDone ? 'rgba(61,170,106,0.5)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background: backupXlsxDone ? 'rgba(61,170,106,0.06)' : 'var(--card)', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:28, height:28, borderRadius:7, background: backupXlsxDone ? 'rgba(61,170,106,0.15)' : 'rgba(61,170,106,0.08)', border:`1px solid ${backupXlsxDone ? 'rgba(61,170,106,0.4)' : 'rgba(61,170,106,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {backupXlsxDone ? <Check size={14} color="var(--green-l)" /> : <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'var(--green-l)' }}>1</span>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                        <FileSpreadsheet size={13} color="var(--green-l)" /> Export Excel obligatoire
+                      </div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Agences, stats, contributions — toutes les données</div>
+                    </div>
+                  </div>
+                  {backupXlsxDone
+                    ? <span style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', display:'flex', alignItems:'center', gap:5 }}><Check size={13} /> Téléchargé</span>
+                    : <button className="btn btn-ghost" style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, borderColor:'rgba(61,170,106,0.3)', color:'var(--green-l)' }} onClick={doExportExcel}>
+                        <Download size={12} /> Télécharger Excel
+                      </button>
+                  }
+                </div>
+              </div>
+
+              {/* Étape 2 — PDF */}
+              <div style={{ border:`1.5px solid ${backupPdfDone ? 'rgba(61,170,106,0.5)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background: backupPdfDone ? 'rgba(61,170,106,0.06)' : 'var(--card)', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', flexWrap:'wrap', gap:10 }}>
+                  <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                    <div style={{ width:28, height:28, borderRadius:7, background: backupPdfDone ? 'rgba(61,170,106,0.15)' : 'rgba(74,144,217,0.08)', border:`1px solid ${backupPdfDone ? 'rgba(61,170,106,0.4)' : 'rgba(74,144,217,0.2)'}`, display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                      {backupPdfDone ? <Check size={14} color="var(--green-l)" /> : <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'#4A90D9' }}>2</span>}
+                    </div>
+                    <div>
+                      <div style={{ fontSize:13, fontWeight:700, display:'flex', alignItems:'center', gap:5 }}>
+                        <FileText size={13} color="#4A90D9" /> Export PDF obligatoire
+                      </div>
+                      <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Rapport complet avec tableaux imprimables</div>
+                    </div>
+                  </div>
+                  {backupPdfDone
+                    ? <span style={{ fontSize:12, fontWeight:700, color:'var(--green-l)', display:'flex', alignItems:'center', gap:5 }}><Check size={13} /> Téléchargé</span>
+                    : <button className="btn btn-ghost" style={{ fontSize:12, display:'inline-flex', alignItems:'center', gap:6, borderColor:'rgba(74,144,217,0.3)', color:'#4A90D9' }} onClick={doExportPdf}>
+                        <Download size={12} /> Télécharger PDF
+                      </button>
+                  }
+                </div>
+              </div>
+
+              {/* Étape 3 — Confirmation textuelle */}
+              <div style={{ border:`1.5px solid ${(backupXlsxDone && backupPdfDone) ? 'rgba(220,50,50,0.3)' : 'var(--border)'}`, borderRadius:12, padding:'14px 16px', background:'var(--card)', opacity: (backupXlsxDone && backupPdfDone) ? 1 : 0.45, pointerEvents: (backupXlsxDone && backupPdfDone) ? 'auto' : 'none', transition:'all 0.25s' }}>
+                <div style={{ display:'flex', alignItems:'center', gap:10, marginBottom:10 }}>
+                  <div style={{ width:28, height:28, borderRadius:7, background:'rgba(220,50,50,0.1)', border:'1px solid rgba(220,50,50,0.2)', display:'flex', alignItems:'center', justifyContent:'center', flexShrink:0 }}>
+                    <span style={{ fontFamily:'var(--font)', fontWeight:800, fontSize:12, color:'var(--err)' }}>3</span>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:13, fontWeight:700, color:'var(--err)' }}>Confirmation finale</div>
+                    <div style={{ fontSize:11, color:'var(--muted)', marginTop:2 }}>Saisissez <strong style={{ color:'var(--text)', letterSpacing:'0.05em' }}>SUPPRIMER</strong> pour confirmer</div>
+                  </div>
+                </div>
+                <input
+                  className="input-field"
+                  placeholder='Tapez "SUPPRIMER"'
+                  value={resetConfirmText}
+                  onChange={e => setResetConfirmText(e.target.value)}
+                  style={{ borderColor: resetConfirmText === 'SUPPRIMER' ? 'rgba(220,50,50,0.5)' : undefined, fontFamily:'monospace', letterSpacing:'0.08em' }}
+                />
+              </div>
+
+              {/* Bouton final */}
+              <button
+                onClick={doResetAll}
+                disabled={!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting}
+                style={{
+                  width:'100%', height:44, borderRadius:10, border:'none', cursor: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'not-allowed' : 'pointer',
+                  background: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'rgba(220,50,50,0.15)' : 'rgba(220,50,50,0.85)',
+                  color: (!backupXlsxDone || !backupPdfDone || resetConfirmText !== 'SUPPRIMER' || resetting) ? 'rgba(220,50,50,0.4)' : '#fff',
+                  fontSize:14, fontWeight:700, display:'flex', alignItems:'center', justifyContent:'center', gap:8,
+                  transition:'all 0.2s',
+                }}
+              >
+                {resetting
+                  ? <><div className="spinner" style={{ borderTopColor:'currentColor' }} /> Réinitialisation en cours…</>
+                  : <><Trash2 size={15} /> Tout supprimer et réinitialiser ({agencies.length} agences)</>
+                }
+              </button>
+
+              <div style={{ textAlign:'center', fontSize:11, color:'var(--muted)' }}>
+                Les deux sauvegardes doivent être téléchargées avant de pouvoir confirmer.
+              </div>
             </div>
           </div>
         </div>
-      )}
-
-      {/* ── MODAL Colis ──────────────────────────────────────────── */}
-      {colisModal !== null && (
-        <ColisModal
-          trips={trips}
-          initial={colisModal === 'new' ? null : colisModal}
-          onClose={() => setColisModal(null)}
-          onSave={doSaveColis}
-        />
       )}
 
       {/* ── MODAL Plan des sièges ──────────────────────────────── */}
