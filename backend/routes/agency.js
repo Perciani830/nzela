@@ -318,6 +318,30 @@ router.patch('/bookings/:id/confirm', auth, (req, res) => {
     const b  = db.prepare('SELECT * FROM bookings WHERE id=? AND agency_id=?').get(req.params.id, req.user.agency_id);
     if (!b) return res.status(404).json({ error: 'Réservation introuvable' });
 
+    // Parser les sièges de la réservation — deux formats coexistent selon l'origine :
+    // JSON.stringify (réservations créées côté agence) ou "1A,1B" (réservations publiques)
+    let seatNumbers = [];
+    if (b.seat_numbers) {
+      try {
+        const parsed = JSON.parse(b.seat_numbers);
+        seatNumbers = Array.isArray(parsed) ? parsed : [b.seat_numbers];
+      } catch {
+        seatNumbers = b.seat_numbers.split(',').map(s => s.trim()).filter(Boolean);
+      }
+    }
+
+    // Verrouiller les sièges AVANT de confirmer : un siège déjà confirmé par une
+    // AUTRE réservation bloque la confirmation (évite le double-booking silencieux)
+    if (seatNumbers.length > 0) {
+      const ph = seatNumbers.map(() => '?').join(',');
+      const conflicts = db.prepare(
+        `SELECT seat_number FROM seats WHERE trip_id=? AND seat_number IN (${ph}) AND status IN ('pending','reserved','confirmed') AND booking_id != ?`
+      ).all(b.trip_id, ...seatNumbers, req.params.id).map(r => r.seat_number);
+      if (conflicts.length > 0) {
+        return res.status(409).json({ error: `Sièges déjà pris par une autre réservation : ${conflicts.join(', ')}` });
+      }
+    }
+
     let rate = 0, commission_amount = 0;
     if (b.channel === 'onsite') {
       // Réservation guichet : aucune commission, quel que soit le taux de l'agence
@@ -329,8 +353,23 @@ router.patch('/bookings/:id/confirm', auth, (req, res) => {
       rate = agency ? (agency.commission_rate || 10) : 10;
       commission_amount = Math.round(b.total_price * rate / (100 + rate));
     }
-    db.prepare("UPDATE bookings SET status='confirmed', payment_status='completed', commission_rate=?, commission_amount=? WHERE id=? AND agency_id=?")
-      .run(rate, commission_amount, req.params.id, req.user.agency_id);
+
+    runTransaction(db, () => {
+      db.prepare("UPDATE bookings SET status='confirmed', payment_status='completed', commission_rate=?, commission_amount=? WHERE id=? AND agency_id=?")
+        .run(rate, commission_amount, req.params.id, req.user.agency_id);
+
+      // Verrouiller réellement les sièges dans la table seats
+      if (seatNumbers.length > 0) {
+        const upsert = db.prepare(`
+          INSERT INTO seats (id, trip_id, seat_number, status, booking_id, expires_at)
+          VALUES (?, ?, ?, 'confirmed', ?, NULL)
+          ON CONFLICT(trip_id, seat_number) DO UPDATE SET
+            status = 'confirmed', booking_id = excluded.booking_id, expires_at = NULL
+        `);
+        seatNumbers.forEach(sn => upsert.run(uuidv4(), b.trip_id, sn, req.params.id));
+      }
+    });
+
     res.json({ ok: true, commission_amount });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });

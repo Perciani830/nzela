@@ -20,7 +20,7 @@ const SLIDES = [
 
 const FEATURES = [
   { icon: Zap,        t: 'Réservez en 2 min',   s: 'Zéro queue, zéro stress' },
-  { icon: Smartphone, t: 'M-Pesa & Orange',      s: 'Paiement 100% mobile' },
+  { icon: Smartphone, t: 'M-Pesa, Orange Money et Airtel Money',      s: 'Paiement 100% mobile' },
   { icon: Lock,       t: 'Paiement sécurisé',    s: 'Référence unique garantie' },
   { icon: Bus,        t: 'Bus identifiés',        s: 'Bus 1, Bus 2 — fiables' },
 ];

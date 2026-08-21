@@ -387,7 +387,7 @@ function ManifestTripSelector({ trips, selectedId, onChange, userCity, isOwner }
           <optgroup key={date} label={new Date(date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})}>
             {dayTrips.map(t => (
               <option key={t.id} value={t.id}>
-                {t.departure_city} → {t.arrival_city} · {t.departure_time} · {t.available_seats}/{t.total_seats} places {t.bus_name ? `· ${t.bus_name}` : ''}
+                {t.departure_city} → {t.arrival_city} · {new Date(t.departure_date+'T12:00').toLocaleDateString('fr-FR',{day:'numeric',month:'short'})} · {t.available_seats}/{t.total_seats} places {t.bus_name ? `· ${t.bus_name}` : ''}
               </option>
             ))}
           </optgroup>

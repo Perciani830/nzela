@@ -1,0 +1,14 @@
+{
+  "name": "Nzela — Réservation de Bus RDC",
+  "short_name": "Nzela",
+  "description": "Réservez votre bus en RDC. Kinshasa, Boma, Matadi, Moanda. Paiement Mobile Money.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0D1117",
+  "theme_color": "#3DAA6A",
+  "lang": "fr-CD",
+  "icons": [
+    { "src": "/logo.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/logo.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}
