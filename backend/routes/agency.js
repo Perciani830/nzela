@@ -401,6 +401,11 @@ router.patch('/bookings/:id/cancel', auth, (req, res) => {
       db.prepare("UPDATE bookings SET status='cancelled', payment_status='refunded', commission_amount=0, cancellation_fee=? WHERE id=?")
         .run(cancellationFee, req.params.id);
       db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(b.passengers||1, b.trip_id);
+      // Libérer réellement les sièges dans la table seats — jusqu'ici oublié, ce qui
+      // laissait le siège bloqué (visible "occupé" sur le plan) alors que le compteur
+      // de places disponibles, lui, était déjà remonté.
+      db.prepare("UPDATE seats SET status='available', booking_id=NULL, expires_at=NULL WHERE trip_id=? AND booking_id=?")
+        .run(b.trip_id, req.params.id);
     });
     res.json({ ok: true, cancellation_fee: cancellationFee, refund_amount: refundAmount });
   } catch(e) { res.status(500).json({ error: e.message }); }

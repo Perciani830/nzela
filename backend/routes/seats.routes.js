@@ -32,12 +32,16 @@ const router = express.Router();
  *     par tes fonctions existantes pour ne pas dupliquer la logique.
  * ──────────────────────────────────────────────────────────────── */
 const jwt = require('jsonwebtoken');
+const SECRET = process.env.JWT_SECRET || 'busconnect-secret'; // aligné sur le reste du projet
 
 function requireAgency(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Non authentifié' });
   try {
-    req.agency = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, SECRET);
+    if (decoded.role !== 'agency') return res.status(403).json({ error: 'Accès refusé' });
+    decoded.agency_id = decoded.agency_id || decoded.id;
+    req.agency = decoded;
     next();
   } catch {
     res.status(401).json({ error: 'Token invalide' });
@@ -48,8 +52,8 @@ function requireAdmin(req, res, next) {
   const token = req.headers.authorization?.split(' ')[1];
   if (!token) return res.status(401).json({ error: 'Non authentifié' });
   try {
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    if (!decoded.isAdmin) return res.status(403).json({ error: 'Accès refusé' });
+    const decoded = jwt.verify(token, SECRET);
+    if (decoded.role !== 'admin') return res.status(403).json({ error: 'Accès refusé' });
     req.admin = decoded;
     next();
   } catch {
@@ -57,10 +61,26 @@ function requireAdmin(req, res, next) {
   }
 }
 
+// Authentification optionnelle — utilisée par l'API publique de disponibilité
+// des sièges pour savoir si l'appelant a le droit de voir des champs privés
+// (booking_id, expires_at), sans jamais bloquer un appel anonyme légitime.
+function optionalAuth(req) {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return null;
+  try { return jwt.verify(token, SECRET); } catch { return null; }
+}
+
 /* ═══════════════════════════════════════════════════════════════
    GET /api/trips/:tripId/seats
-   Retourne le plan complet du voyage avec statut de chaque siège.
-   Initialise les sièges automatiquement si c'est le premier appel.
+   API PUBLIQUE de disponibilité : accessible sans authentification
+   (nécessaire au site public pour l'affichage du plan de sièges),
+   mais ne renvoie que le strict nécessaire à l'affichage — numéro
+   de siège + statut. Le détail de réservation (booking_id, expiration)
+   n'est ajouté que si l'appelant est authentifié en tant qu'agence
+   propriétaire du voyage, ou en tant qu'admin — jamais passenger_name
+   ni booking_ref, qui ne sont utilisés par aucun des deux clients
+   frontend existants (BookingModal.jsx public, SeatMapModal.jsx agence)
+   et ne doivent donc jamais transiter par cette route.
    ═══════════════════════════════════════════════════════════════ */
 router.get('/trips/:tripId/seats', (req, res) => {
   try {
@@ -78,28 +98,27 @@ router.get('/trips/:tripId/seats', (req, res) => {
       ? db.prepare('SELECT layout, total_seats FROM buses WHERE id = ?').get(trip.bus_id)
       : null;
 
+    // Autorisation : jeton absent/invalide/d'une autre agence → vue publique.
+    // Jeton admin, ou jeton agence propriétaire de CE voyage → vue enrichie.
+    const decoded = optionalAuth(req);
+    const agencyId = decoded ? (decoded.agency_id || decoded.id) : null;
+    const privileged = !!decoded && (decoded.role === 'admin' || (decoded.role === 'agency' && agencyId === trip.agency_id));
+
     const seats = db.prepare(`
-      SELECT s.seat_number, s.status, s.booking_id, s.expires_at,
-             b.reference     AS booking_ref,
-             b.passenger_name
-      FROM   seats s
-      LEFT JOIN bookings b ON s.booking_id = b.id
-      WHERE  s.trip_id = ?
-      ORDER  BY s.seat_number
+      SELECT seat_number, status, booking_id, expires_at
+      FROM   seats
+      WHERE  trip_id = ?
+      ORDER  BY seat_number
     `).all(tripId);
 
     res.json({
       trip_id:     tripId,
       layout:      bus?.layout      || '2+3',
       total_seats: trip.total_seats || bus?.total_seats || 50,
-      seats: seats.map(s => ({
-        seat_number:    s.seat_number,
-        status:         s.status,
-        booking_id:     s.booking_id,
-        booking_ref:    s.booking_ref,
-        passenger_name: s.passenger_name,
-        expires_at:     s.expires_at,
-      })),
+      seats: seats.map(s => privileged
+        ? { seat_number: s.seat_number, status: s.status, booking_id: s.booking_id, expires_at: s.expires_at }
+        : { seat_number: s.seat_number, status: s.status }
+      ),
       summary: {
         available: seats.filter(s => s.status === 'available').length,
         pending:   seats.filter(s => s.status === 'pending').length,
@@ -226,6 +245,11 @@ router.post('/trips/:tripId/seats/assign', requireAgency, (req, res) => {
 
   releaseExpiredSeats(db);
   ensureSeatsExist(db, tripId);
+
+  const trip = db.prepare('SELECT agency_id FROM trips WHERE id = ?').get(tripId);
+  if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
+  if (req.agency.role === 'agency' && trip.agency_id !== req.agency.agency_id)
+    return res.status(403).json({ error: 'Accès refusé — ce voyage ne vous appartient pas' });
 
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
   if (!booking) return res.status(404).json({ error: 'Réservation introuvable' });

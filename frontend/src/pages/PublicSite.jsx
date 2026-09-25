@@ -488,7 +488,7 @@ export default function PublicSite() {
         <Logo size={22} tagline/>
         <div style={{ fontSize:11, color:'var(--muted)' }}>© 2026 Nzela · Kinshasa, RDC</div>
         <div style={{ fontSize:11, color:'var(--muted)', display:'flex', gap:10, flexWrap:'wrap', alignItems:'center' }}>
-          <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Phone size={11} /> +243 84 67 00 169</span>
+          <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Phone size={11} /> +243 85 83 74 334</span>
           <span>·</span>
           <span style={{ display:'inline-flex', alignItems:'center', gap:4 }}><Mail size={11} /> support@nzela.cd</span>
         </div>
