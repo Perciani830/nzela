@@ -6,6 +6,10 @@ const { getDb, runTransaction } = require('../db/database');
 
 const SECRET = process.env.JWT_SECRET || 'busconnect-secret';
 
+// Migration silencieuse — ajoute la colonne si elle n'existe pas encore (même
+// pattern que la migration "note" sur agencies dans database.js)
+try { getDb().prepare('ALTER TABLE bookings ADD COLUMN cancellation_fee REAL DEFAULT 0').run(); } catch {}
+
 // ── Middleware d'authentification ─────────────────────────────────────────────
 // Lit agency_id depuis le token (présent pour les comptes principaux ET les sous-comptes)
 // Définit req.user.agency_id  → ID de l'agence parente (toujours TEXT UUID)
@@ -379,11 +383,26 @@ router.patch('/bookings/:id/cancel', auth, (req, res) => {
     const db = getDb();
     const b  = db.prepare('SELECT * FROM bookings WHERE id=? AND agency_id=?').get(req.params.id, req.user.agency_id);
     if (!b) return res.status(404).json({ error: 'Réservation introuvable' });
+
+    // Taux de rétention de l'agence (settings → "Politique d'annulation") : appliqué
+    // uniquement si l'argent a réellement été encaissé (payment_status='completed').
+    // Une résa jamais payée (pending) s'annule sans frais — rien à retenir.
+    // La majoration Nzela (commission_amount, déjà calculée précisément à la résa)
+    // n'est de toute façon jamais remboursable non plus.
+    let cancellationFee = 0;
+    if (b.payment_status === 'completed') {
+      const agency = db.prepare('SELECT cancel_rate FROM agencies WHERE id=?').get(req.user.agency_id);
+      const rate = agency ? (agency.cancel_rate || 0) : 0;
+      cancellationFee = Math.round(b.total_price * rate / 100);
+    }
+    const refundAmount = Math.max(0, b.total_price - Number(b.commission_amount||0) - cancellationFee);
+
     runTransaction(db, () => {
-      db.prepare("UPDATE bookings SET status='cancelled', payment_status='refunded', commission_amount=0 WHERE id=?").run(req.params.id);
+      db.prepare("UPDATE bookings SET status='cancelled', payment_status='refunded', commission_amount=0, cancellation_fee=? WHERE id=?")
+        .run(cancellationFee, req.params.id);
       db.prepare('UPDATE trips SET available_seats=available_seats+? WHERE id=?').run(b.passengers||1, b.trip_id);
     });
-    res.json({ ok: true });
+    res.json({ ok: true, cancellation_fee: cancellationFee, refund_amount: refundAmount });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 

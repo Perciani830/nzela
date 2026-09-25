@@ -31,7 +31,7 @@ function BookingStatusBadge({ status }) {
 /* ══════════════════════════════════════════════════════════════
    COMPOSANT PRINCIPAL
 ══════════════════════════════════════════════════════════════ */
-export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsiteBooking }) {
+export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsiteBooking, cancelRate = 0 }) {
   const [manifest, setManifest]   = useState(null);   // { trip, bookings }
   const [loading, setLoading]     = useState(false);
   const [updating, setUpdating]   = useState(null);    // id du booking en cours de maj (embarquement)
@@ -72,11 +72,12 @@ export default function ManifestTab({ agencyName, showToast, tripId, onOpenOnsit
      (PATCH /agency/bookings/:id/cancel) : remboursement de la
      commission et libération des sièges déjà gérés côté serveur. */
   const cancelBooking = async (bookingId, amount) => {
-    if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés des revenus de l'agence.`)) return;
+    if (!confirm(`Annuler cette réservation ?\nUn taux de rétention de ${cancelRate}% peut s'appliquer sur les ${Number(amount).toLocaleString('fr-FR')} FC si le paiement était déjà encaissé.`)) return;
     setCancelling(bookingId);
     try {
-      await axios.patch(`${API}/agency/bookings/${bookingId}/cancel`, {}, { headers: getHeaders() });
-      showToast('Réservation annulée', 'success');
+      const r = await axios.patch(`${API}/agency/bookings/${bookingId}/cancel`, {}, { headers: getHeaders() });
+      const fee = r.data?.cancellation_fee || 0;
+      showToast(fee > 0 ? `Réservation annulée — ${fee.toLocaleString('fr-FR')} FC retenus` : 'Réservation annulée', 'success');
       loadManifest(tripId);
     } catch(e) { showToast(e.response?.data?.error || 'Erreur lors de l\'annulation', 'error'); }
     finally { setCancelling(null); }

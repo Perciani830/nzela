@@ -704,8 +704,13 @@ export default function AgencyDashboard() {
     catch { err('Erreur'); }
   };
   const doCancel = async (id, amount) => {
-    if (!confirm(`Annuler cette réservation ?\n${Number(amount).toLocaleString('fr-FR')} FC retirés de vos revenus.`)) return;
-    try { await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers }); inf('Annulée — revenus mis à jour'); load(); }
+    if (!confirm(`Annuler cette réservation ?\nUn taux de rétention de ${settings.cancel_rate||0}% peut s'appliquer sur les ${Number(amount).toLocaleString('fr-FR')} FC si le paiement était déjà encaissé.`)) return;
+    try {
+      const r = await axios.patch(`${API}/agency/bookings/${id}/cancel`, {}, { headers });
+      const fee = r.data?.cancellation_fee || 0;
+      inf(fee > 0 ? `Annulée — ${fee.toLocaleString('fr-FR')} FC retenus (frais d'annulation)` : 'Annulée — revenus mis à jour');
+      load();
+    }
     catch { err('Erreur'); }
   };
   const doWithdraw = async () => {
@@ -1088,6 +1093,7 @@ export default function AgencyDashboard() {
                 showToast={showToast}
                 tripId={manifestTripId || undefined}
                 onOpenOnsiteBooking={openOnsiteForTrip}
+                cancelRate={settings.cancel_rate || 0}
               />
             </div>
           )
