@@ -99,10 +99,13 @@ router.get('/trips/:tripId/seats', (req, res) => {
       : null;
 
     // Autorisation : jeton absent/invalide/d'une autre agence → vue publique.
-    // Jeton admin, ou jeton agence propriétaire de CE voyage → vue enrichie.
+    // Jeton admin, ou jeton agence propriétaire de CE voyage (et dans sa ville
+    // si le compte est un sous-compte limité) → vue enrichie.
     const decoded = optionalAuth(req);
     const agencyId = decoded ? (decoded.agency_id || decoded.id) : null;
-    const privileged = !!decoded && (decoded.role === 'admin' || (decoded.role === 'agency' && agencyId === trip.agency_id));
+    const sameAgency = !!decoded && decoded.role === 'agency' && agencyId === trip.agency_id;
+    const cityOk = sameAgency && (!decoded.city || decoded.is_owner || decoded.city === trip.departure_city);
+    const privileged = !!decoded && (decoded.role === 'admin' || cityOk);
 
     const seats = db.prepare(`
       SELECT seat_number, status, booking_id, expires_at
@@ -246,10 +249,14 @@ router.post('/trips/:tripId/seats/assign', requireAgency, (req, res) => {
   releaseExpiredSeats(db);
   ensureSeatsExist(db, tripId);
 
-  const trip = db.prepare('SELECT agency_id FROM trips WHERE id = ?').get(tripId);
+  const trip = db.prepare('SELECT agency_id, departure_city FROM trips WHERE id = ?').get(tripId);
   if (!trip) return res.status(404).json({ error: 'Voyage introuvable' });
-  if (req.agency.role === 'agency' && trip.agency_id !== req.agency.agency_id)
+  if (trip.agency_id !== req.agency.agency_id)
     return res.status(403).json({ error: 'Accès refusé — ce voyage ne vous appartient pas' });
+  // Sous-compte gestionnaire limité à une ville (agency_users.city) : même règle
+  // que partout ailleurs dans agency.js (création/annulation/confirmation de voyage)
+  if (req.agency.city && !req.agency.is_owner && trip.departure_city !== req.agency.city)
+    return res.status(403).json({ error: `Vous ne pouvez gérer que les voyages depuis ${req.agency.city}` });
 
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(booking_id);
   if (!booking) return res.status(404).json({ error: 'Réservation introuvable' });

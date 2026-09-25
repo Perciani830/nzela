@@ -95,13 +95,4 @@ router.post('/login', (req, res) => {
   res.status(401).json({ error: 'Identifiants incorrects' });
 });
 
-// ── Debug admin (garder pendant les tests) ────────────────────
-router.get('/debug-admin', (req, res) => {
-  const db = getDb();
-  const admin = db.prepare('SELECT id, username, password FROM admins WHERE username=?').get('superadmin');
-  if (!admin) return res.json({ found: false });
-  const compareOk = bcrypt.compareSync('Admin@2024!', admin.password);
-  res.json({ found: true, username: admin.username, compare_result: compareOk });
-});
-
 module.exports = router;
